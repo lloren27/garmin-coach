@@ -1,0 +1,5 @@
+garminconnect>=0.3.5
+curl_cffi
+ua-generator
+python-dotenv>=1.0
+httpx>=0.27

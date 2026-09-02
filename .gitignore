@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+data/
+*.sqlite
+*.db
+garmin_connection_status.json
+malaga_marathon_analysis.json
+malaga_marathon_plan.md

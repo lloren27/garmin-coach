@@ -54,6 +54,44 @@ python -m garmin_sync.sync
 The sync reads `~/.garminconnect` by default and posts summarized data to
 `GARMIN_COACH_API_URL`.
 
+## 3b. Automate Mac sync
+
+Install the macOS LaunchAgent:
+
+```bash
+./configure_macos_sync.command
+```
+
+It runs:
+
+- when your user session starts, including after starting the Mac and logging in;
+- every 4 hours while the Mac is awake;
+- at 08:20 and 08:50, after the usual morning session;
+- at 18:30, 21:15, and 21:45, around the usual evening training window.
+
+If the MacBook is asleep with the lid closed, sync does not run during deep
+sleep. It will catch up when the user session starts or at the next interval
+while the Mac is awake.
+
+Immediate manual sync:
+
+```bash
+scripts/run_sync.sh
+```
+
+Logs:
+
+```text
+~/Library/Logs/garmin-coach-sync.out.log
+~/Library/Logs/garmin-coach-sync.err.log
+```
+
+Uninstall:
+
+```bash
+python3 scripts/uninstall_macos_sync_agent.py
+```
+
 ## 4. Deploy bot API to Railway
 
 The root `Dockerfile` deploys `apps/bot`.

@@ -65,9 +65,13 @@ TELEGRAM_BOT_TOKEN
 TELEGRAM_ALLOWED_USER_ID
 SYNC_SECRET
 PUBLIC_BASE_URL
+DATABASE_URL
 ```
 
 Keep the same `SYNC_SECRET` locally and in Railway.
+`DATABASE_URL` is provided automatically if you add a Railway Postgres database.
+Without Postgres, Railway stores the latest sync in the service filesystem, which
+can be lost on redeploys.
 
 ## 5. Register Telegram webhook
 

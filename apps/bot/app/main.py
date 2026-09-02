@@ -18,15 +18,20 @@ def health() -> dict[str, str]:
 
 @app.post("/sync")
 async def sync(payload: dict, x_sync_secret: str | None = Header(default=None)) -> dict:
-    if settings.sync_secret and x_sync_secret != settings.sync_secret:
-        raise HTTPException(status_code=401, detail="Invalid sync secret")
+    require_sync_secret(x_sync_secret)
     document = save_sync(payload)
     return {"ok": True, "received_at": document["received_at"]}
 
 
 @app.get("/status")
-def status() -> dict:
+def status(x_sync_secret: str | None = Header(default=None)) -> dict:
+    require_sync_secret(x_sync_secret)
     return {"sync": load_sync()}
+
+
+def require_sync_secret(x_sync_secret: str | None) -> None:
+    if settings.sync_secret and x_sync_secret != settings.sync_secret:
+        raise HTTPException(status_code=401, detail="Invalid sync secret")
 
 
 @app.post("/telegram/webhook")

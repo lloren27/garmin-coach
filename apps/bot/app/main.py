@@ -3,7 +3,18 @@ from __future__ import annotations
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from .coach import format_malaga, format_status
+from .coach import (
+    format_bike,
+    format_fatigue,
+    format_help,
+    format_latest,
+    format_malaga,
+    format_next,
+    format_status,
+    format_strength,
+    format_today,
+    format_week,
+)
 from .config import settings
 from .store import load_sync, save_sync
 
@@ -57,18 +68,32 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
 
 def route_message(text: str) -> str:
     sync = load_sync()
-    command = text.split(maxsplit=1)[0].lower() if text else ""
+    command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
     if command in {"/start", "/help"}:
-        return "Comandos: /status, /malaga, /syncinfo"
+        return format_help()
+    if command == "/hoy":
+        return format_today(sync)
+    if command == "/semana":
+        return format_week(sync)
+    if command == "/ultima":
+        return format_latest(sync)
+    if command == "/proximo":
+        return format_next(sync)
+    if command == "/fatiga":
+        return format_fatigue(sync)
+    if command == "/bici":
+        return format_bike(sync)
+    if command == "/fuerza":
+        return format_strength(sync)
     if command == "/malaga":
         return format_malaga(sync)
-    if command in {"/status", "/semana", "/ultima"}:
+    if command == "/status":
         return format_status(sync)
     if command == "/syncinfo":
         if not sync:
             return "Sin sincronizaciones todavia."
         return f"Ultima sincronizacion recibida: {sync.get('received_at')}"
-    return "Te leo. Por ahora usa /status o /malaga mientras activo el coach conversacional."
+    return "Te leo. Usa /help para ver los comandos disponibles."
 
 
 async def send_telegram_message(chat_id: int | str, text: str) -> None:

@@ -122,10 +122,18 @@ python3 scripts/set_telegram_webhook.py
 
 ## Telegram commands
 
+- `/hoy`
+- `/semana`
+- `/ultima`
+- `/proximo`
+- `/fatiga`
+- `/bici`
+- `/fuerza`
 - `/status`
 - `/malaga`
 - `/syncinfo`
 
-`/semana` and `/ultima` currently use the same summary as `/status`; they will
-be expanded after the first Railway deployment is working.
+The bot stores compact summaries only: recent activities, current week, sport
+breakdowns, fatigue estimate, next-workout suggestion, and selected wellness
+signals. Garmin tokens and passwords stay local on the Mac.
 # garmin-coach

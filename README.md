@@ -131,6 +131,9 @@ python3 scripts/set_telegram_webhook.py
 - `/fatiga`
 - `/carga`
 - `/tendencia`
+- `/feedback`
+- `/checkin`
+- `/ajustar`
 - `/bici`
 - `/fuerza`
 - `/status`
@@ -140,4 +143,16 @@ python3 scripts/set_telegram_webhook.py
 The bot stores compact summaries only: recent activities, current week, sport
 breakdowns, fatigue estimate, next-workout suggestion, and selected wellness
 signals. Garmin tokens and passwords stay local on the Mac.
+
+Examples:
+
+```text
+/feedback
+/checkin rpe 6 sueno 7 energia 6 sin molestias nota piernas algo cargadas
+/checkin rpe 8 sueno 4 energia 3 molestia gemelo
+/ajustar
+/ajustar hoy estoy cansado y dormi mal
+```
+
+Check-ins are stored in Postgres and used by `/feedback` and `/ajustar`.
 # garmin-coach

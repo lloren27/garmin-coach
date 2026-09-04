@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any
 
 
@@ -13,6 +15,9 @@ def format_help() -> str:
         "/fatiga - riesgo de fatiga\n"
         "/carga - carga running/bici/fuerza\n"
         "/tendencia - evolucion semanal\n"
+        "/feedback - analiza la ultima actividad\n"
+        "/checkin - guarda sensaciones: rpe, sueno, energia, molestias\n"
+        "/ajustar - adapta el proximo entreno con tus sensaciones\n"
         "/bici - resumen de ciclismo\n"
         "/fuerza - resumen de fuerza\n"
         "/malaga - foco Maraton de Malaga\n"
@@ -124,6 +129,45 @@ def format_latest(sync: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+def format_feedback(sync: dict[str, Any] | None, checkins: list[dict[str, Any]] | None = None) -> str:
+    if not sync:
+        return "Todavia no tengo datos sincronizados desde Garmin."
+
+    activity = _latest_activity(sync)
+    if not activity:
+        return "No encuentro actividades recientes para analizar."
+
+    summary = sync.get("payload", {}).get("summary", {})
+    fatigue = summary.get("fatigue", {})
+    latest_checkin = _latest_checkin(checkins)
+    sport = activity.get("sport", "other")
+    lines = [
+        "Feedback ultima actividad",
+        f"{activity.get('date', 'n/a')} - {activity.get('name', 'Actividad')}",
+        f"Tipo: {sport}",
+        f"Duracion: {_format_duration(activity.get('duration_s'))}",
+    ]
+    if activity.get("km"):
+        lines.append(f"Distancia: {activity.get('km')} km")
+    if sport == "cycling" and activity.get("avg_speed_kmh"):
+        lines.append(f"Velocidad: {activity.get('avg_speed_kmh')} km/h")
+    elif activity.get("pace"):
+        lines.append(f"Ritmo: {activity.get('pace')}")
+    if activity.get("avg_hr"):
+        lines.append(f"Pulso medio: {activity.get('avg_hr')}")
+    if activity.get("avg_power") or activity.get("normalized_power"):
+        lines.append(f"Potencia: media {activity.get('avg_power', 'n/a')} W, NP {activity.get('normalized_power', 'n/a')} W")
+    if activity.get("training_effect"):
+        lines.append(f"Training effect: {activity.get('training_effect')}")
+
+    lines.append(f"Lectura: {_activity_coach_reading(activity, fatigue)}")
+    lines.append(f"Impacto en plan: {_activity_plan_impact(activity, summary)}")
+    if latest_checkin:
+        lines.append(f"Con tu check-in: {_checkin_reading(latest_checkin)}")
+    lines.append(f"Siguiente paso: {_next_step_after_activity(activity, fatigue, latest_checkin)}")
+    return "\n".join(lines)
+
+
 def format_next(sync: dict[str, Any] | None) -> str:
     if not sync:
         return "Necesito una sincronizacion Garmin antes de recomendar el proximo entreno."
@@ -135,6 +179,87 @@ def format_next(sync: dict[str, Any] | None) -> str:
         f"{next_workout.get('details', '45-60 min suave.')}\n"
         f"Motivo: {next_workout.get('reason', 'Mantener continuidad sin acumular fatiga extra.')}"
     )
+
+
+def format_checkin_help() -> str:
+    return (
+        "Check-in\n"
+        "Escribe algo asi:\n"
+        "/checkin rpe 6 sueno 7 energia 6 molestia gemelo nota piernas cargadas\n"
+        "Campos utiles: rpe 1-10, sueno 1-10, energia 1-10, molestias/no molestias, nota libre."
+    )
+
+
+def parse_checkin(text: str, user_id: str | None = None) -> dict[str, Any]:
+    note = text.strip()
+    lowered = _normalize_text(note)
+    checkin = {
+        "user_id": user_id,
+        "raw": note,
+        "rpe": _extract_score(lowered, ("rpe", "esfuerzo")),
+        "sleep": _extract_score(lowered, ("sueno", "dormir", "sleep")),
+        "energy": _extract_score(lowered, ("energia", "energy")),
+        "mood": _extract_score(lowered, ("animo", "mood")),
+        "soreness": _extract_soreness(lowered),
+        "pain": _extract_pain(lowered),
+    }
+    return {key: value for key, value in checkin.items() if value not in (None, "")}
+
+
+def format_checkin_saved(document: dict[str, Any]) -> str:
+    checkin = document.get("checkin", {})
+    parts = []
+    for label, key in (("RPE", "rpe"), ("Sueno", "sleep"), ("Energia", "energy"), ("Animo", "mood")):
+        if key in checkin:
+            parts.append(f"{label}: {checkin[key]}/10")
+    if checkin.get("soreness"):
+        parts.append(f"Molestias: {checkin['soreness']}")
+    if checkin.get("pain"):
+        parts.append(f"Dolor: {checkin['pain']}")
+    if not parts and checkin.get("raw"):
+        parts.append("Nota libre guardada")
+    details = "\n".join(parts) if parts else "Guardado."
+    return f"Check-in guardado\n{details}\nLo usare en /ajustar y /feedback."
+
+
+def format_adjust(
+    sync: dict[str, Any] | None,
+    checkins: list[dict[str, Any]] | None = None,
+    note: str = "",
+) -> str:
+    if not sync:
+        return "Necesito una sincronizacion Garmin antes de ajustar el plan."
+
+    summary = sync.get("payload", {}).get("summary", {})
+    fatigue = summary.get("fatigue", {})
+    activity = _latest_activity(sync)
+    transient = parse_checkin(note) if note.strip() else {}
+    latest = transient or _latest_checkin(checkins)
+    risk = _adjustment_risk(fatigue, activity, latest)
+
+    if risk >= 5:
+        recommendation = "cambia el proximo entreno por descanso o 30-40 min muy facil."
+        details = "Nada de intensidad. Movilidad, comida y dormir mandan."
+    elif risk >= 3:
+        recommendation = "reduce el entreno: 40-55 min facil o bici Z2 suave."
+        details = "Mantienes continuidad, pero sin meter mas carga dura."
+    else:
+        next_workout = summary.get("next_workout", {})
+        recommendation = next_workout.get("title", "mantener rodaje facil")
+        details = next_workout.get("details", "45-60 min suave.")
+
+    lines = [
+        "Ajuste del plan",
+        f"Riesgo estimado: {_risk_label(risk)} ({risk}/7)",
+        f"Decision: {recommendation}",
+        f"Detalle: {details}",
+        f"Por que: {_adjustment_reason(fatigue, activity, latest)}",
+    ]
+    if latest:
+        lines.append(f"Sensaciones usadas: {_checkin_reading(latest)}")
+    else:
+        lines.append("Tip: anade sensaciones con /checkin para afinar mas.")
+    return "\n".join(lines)
 
 
 def format_fatigue(sync: dict[str, Any] | None) -> str:
@@ -299,6 +424,18 @@ def _longest_run(summary: dict[str, Any]) -> str:
     return f"{run.get('km', 'n/a')} km a {run.get('pace', 'n/a')}"
 
 
+def _latest_activity(sync: dict[str, Any]) -> dict[str, Any] | None:
+    activities = sync.get("payload", {}).get("summary", {}).get("activities") or []
+    return activities[-1] if activities else None
+
+
+def _latest_checkin(checkins: list[dict[str, Any]] | None) -> dict[str, Any]:
+    if not checkins:
+        return {}
+    document = checkins[-1]
+    return document.get("checkin", document)
+
+
 def _clean_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict) and "_unavailable" not in value:
         return value
@@ -368,6 +505,154 @@ def _latest_feedback(activity: dict[str, Any]) -> str:
     if sport == "strength":
         return "buena transferencia si no deja agujetas antes de calidad o tirada larga."
     return "cuenta como carga general; ajusta el siguiente dia segun sensaciones."
+
+
+def _activity_coach_reading(activity: dict[str, Any], fatigue: dict[str, Any]) -> str:
+    sport = activity.get("sport")
+    te = _safe_float(activity.get("training_effect"))
+    if te >= 3.5:
+        return "sesion claramente exigente; cuenta como dia duro aunque las sensaciones fueran buenas."
+    if sport == "running" and _safe_float(activity.get("km")) >= 14:
+        return "pieza importante para resistencia especifica; vigila recuperacion las proximas 24-48 h."
+    if sport == "cycling" and (_safe_float(activity.get("hours")) >= 2 or te >= 3):
+        return "bici con carga real; ayuda aerobicamente, pero puede restar frescura para series corriendo."
+    if sport == "strength":
+        return "la fuerza suma mucho si no compromete calidad de carrera ni tirada larga."
+    if fatigue.get("level") == "alta":
+        return "actividad dentro de una semana cargada; el valor ahora esta en asimilar."
+    return "sesion compatible con seguir construyendo base."
+
+
+def _activity_plan_impact(activity: dict[str, Any], summary: dict[str, Any]) -> str:
+    sport = activity.get("sport")
+    if sport == "running":
+        km = _safe_float(activity.get("km"))
+        if km >= 20:
+            return "muy buena senal para Malaga; acerca la tirada larga al rango necesario."
+        if km >= 10:
+            return "suma volumen util, pero aun falta una tirada mas larga semanal."
+        return "sirve para continuidad, no cambia mucho el objetivo maraton."
+    if sport == "cycling":
+        return "cuenta como carga aerobica; evita juntar bici intensa con series o tirada larga sin descanso."
+    if sport == "strength":
+        return "buena proteccion para running/ciclismo si no deja agujetas fuertes."
+    return "impacto general bajo-moderado."
+
+
+def _next_step_after_activity(
+    activity: dict[str, Any],
+    fatigue: dict[str, Any],
+    checkin: dict[str, Any],
+) -> str:
+    if checkin and (_safe_float(checkin.get("sleep")) <= 4 or checkin.get("pain")):
+        return "descanso o regenerativo, porque las sensaciones pesan mas que el plan."
+    if fatigue.get("level") == "alta":
+        return "24-48 h faciles antes de otro estimulo fuerte."
+    if _safe_float(activity.get("training_effect")) >= 3.5:
+        return "siguiente dia facil; no encadenes calidad."
+    if activity.get("sport") == "running":
+        return "mantener el siguiente entreno en zona facil salvo que toque descanso."
+    return "si manana corres, que sea facil y con pulso controlado."
+
+
+def _checkin_reading(checkin: dict[str, Any]) -> str:
+    bits = []
+    if "rpe" in checkin:
+        bits.append(f"RPE {checkin['rpe']}/10")
+    if "sleep" in checkin:
+        bits.append(f"sueno {checkin['sleep']}/10")
+    if "energy" in checkin:
+        bits.append(f"energia {checkin['energy']}/10")
+    if checkin.get("soreness"):
+        bits.append(f"molestias {checkin['soreness']}")
+    if checkin.get("pain"):
+        bits.append(f"dolor {checkin['pain']}")
+    return ", ".join(bits) if bits else checkin.get("raw", "check-in guardado")
+
+
+def _extract_score(text: str, labels: tuple[str, ...]) -> int | None:
+    for label in labels:
+        match = re.search(rf"\b{re.escape(label)}\s*[:=]?\s*(10|[1-9])\b", text)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _normalize_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text.lower())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _extract_soreness(text: str) -> str | None:
+    if "sin molestias" in text or "no molestias" in text:
+        return "no"
+    match = re.search(r"\b(?:molestia|molestias|cargado|cargada)\s+([^,.;]+)", text)
+    if match:
+        return match.group(1).strip()[:80]
+    return None
+
+
+def _extract_pain(text: str) -> str | None:
+    if "sin dolor" in text or "no dolor" in text:
+        return None
+    match = re.search(r"\b(?:dolor|duele)\s+([^,.;]+)", text)
+    if match:
+        return match.group(1).strip()[:80]
+    return None
+
+
+def _adjustment_risk(
+    fatigue: dict[str, Any],
+    activity: dict[str, Any] | None,
+    checkin: dict[str, Any],
+) -> int:
+    risk = 0
+    if fatigue.get("level") == "alta":
+        risk += 3
+    elif fatigue.get("level") == "media":
+        risk += 1
+    if _safe_float(fatigue.get("acute_chronic_ratio")) > 1.3:
+        risk += 1
+    if activity and _safe_float(activity.get("training_effect")) >= 3.5:
+        risk += 1
+    if _safe_float(checkin.get("sleep")) and _safe_float(checkin.get("sleep")) <= 4:
+        risk += 1
+    if _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 4:
+        risk += 1
+    if _safe_float(checkin.get("rpe")) >= 8:
+        risk += 1
+    if checkin.get("pain") or (checkin.get("soreness") and checkin.get("soreness") != "no"):
+        risk += 2
+    return min(risk, 7)
+
+
+def _risk_label(risk: int) -> str:
+    if risk >= 5:
+        return "alto"
+    if risk >= 3:
+        return "medio"
+    return "bajo"
+
+
+def _adjustment_reason(
+    fatigue: dict[str, Any],
+    activity: dict[str, Any] | None,
+    checkin: dict[str, Any],
+) -> str:
+    reasons = []
+    if fatigue.get("level"):
+        reasons.append(f"fatiga {fatigue.get('level')}")
+    if activity:
+        reasons.append(f"ultima actividad {activity.get('sport', 'n/a')}")
+    if checkin.get("pain"):
+        reasons.append("dolor reportado")
+    elif checkin.get("soreness") and checkin.get("soreness") != "no":
+        reasons.append("molestias reportadas")
+    if _safe_float(checkin.get("sleep")) and _safe_float(checkin.get("sleep")) <= 4:
+        reasons.append("sueno bajo")
+    if _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 4:
+        reasons.append("energia baja")
+    return ", ".join(reasons) if reasons else "no hay senales de alarma fuertes."
 
 
 def _safe_float(value: Any) -> float:

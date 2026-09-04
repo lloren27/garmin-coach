@@ -10,6 +10,7 @@ from typing import Any
 DATA_DIR = Path("data")
 SYNC_FILE = DATA_DIR / "latest_sync.json"
 SYNC_HISTORY_FILE = DATA_DIR / "sync_history.jsonl"
+CHECKINS_FILE = DATA_DIR / "checkins.jsonl"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -46,6 +47,34 @@ def load_sync_history(limit: int = 10) -> list[dict[str, Any]]:
         return []
     rows = []
     for line in SYNC_HISTORY_FILE.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows[-limit:]
+
+
+def save_checkin(checkin: dict[str, Any]) -> dict[str, Any]:
+    document = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "checkin": checkin,
+    }
+    if DATABASE_URL:
+        save_checkin_postgres(document)
+        return document
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with CHECKINS_FILE.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(document, ensure_ascii=True) + "\n")
+    return document
+
+
+def load_checkins(limit: int = 5) -> list[dict[str, Any]]:
+    if DATABASE_URL:
+        return load_checkins_postgres(limit)
+
+    if not CHECKINS_FILE.exists():
+        return []
+    rows = []
+    for line in CHECKINS_FILE.read_text(encoding="utf-8").splitlines():
         if line.strip():
             rows.append(json.loads(line))
     return rows[-limit:]
@@ -114,6 +143,42 @@ def load_sync_history_postgres(limit: int) -> list[dict[str, Any]]:
     return list(reversed(history))
 
 
+def save_checkin_postgres(document: dict[str, Any]) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "insert into coach_checkins (document, created_at) values (%s, %s)",
+            (Jsonb(document), document["created_at"]),
+        )
+
+
+def load_checkins_postgres(limit: int) -> list[dict[str, Any]]:
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+        rows = conn.execute(
+            """
+            select document
+            from coach_checkins
+            order by created_at desc
+            limit %s
+            """,
+            (limit,),
+        ).fetchall()
+
+    checkins = []
+    for row in rows:
+        document = row[0]
+        if isinstance(document, str):
+            document = json.loads(document)
+        checkins.append(document)
+    return list(reversed(checkins))
+
+
 def ensure_schema(conn: Any) -> None:
     conn.execute(
         """
@@ -130,6 +195,15 @@ def ensure_schema(conn: Any) -> None:
             id bigserial primary key,
             document jsonb not null,
             received_at timestamptz not null default now()
+        )
+        """
+    )
+    conn.execute(
+        """
+        create table if not exists coach_checkins (
+            id bigserial primary key,
+            document jsonb not null,
+            created_at timestamptz not null default now()
         )
         """
     )

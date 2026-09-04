@@ -4,8 +4,12 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
+    format_adjust,
     format_bike,
+    format_checkin_help,
+    format_checkin_saved,
     format_fatigue,
+    format_feedback,
     format_help,
     format_latest,
     format_load,
@@ -16,9 +20,10 @@ from .coach import (
     format_today,
     format_trend,
     format_week,
+    parse_checkin,
 )
 from .config import settings
-from .store import load_sync, load_sync_history, save_sync
+from .store import load_checkins, load_sync, load_sync_history, save_checkin, save_sync
 
 
 app = FastAPI(title="Garmin Coach")
@@ -48,6 +53,12 @@ def history(x_sync_secret: str | None = Header(default=None), limit: int = 10) -
     return {"history": load_sync_history(min(max(limit, 1), 50))}
 
 
+@app.get("/checkins")
+def checkins(x_sync_secret: str | None = Header(default=None), limit: int = 10) -> dict:
+    require_sync_secret(x_sync_secret)
+    return {"checkins": load_checkins(min(max(limit, 1), 50))}
+
+
 def require_sync_secret(x_sync_secret: str | None) -> None:
     if settings.sync_secret and x_sync_secret != settings.sync_secret:
         raise HTTPException(status_code=401, detail="Invalid sync secret")
@@ -69,14 +80,15 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
     if not chat_id:
         return {"ok": True}
 
-    response = route_message(text)
+    response = route_message(text, str(user.get("id")) if user.get("id") else None)
     await send_telegram_message(chat_id, response)
     return {"ok": True}
 
 
-def route_message(text: str) -> str:
+def route_message(text: str, user_id: str | None = None) -> str:
     sync = load_sync()
     command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
+    args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
     if command in {"/start", "/help"}:
         return format_help()
     if command == "/hoy":
@@ -93,6 +105,15 @@ def route_message(text: str) -> str:
         return format_load(sync)
     if command == "/tendencia":
         return format_trend(sync, load_sync_history())
+    if command == "/feedback":
+        return format_feedback(sync, load_checkins())
+    if command == "/checkin":
+        if not args:
+            return format_checkin_help()
+        document = save_checkin(parse_checkin(args, user_id))
+        return format_checkin_saved(document)
+    if command == "/ajustar":
+        return format_adjust(sync, load_checkins(), args)
     if command == "/bici":
         return format_bike(sync)
     if command == "/fuerza":

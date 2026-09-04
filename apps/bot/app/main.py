@@ -8,15 +8,17 @@ from .coach import (
     format_fatigue,
     format_help,
     format_latest,
+    format_load,
     format_malaga,
     format_next,
     format_status,
     format_strength,
     format_today,
+    format_trend,
     format_week,
 )
 from .config import settings
-from .store import load_sync, save_sync
+from .store import load_sync, load_sync_history, save_sync
 
 
 app = FastAPI(title="Garmin Coach")
@@ -38,6 +40,12 @@ async def sync(payload: dict, x_sync_secret: str | None = Header(default=None)) 
 def status(x_sync_secret: str | None = Header(default=None)) -> dict:
     require_sync_secret(x_sync_secret)
     return {"sync": load_sync()}
+
+
+@app.get("/history")
+def history(x_sync_secret: str | None = Header(default=None), limit: int = 10) -> dict:
+    require_sync_secret(x_sync_secret)
+    return {"history": load_sync_history(min(max(limit, 1), 50))}
 
 
 def require_sync_secret(x_sync_secret: str | None) -> None:
@@ -81,6 +89,10 @@ def route_message(text: str) -> str:
         return format_next(sync)
     if command == "/fatiga":
         return format_fatigue(sync)
+    if command == "/carga":
+        return format_load(sync)
+    if command == "/tendencia":
+        return format_trend(sync, load_sync_history())
     if command == "/bici":
         return format_bike(sync)
     if command == "/fuerza":

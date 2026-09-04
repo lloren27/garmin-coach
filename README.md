@@ -53,6 +53,8 @@ python -m garmin_sync.sync
 
 The sync reads `~/.garminconnect` by default and posts summarized data to
 `GARMIN_COACH_API_URL`.
+Each successful sync updates the latest state and appends one compact snapshot
+to history when Postgres is enabled.
 
 ## 3b. Automate Mac sync
 
@@ -127,6 +129,8 @@ python3 scripts/set_telegram_webhook.py
 - `/ultima`
 - `/proximo`
 - `/fatiga`
+- `/carga`
+- `/tendencia`
 - `/bici`
 - `/fuerza`
 - `/status`

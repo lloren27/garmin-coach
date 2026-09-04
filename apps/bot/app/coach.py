@@ -11,6 +11,8 @@ def format_help() -> str:
         "/ultima - ultima actividad\n"
         "/proximo - entreno recomendado\n"
         "/fatiga - riesgo de fatiga\n"
+        "/carga - carga running/bici/fuerza\n"
+        "/tendencia - evolucion semanal\n"
         "/bici - resumen de ciclismo\n"
         "/fuerza - resumen de fuerza\n"
         "/malaga - foco Maraton de Malaga\n"
@@ -160,6 +162,71 @@ def format_fatigue(sync: dict[str, Any] | None) -> str:
     )
 
 
+def format_load(sync: dict[str, Any] | None) -> str:
+    if not sync:
+        return "Todavia no tengo datos sincronizados desde Garmin."
+
+    summary = sync.get("payload", {}).get("summary", {})
+    week = summary.get("week", {})
+    sports = summary.get("sports", {})
+    fatigue = summary.get("fatigue", {})
+    running = sports.get("running", {})
+    cycling = sports.get("cycling", {})
+    strength = sports.get("strength", {})
+
+    running_weight = _safe_float(running.get("hours_7d")) * 1.0
+    cycling_weight = _safe_float(cycling.get("hours_7d")) * 0.65
+    strength_weight = _safe_float(strength.get("hours_7d")) * 0.45
+    equivalent_hours = round(running_weight + cycling_weight + strength_weight, 1)
+
+    return (
+        "Carga semanal\n"
+        f"Total semana: {week.get('hours', 0)} h, {week.get('km', 0)} km\n"
+        f"Running 7d: {running.get('sessions_7d', 0)} sesiones, {running.get('km_7d', 0)} km, {running.get('hours_7d', 0)} h\n"
+        f"Bici 7d: {cycling.get('sessions_7d', 0)} sesiones, {cycling.get('km_7d', 0)} km, {cycling.get('hours_7d', 0)} h\n"
+        f"Fuerza 7d: {strength.get('sessions_7d', 0)} sesiones, {strength.get('hours_7d', 0)} h\n"
+        f"Carga equivalente aprox: {equivalent_hours} h running\n"
+        f"Ratio agudo/cronico: {fatigue.get('acute_chronic_ratio', 'n/a')}\n"
+        f"Lectura: {_load_reading(fatigue, equivalent_hours)}"
+    )
+
+
+def format_trend(sync: dict[str, Any] | None, history: list[dict[str, Any]] | None = None) -> str:
+    if not sync:
+        return "Todavia no tengo datos sincronizados desde Garmin."
+
+    summary = sync.get("payload", {}).get("summary", {})
+    weekly = summary.get("weekly") or []
+    if not weekly:
+        return "Todavia no tengo semanas suficientes para calcular tendencia."
+
+    last_4 = weekly[-4:]
+    prev_4 = weekly[-8:-4]
+    last_4_km = round(sum(_safe_float(week.get("km")) for week in last_4), 1)
+    prev_4_km = round(sum(_safe_float(week.get("km")) for week in prev_4), 1)
+    delta = round(last_4_km - prev_4_km, 1) if prev_4 else None
+    avg_last = round(last_4_km / len(last_4), 1)
+    longest_now = max(last_4, key=lambda week: _safe_float(week.get("long_run_km")))
+    snapshots = len(history or [])
+
+    lines = [
+        "Tendencia",
+        f"Media running ultimas 4 semanas: {avg_last} km/semana",
+        f"Total ultimas 4 semanas: {last_4_km} km",
+    ]
+    if delta is not None:
+        sign = "+" if delta >= 0 else ""
+        lines.append(f"Vs 4 semanas previas: {sign}{delta} km")
+    lines.extend(
+        [
+            f"Tirada larga reciente en el bloque: {longest_now.get('long_run_km', 'n/a')} km",
+            f"Sincronizaciones en historico: {snapshots}",
+            f"Lectura: {_trend_reading(avg_last, _safe_float(longest_now.get('long_run_km')), delta)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def format_bike(sync: dict[str, Any] | None) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
@@ -301,3 +368,31 @@ def _latest_feedback(activity: dict[str, Any]) -> str:
     if sport == "strength":
         return "buena transferencia si no deja agujetas antes de calidad o tirada larga."
     return "cuenta como carga general; ajusta el siguiente dia segun sensaciones."
+
+
+def _safe_float(value: Any) -> float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return 0.0
+
+
+def _load_reading(fatigue: dict[str, Any], equivalent_hours: float) -> str:
+    level = fatigue.get("level")
+    ratio = _safe_float(fatigue.get("acute_chronic_ratio"))
+    if level == "alta" or ratio > 1.35:
+        return "carga alta; conviene absorber antes de meter otra sesion dura."
+    if equivalent_hours < 4:
+        return "carga baja-moderada; buen momento para construir volumen facil."
+    if equivalent_hours > 8:
+        return "semana completa; protege sueno, comida y rodajes faciles."
+    return "carga razonable; puedes mantener el plan si las piernas responden."
+
+
+def _trend_reading(avg_last: float, long_run_km: float, delta: float | None) -> str:
+    if long_run_km < 18:
+        return "para Malaga falta llevar la tirada larga por encima de 24 km."
+    if avg_last < 35:
+        return "la tendencia mejora, pero aun falta volumen especifico de maraton."
+    if delta is not None and delta > 20:
+        return "subida rapida; vigila molestias y fatiga residual."
+    return "bloque consistente; siguiente mejora: sostener ritmo maraton dentro de tiradas largas."

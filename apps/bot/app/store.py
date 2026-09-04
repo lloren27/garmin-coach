@@ -11,6 +11,7 @@ DATA_DIR = Path("data")
 SYNC_FILE = DATA_DIR / "latest_sync.json"
 SYNC_HISTORY_FILE = DATA_DIR / "sync_history.jsonl"
 CHECKINS_FILE = DATA_DIR / "checkins.jsonl"
+PROFILE_FILE = DATA_DIR / "athlete_profile.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -78,6 +79,29 @@ def load_checkins(limit: int = 5) -> list[dict[str, Any]]:
         if line.strip():
             rows.append(json.loads(line))
     return rows[-limit:]
+
+
+def save_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    document = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "profile": profile,
+    }
+    if DATABASE_URL:
+        save_profile_postgres(document)
+        return document
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PROFILE_FILE.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n")
+    return document
+
+
+def load_profile() -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return load_profile_postgres()
+
+    if not PROFILE_FILE.exists():
+        return None
+    return json.loads(PROFILE_FILE.read_text())
 
 
 def save_sync_postgres(document: dict[str, Any]) -> None:
@@ -177,6 +201,41 @@ def load_checkins_postgres(limit: int) -> list[dict[str, Any]]:
             document = json.loads(document)
         checkins.append(document)
     return list(reversed(checkins))
+
+
+def save_profile_postgres(document: dict[str, Any]) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+        conn.execute(
+            """
+            insert into sync_state (key, document, updated_at)
+            values (%s, %s, now())
+            on conflict (key)
+            do update set document = excluded.document, updated_at = excluded.updated_at
+            """,
+            ("athlete_profile", Jsonb(document)),
+        )
+
+
+def load_profile_postgres() -> dict[str, Any] | None:
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+        row = conn.execute(
+            "select document from sync_state where key = %s",
+            ("athlete_profile",),
+        ).fetchone()
+
+    if not row:
+        return None
+    document = row[0]
+    if isinstance(document, str):
+        return json.loads(document)
+    return document
 
 
 def ensure_schema(conn: Any) -> None:

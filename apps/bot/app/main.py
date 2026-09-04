@@ -15,15 +15,28 @@ from .coach import (
     format_load,
     format_malaga,
     format_next,
+    format_profile,
+    format_profile_help,
+    format_profile_saved,
     format_status,
     format_strength,
     format_today,
     format_trend,
+    merge_profile,
     format_week,
     parse_checkin,
+    parse_profile,
 )
 from .config import settings
-from .store import load_checkins, load_sync, load_sync_history, save_checkin, save_sync
+from .store import (
+    load_checkins,
+    load_profile,
+    load_sync,
+    load_sync_history,
+    save_checkin,
+    save_profile,
+    save_sync,
+)
 
 
 app = FastAPI(title="Garmin Coach")
@@ -59,6 +72,12 @@ def checkins(x_sync_secret: str | None = Header(default=None), limit: int = 10) 
     return {"checkins": load_checkins(min(max(limit, 1), 50))}
 
 
+@app.get("/profile")
+def profile(x_sync_secret: str | None = Header(default=None)) -> dict:
+    require_sync_secret(x_sync_secret)
+    return {"profile": load_profile()}
+
+
 def require_sync_secret(x_sync_secret: str | None) -> None:
     if settings.sync_secret and x_sync_secret != settings.sync_secret:
         raise HTTPException(status_code=401, detail="Invalid sync secret")
@@ -87,6 +106,7 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
 
 def route_message(text: str, user_id: str | None = None) -> str:
     sync = load_sync()
+    profile = load_profile()
     command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
     args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
     if command in {"/start", "/help"}:
@@ -102,24 +122,33 @@ def route_message(text: str, user_id: str | None = None) -> str:
     if command == "/fatiga":
         return format_fatigue(sync)
     if command == "/carga":
-        return format_load(sync)
+        return format_load(sync, profile)
     if command == "/tendencia":
         return format_trend(sync, load_sync_history())
     if command == "/feedback":
-        return format_feedback(sync, load_checkins())
+        return format_feedback(sync, load_checkins(), profile)
+    if command == "/perfil":
+        if not args:
+            return format_profile(profile)
+        update = parse_profile(args, user_id)
+        recognized = any(key not in {"user_id", "raw"} for key in update)
+        if not recognized:
+            return format_profile_help()
+        document = save_profile(merge_profile(profile, update, user_id))
+        return format_profile_saved(document)
     if command == "/checkin":
         if not args:
             return format_checkin_help()
         document = save_checkin(parse_checkin(args, user_id))
         return format_checkin_saved(document)
     if command == "/ajustar":
-        return format_adjust(sync, load_checkins(), args)
+        return format_adjust(sync, load_checkins(), args, profile)
     if command == "/bici":
-        return format_bike(sync)
+        return format_bike(sync, profile)
     if command == "/fuerza":
         return format_strength(sync)
     if command == "/malaga":
-        return format_malaga(sync)
+        return format_malaga(sync, profile)
     if command == "/status":
         return format_status(sync)
     if command == "/syncinfo":

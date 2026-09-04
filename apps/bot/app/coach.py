@@ -16,6 +16,7 @@ def format_help() -> str:
         "/carga - carga running/bici/fuerza\n"
         "/tendencia - evolucion semanal\n"
         "/feedback - analiza la ultima actividad\n"
+        "/perfil - guarda sexo, edad, peso, altura, FC, FTP y objetivos\n"
         "/checkin - guarda sensaciones: rpe, sueno, energia, molestias\n"
         "/ajustar - adapta el proximo entreno con tus sensaciones\n"
         "/bici - resumen de ciclismo\n"
@@ -129,7 +130,11 @@ def format_latest(sync: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
-def format_feedback(sync: dict[str, Any] | None, checkins: list[dict[str, Any]] | None = None) -> str:
+def format_feedback(
+    sync: dict[str, Any] | None,
+    checkins: list[dict[str, Any]] | None = None,
+    profile: dict[str, Any] | None = None,
+) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
 
@@ -155,8 +160,14 @@ def format_feedback(sync: dict[str, Any] | None, checkins: list[dict[str, Any]] 
         lines.append(f"Ritmo: {activity.get('pace')}")
     if activity.get("avg_hr"):
         lines.append(f"Pulso medio: {activity.get('avg_hr')}")
+        hr_context = _relative_hr_line(activity.get("avg_hr"), profile)
+        if hr_context:
+            lines.append(hr_context)
     if activity.get("avg_power") or activity.get("normalized_power"):
         lines.append(f"Potencia: media {activity.get('avg_power', 'n/a')} W, NP {activity.get('normalized_power', 'n/a')} W")
+        power_context = _power_context_line(activity, profile)
+        if power_context:
+            lines.append(power_context)
     if activity.get("training_effect"):
         lines.append(f"Training effect: {activity.get('training_effect')}")
 
@@ -222,10 +233,144 @@ def format_checkin_saved(document: dict[str, Any]) -> str:
     return f"Check-in guardado\n{details}\nLo usare en /ajustar y /feedback."
 
 
+def format_profile_help() -> str:
+    return (
+        "Perfil deportivo\n"
+        "Guarda datos asi:\n"
+        "/perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40\n"
+        "Puedes actualizar solo un campo: /perfil peso 71.5 ftp 235\n"
+        "Campos: sexo, edad, altura, peso, fcmax, fcreposo, fcumbral, ftp, ritmo_umbral, objetivo_maraton, marca_maraton, nota."
+    )
+
+
+def parse_profile(text: str, user_id: str | None = None) -> dict[str, Any]:
+    raw = text.strip()
+    normalized = _normalize_text(raw)
+    profile: dict[str, Any] = {"user_id": user_id, "raw": raw}
+
+    sex = _extract_sex(normalized)
+    if sex:
+        profile["sex"] = sex
+
+    age = _bounded_number(_extract_float_after(normalized, ("edad", "age")), 12, 90)
+    if age is not None:
+        profile["age"] = int(age)
+
+    height = _extract_float_after(normalized, ("altura", "height", "talla"))
+    if height is not None and height <= 3:
+        height *= 100
+    height = _bounded_number(height, 100, 230)
+    if height is not None:
+        profile["height_cm"] = round(height, 1)
+
+    weight = _bounded_number(_extract_float_after(normalized, ("peso", "weight")), 35, 200)
+    if weight is not None:
+        profile["weight_kg"] = round(weight, 1)
+
+    max_hr = _bounded_number(_extract_float_after(normalized, ("fcmax", "maxhr", "max_hr")), 90, 230)
+    if max_hr is not None:
+        profile["max_hr"] = int(max_hr)
+
+    resting_hr = _bounded_number(
+        _extract_float_after(normalized, ("fcreposo", "fc_reposo", "reposo", "restinghr", "resting_hr")),
+        30,
+        100,
+    )
+    if resting_hr is not None:
+        profile["resting_hr"] = int(resting_hr)
+
+    lactate_hr = _bounded_number(
+        _extract_float_after(normalized, ("fcumbral", "fc_umbral", "umbral", "lactatehr", "lactate_hr")),
+        90,
+        220,
+    )
+    if lactate_hr is not None:
+        profile["lactate_hr"] = int(lactate_hr)
+
+    ftp = _bounded_number(_extract_float_after(normalized, ("ftp",)), 50, 600)
+    if ftp is not None:
+        profile["ftp"] = int(ftp)
+
+    threshold_pace = _extract_time_after(normalized, ("ritmo_umbral", "pace_umbral", "threshold_pace"))
+    if threshold_pace:
+        profile["running_threshold_pace"] = threshold_pace
+
+    marathon_goal = _extract_time_after(normalized, ("objetivo_maraton", "objetivo", "marathon_goal"))
+    if marathon_goal:
+        profile["marathon_goal"] = marathon_goal
+
+    marathon_pb = _extract_time_after(normalized, ("marca_maraton", "marca", "pb", "marathon_pb"))
+    if marathon_pb:
+        profile["marathon_pb"] = marathon_pb
+
+    note = _extract_note(raw)
+    if note:
+        profile["notes"] = note
+
+    return {key: value for key, value in profile.items() if value not in (None, "")}
+
+
+def merge_profile(
+    existing_document: dict[str, Any] | None,
+    update: dict[str, Any],
+    user_id: str | None = None,
+) -> dict[str, Any]:
+    existing = _profile_payload(existing_document).copy()
+    if user_id and "user_id" not in existing:
+        existing["user_id"] = user_id
+    existing.update({key: value for key, value in update.items() if value not in (None, "")})
+    return existing
+
+
+def format_profile(document: dict[str, Any] | None) -> str:
+    if not document:
+        return format_profile_help()
+
+    profile = _profile_payload(document)
+    if not profile:
+        return format_profile_help()
+
+    lines = ["Perfil deportivo"]
+    if document.get("updated_at"):
+        lines.append(f"Actualizado: {document.get('updated_at')}")
+    context = _profile_context_line(profile)
+    if context:
+        lines.append(f"Datos: {context}")
+    if profile.get("max_hr") or profile.get("resting_hr") or profile.get("lactate_hr"):
+        lines.append(
+            "Pulso: "
+            f"FCmax {profile.get('max_hr', 'n/a')}, "
+            f"reposo {profile.get('resting_hr', 'n/a')}, "
+            f"umbral {profile.get('lactate_hr', 'n/a')}"
+        )
+    if profile.get("ftp") or profile.get("weight_kg"):
+        lines.append(f"Bici: FTP {profile.get('ftp', 'n/a')} W, peso {profile.get('weight_kg', 'n/a')} kg")
+    if profile.get("running_threshold_pace"):
+        lines.append(f"Ritmo umbral running: {profile.get('running_threshold_pace')}/km")
+    if profile.get("marathon_goal") or profile.get("marathon_pb"):
+        lines.append(
+            "Maraton: "
+            f"objetivo {profile.get('marathon_goal', 'n/a')}, "
+            f"marca {profile.get('marathon_pb', 'n/a')}"
+        )
+    if profile.get("notes"):
+        lines.append(f"Nota: {profile.get('notes')}")
+    missing = _missing_profile_fields(profile)
+    if missing:
+        lines.append("Para afinar mas faltan: " + ", ".join(missing))
+    lines.append("Actualizar: /perfil peso 71.5 ftp 235")
+    return "\n".join(lines)
+
+
+def format_profile_saved(document: dict[str, Any]) -> str:
+    return "Perfil actualizado\n" + format_profile(document)
+
+
 def format_adjust(
     sync: dict[str, Any] | None,
     checkins: list[dict[str, Any]] | None = None,
     note: str = "",
+    profile: dict[str, Any] | None = None,
 ) -> str:
     if not sync:
         return "Necesito una sincronizacion Garmin antes de ajustar el plan."
@@ -259,6 +404,9 @@ def format_adjust(
         lines.append(f"Sensaciones usadas: {_checkin_reading(latest)}")
     else:
         lines.append("Tip: anade sensaciones con /checkin para afinar mas.")
+    context = _profile_context_line(_profile_payload(profile))
+    if context:
+        lines.append(f"Perfil usado: {context}")
     return "\n".join(lines)
 
 
@@ -287,7 +435,7 @@ def format_fatigue(sync: dict[str, Any] | None) -> str:
     )
 
 
-def format_load(sync: dict[str, Any] | None) -> str:
+def format_load(sync: dict[str, Any] | None, profile: dict[str, Any] | None = None) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
 
@@ -304,16 +452,20 @@ def format_load(sync: dict[str, Any] | None) -> str:
     strength_weight = _safe_float(strength.get("hours_7d")) * 0.45
     equivalent_hours = round(running_weight + cycling_weight + strength_weight, 1)
 
-    return (
-        "Carga semanal\n"
-        f"Total semana: {week.get('hours', 0)} h, {week.get('km', 0)} km\n"
-        f"Running 7d: {running.get('sessions_7d', 0)} sesiones, {running.get('km_7d', 0)} km, {running.get('hours_7d', 0)} h\n"
-        f"Bici 7d: {cycling.get('sessions_7d', 0)} sesiones, {cycling.get('km_7d', 0)} km, {cycling.get('hours_7d', 0)} h\n"
-        f"Fuerza 7d: {strength.get('sessions_7d', 0)} sesiones, {strength.get('hours_7d', 0)} h\n"
-        f"Carga equivalente aprox: {equivalent_hours} h running\n"
-        f"Ratio agudo/cronico: {fatigue.get('acute_chronic_ratio', 'n/a')}\n"
-        f"Lectura: {_load_reading(fatigue, equivalent_hours)}"
-    )
+    lines = [
+        "Carga semanal",
+        f"Total semana: {week.get('hours', 0)} h, {week.get('km', 0)} km",
+        f"Running 7d: {running.get('sessions_7d', 0)} sesiones, {running.get('km_7d', 0)} km, {running.get('hours_7d', 0)} h",
+        f"Bici 7d: {cycling.get('sessions_7d', 0)} sesiones, {cycling.get('km_7d', 0)} km, {cycling.get('hours_7d', 0)} h",
+        f"Fuerza 7d: {strength.get('sessions_7d', 0)} sesiones, {strength.get('hours_7d', 0)} h",
+        f"Carga equivalente aprox: {equivalent_hours} h running",
+        f"Ratio agudo/cronico: {fatigue.get('acute_chronic_ratio', 'n/a')}",
+    ]
+    athlete = _profile_payload(profile)
+    if athlete.get("weight_kg") or athlete.get("ftp"):
+        lines.append(f"Contexto perfil: peso {athlete.get('weight_kg', 'n/a')} kg, FTP {athlete.get('ftp', 'n/a')} W")
+    lines.append(f"Lectura: {_load_reading(fatigue, equivalent_hours)}")
+    return "\n".join(lines)
 
 
 def format_trend(sync: dict[str, Any] | None, history: list[dict[str, Any]] | None = None) -> str:
@@ -352,7 +504,7 @@ def format_trend(sync: dict[str, Any] | None, history: list[dict[str, Any]] | No
     return "\n".join(lines)
 
 
-def format_bike(sync: dict[str, Any] | None) -> str:
+def format_bike(sync: dict[str, Any] | None, profile: dict[str, Any] | None = None) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
 
@@ -371,6 +523,9 @@ def format_bike(sync: dict[str, Any] | None) -> str:
     ]
     if latest.get("avg_power") or latest.get("normalized_power"):
         lines.append(f"Potencia ultima: media {latest.get('avg_power', 'n/a')} W, NP {latest.get('normalized_power', 'n/a')} W")
+        power_context = _power_context_line(latest, profile)
+        if power_context:
+            lines.append(power_context)
     lines.append("Lectura: la bici suma base aerobica con menos impacto, pero las salidas intensas cuentan como carga dura para las series de running.")
     return "\n".join(lines)
 
@@ -393,27 +548,36 @@ def format_strength(sync: dict[str, Any] | None) -> str:
     )
 
 
-def format_malaga(sync: dict[str, Any] | None) -> str:
+def format_malaga(sync: dict[str, Any] | None, profile: dict[str, Any] | None = None) -> str:
     if not sync:
         return "Necesito una sincronizacion Garmin antes de evaluar Malaga."
 
     payload = sync.get("payload", {})
     plan_level = payload.get("plan_level", {})
     summary = payload.get("summary", {})
+    athlete = _profile_payload(profile)
+    goal = athlete.get("marathon_goal") or "3:40"
+    pb = athlete.get("marathon_pb") or "3:40"
+    target_pace = _marathon_pace_from_time(str(goal)) or "5:13/km"
 
     verdict = (
         "Puedes pelear el sub-3:40 si construimos la tirada larga sin molestias. "
         "La velocidad aparece, falta resistencia especifica."
     )
-    return (
-        "Maraton de Malaga\n"
-        f"{verdict}\n"
-        f"Nivel actual: {plan_level.get('level', 'n/a')}\n"
-        f"Objetivo: {plan_level.get('goal', 'n/a')}\n"
-        f"Km 28 dias: {summary.get('km_28d', 'n/a')}\n"
-        f"Tirada larga reciente: {_longest_run(summary)}\n"
-        "Ritmo objetivo 3:40: 5:13/km. Salida recomendada: 5:15-5:18/km."
-    )
+    lines = [
+        "Maraton de Malaga",
+        verdict,
+        f"Nivel actual: {plan_level.get('level', 'n/a')}",
+        f"Objetivo plan: {plan_level.get('goal', 'n/a')}",
+        f"Marca/objetivo perfil: PB {pb}, objetivo {goal}",
+        f"Km 28 dias: {summary.get('km_28d', 'n/a')}",
+        f"Tirada larga reciente: {_longest_run(summary)}",
+        f"Ritmo objetivo {goal}: {target_pace}. Salida recomendada: 3-5 s/km mas suave los primeros 8-10 km.",
+    ]
+    context = _profile_context_line(athlete)
+    if context:
+        lines.append(f"Perfil usado: {context}")
+    return "\n".join(lines)
 
 
 def _longest_run(summary: dict[str, Any]) -> str:
@@ -653,6 +817,138 @@ def _adjustment_reason(
     if _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 4:
         reasons.append("energia baja")
     return ", ".join(reasons) if reasons else "no hay senales de alarma fuertes."
+
+
+def _profile_payload(document: dict[str, Any] | None) -> dict[str, Any]:
+    if not document:
+        return {}
+    profile = document.get("profile", document)
+    return profile if isinstance(profile, dict) else {}
+
+
+def _profile_context_line(profile: dict[str, Any]) -> str:
+    if not profile:
+        return ""
+    bits = []
+    if profile.get("sex"):
+        bits.append(f"sexo {profile.get('sex')}")
+    if profile.get("age"):
+        bits.append(f"{profile.get('age')} anos")
+    if profile.get("height_cm"):
+        bits.append(f"{profile.get('height_cm')} cm")
+    if profile.get("weight_kg"):
+        bits.append(f"{profile.get('weight_kg')} kg")
+    return ", ".join(bits) if bits else ""
+
+
+def _relative_hr_line(avg_hr: Any, document: dict[str, Any] | None) -> str:
+    profile = _profile_payload(document)
+    avg = _safe_float(avg_hr)
+    max_hr = _safe_float(profile.get("max_hr"))
+    resting_hr = _safe_float(profile.get("resting_hr"))
+    lactate_hr = _safe_float(profile.get("lactate_hr"))
+    if not avg:
+        return ""
+
+    bits = []
+    if max_hr:
+        bits.append(f"{round(avg / max_hr * 100)}% FCmax")
+    if max_hr and resting_hr and max_hr > resting_hr:
+        reserve = (avg - resting_hr) / (max_hr - resting_hr)
+        bits.append(f"{round(max(reserve, 0) * 100)}% reserva FC")
+    if lactate_hr:
+        bits.append(f"{round(avg / lactate_hr * 100)}% FC umbral")
+    return "Pulso relativo: " + ", ".join(bits) if bits else ""
+
+
+def _power_context_line(activity: dict[str, Any], document: dict[str, Any] | None) -> str:
+    profile = _profile_payload(document)
+    power = _safe_float(activity.get("normalized_power")) or _safe_float(activity.get("avg_power"))
+    weight = _safe_float(profile.get("weight_kg"))
+    ftp = _safe_float(profile.get("ftp"))
+    if not power:
+        return ""
+
+    bits = []
+    if weight:
+        bits.append(f"{round(power / weight, 2)} W/kg")
+    if ftp:
+        bits.append(f"{round(power / ftp * 100)}% FTP")
+    return "Potencia relativa: " + ", ".join(bits) if bits else ""
+
+
+def _missing_profile_fields(profile: dict[str, Any]) -> list[str]:
+    required = (
+        ("sex", "sexo"),
+        ("age", "edad"),
+        ("height_cm", "altura"),
+        ("weight_kg", "peso"),
+        ("max_hr", "fcmax"),
+        ("resting_hr", "fcreposo"),
+        ("ftp", "ftp"),
+    )
+    return [label for key, label in required if not profile.get(key)]
+
+
+def _extract_sex(text: str) -> str | None:
+    match = re.search(r"\b(?:sexo|sex)\s*[:=]?\s*([a-z_ -]+)", text)
+    value = match.group(1).split()[0] if match else ""
+    if value in {"hombre", "masculino", "male", "m", "varon"}:
+        return "hombre"
+    if value in {"mujer", "femenino", "female", "f"}:
+        return "mujer"
+    if value in {"otro", "other", "no_binario", "nobinario"}:
+        return "otro"
+    return None
+
+
+def _extract_float_after(text: str, labels: tuple[str, ...]) -> float | None:
+    for label in labels:
+        match = re.search(rf"\b{re.escape(label)}\s*[:=]?\s*([0-9]+(?:[,.][0-9]+)?)", text)
+        if match:
+            return float(match.group(1).replace(",", "."))
+    return None
+
+
+def _bounded_number(value: float | None, minimum: float, maximum: float) -> float | None:
+    if value is None or value < minimum or value > maximum:
+        return None
+    return value
+
+
+def _extract_time_after(text: str, labels: tuple[str, ...]) -> str | None:
+    for label in labels:
+        match = re.search(rf"\b{re.escape(label)}\s*[:=]?\s*([0-9]{{1,2}}:[0-9]{{2}}(?::[0-9]{{2}})?)\b", text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _extract_note(text: str) -> str | None:
+    match = re.search(r"\b(?:nota|notas|note)\s+(.+)", text, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).strip()[:240]
+    return None
+
+
+def _marathon_pace_from_time(value: str) -> str | None:
+    parts = value.split(":")
+    if len(parts) == 2:
+        hours_value, minutes_value = parts
+        seconds_value = "0"
+    elif len(parts) == 3:
+        hours_value, minutes_value, seconds_value = parts
+    else:
+        return None
+    try:
+        total_seconds = int(hours_value) * 3600 + int(minutes_value) * 60 + int(seconds_value)
+    except ValueError:
+        return None
+    if total_seconds <= 0:
+        return None
+    pace_seconds = round(total_seconds / 42.195)
+    minutes, seconds = divmod(pace_seconds, 60)
+    return f"{minutes}:{seconds:02d}/km"
 
 
 def _safe_float(value: Any) -> float:

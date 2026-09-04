@@ -132,6 +132,7 @@ python3 scripts/set_telegram_webhook.py
 - `/carga`
 - `/tendencia`
 - `/feedback`
+- `/perfil`
 - `/checkin`
 - `/ajustar`
 - `/bici`
@@ -148,6 +149,8 @@ Examples:
 
 ```text
 /feedback
+/perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
+/perfil peso 71.5 ftp 235
 /checkin rpe 6 sueno 7 energia 6 sin molestias nota piernas algo cargadas
 /checkin rpe 8 sueno 4 energia 3 molestia gemelo
 /ajustar
@@ -155,4 +158,21 @@ Examples:
 ```
 
 Check-ins are stored in Postgres and used by `/feedback` and `/ajustar`.
+The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
+`/carga`, `/ajustar`, and `/malaga`.
+
+Useful `/perfil` fields:
+
+- `sexo`: hombre, mujer, otro.
+- `edad`: years.
+- `altura`: centimeters or meters, for example `176` or `1.76`.
+- `peso`: kilograms.
+- `fcmax`: maximum heart rate.
+- `fcreposo`: resting heart rate.
+- `fcumbral`: threshold heart rate, if known.
+- `ftp`: cycling functional threshold power in watts.
+- `ritmo_umbral`: running threshold pace, for example `4:50`.
+- `objetivo_maraton`: marathon goal time, for example `3:40`.
+- `marca_maraton`: marathon personal best, for example `3:40`.
+- `nota`: free profile note.
 # garmin-coach

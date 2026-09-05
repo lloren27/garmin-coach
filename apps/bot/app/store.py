@@ -12,6 +12,7 @@ SYNC_FILE = DATA_DIR / "latest_sync.json"
 SYNC_HISTORY_FILE = DATA_DIR / "sync_history.jsonl"
 CHECKINS_FILE = DATA_DIR / "checkins.jsonl"
 PROFILE_FILE = DATA_DIR / "athlete_profile.json"
+SYNC_REQUEST_FILE = DATA_DIR / "sync_request.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -102,6 +103,52 @@ def load_profile() -> dict[str, Any] | None:
     if not PROFILE_FILE.exists():
         return None
     return json.loads(PROFILE_FILE.read_text())
+
+
+def save_sync_request(requested_by: str | None = None) -> dict[str, Any]:
+    document = {
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+        "requested_by": requested_by,
+        "status": "pending",
+        "completed_at": None,
+        "last_error": None,
+    }
+    if DATABASE_URL:
+        save_state_postgres("sync_request", document)
+        return document
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SYNC_REQUEST_FILE.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n")
+    return document
+
+
+def load_sync_request() -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return load_state_postgres("sync_request")
+
+    if not SYNC_REQUEST_FILE.exists():
+        return None
+    return json.loads(SYNC_REQUEST_FILE.read_text())
+
+
+def complete_sync_request(status: str = "completed", error: str | None = None) -> dict[str, Any] | None:
+    document = load_sync_request()
+    if not document:
+        return None
+    document.update(
+        {
+            "status": status,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "last_error": error,
+        }
+    )
+    if DATABASE_URL:
+        save_state_postgres("sync_request", document)
+        return document
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SYNC_REQUEST_FILE.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n")
+    return document
 
 
 def save_sync_postgres(document: dict[str, Any]) -> None:
@@ -204,6 +251,14 @@ def load_checkins_postgres(limit: int) -> list[dict[str, Any]]:
 
 
 def save_profile_postgres(document: dict[str, Any]) -> None:
+    save_state_postgres("athlete_profile", document)
+
+
+def load_profile_postgres() -> dict[str, Any] | None:
+    return load_state_postgres("athlete_profile")
+
+
+def save_state_postgres(key: str, document: dict[str, Any]) -> None:
     import psycopg
     from psycopg.types.json import Jsonb
 
@@ -216,18 +271,18 @@ def save_profile_postgres(document: dict[str, Any]) -> None:
             on conflict (key)
             do update set document = excluded.document, updated_at = excluded.updated_at
             """,
-            ("athlete_profile", Jsonb(document)),
+            (key, Jsonb(document)),
         )
 
 
-def load_profile_postgres() -> dict[str, Any] | None:
+def load_state_postgres(key: str) -> dict[str, Any] | None:
     import psycopg
 
     with psycopg.connect(DATABASE_URL) as conn:
         ensure_schema(conn)
         row = conn.execute(
             "select document from sync_state where key = %s",
-            ("athlete_profile",),
+            (key,),
         ).fetchone()
 
     if not row:

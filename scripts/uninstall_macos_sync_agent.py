@@ -9,7 +9,8 @@ from pathlib import Path
 
 
 LABEL = "com.lloren27.garmin-coach.sync"
-PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+WATCH_LABEL = "com.lloren27.garmin-coach.sync-watch"
+LABELS = (LABEL, WATCH_LABEL)
 
 
 def run(command: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -18,10 +19,12 @@ def run(command: list[str], check: bool = True) -> subprocess.CompletedProcess:
 
 def main() -> int:
     domain = f"gui/{os.getuid()}"
-    run(["launchctl", "bootout", domain, str(PLIST_PATH)], check=False)
-    if PLIST_PATH.exists():
-        PLIST_PATH.unlink()
-    print(f"Uninstalled LaunchAgent: {LABEL}")
+    for label in LABELS:
+        plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        run(["launchctl", "bootout", domain, str(plist_path)], check=False)
+        if plist_path.exists():
+            plist_path.unlink()
+        print(f"Uninstalled LaunchAgent: {label}")
     return 0
 
 

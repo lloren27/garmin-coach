@@ -16,6 +16,7 @@ def format_help() -> str:
         "/carga - carga running/bici/fuerza\n"
         "/tendencia - evolucion semanal\n"
         "/feedback - analiza la ultima actividad\n"
+        "/sync - solicita sincronizacion desde el Mac\n"
         "/perfil - guarda sexo, edad, peso, altura, FC, FTP y objetivos\n"
         "/checkin - guarda sensaciones: rpe, sueno, energia, molestias\n"
         "/ajustar - adapta el proximo entreno con tus sensaciones\n"
@@ -42,6 +43,34 @@ def format_status(sync: dict[str, Any] | None) -> str:
         f"Media semanal 8 semanas: {summary.get('avg_weekly_km_8w', 'n/a')}\n"
         f"Tirada mas larga: {_longest_run(summary)}"
     )
+
+
+def format_syncinfo(sync: dict[str, Any] | None, sync_request: dict[str, Any] | None = None) -> str:
+    lines = []
+    if not sync:
+        lines.append("Sin sincronizaciones todavia.")
+    else:
+        lines.append(f"Ultima sincronizacion recibida: {sync.get('received_at')}")
+    if sync_request:
+        status = sync_request.get("status", "n/a")
+        requested_at = sync_request.get("requested_at", "n/a")
+        lines.append(f"Ultima peticion /sync: {status} ({requested_at})")
+        if sync_request.get("completed_at"):
+            lines.append(f"Procesada: {sync_request.get('completed_at')}")
+        if sync_request.get("last_error"):
+            lines.append(f"Error: {str(sync_request.get('last_error'))[:160]}")
+    return "\n".join(lines)
+
+
+def format_sync_requested(document: dict[str, Any], sync: dict[str, Any] | None = None) -> str:
+    lines = [
+        "Sincronizacion solicitada",
+        f"Peticion: {document.get('requested_at')}",
+    ]
+    if sync:
+        lines.append(f"Ultimos datos actuales: {sync.get('received_at')}")
+    lines.append("El Mac la ejecutara en cuanto este despierto y el watcher local la detecte.")
+    return "\n".join(lines)
 
 
 def format_today(sync: dict[str, Any] | None) -> str:

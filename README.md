@@ -70,10 +70,12 @@ It runs:
 - every 4 hours while the Mac is awake;
 - at 08:20 and 08:50, after the usual morning session;
 - at 18:30, 21:15, and 21:45, around the usual evening training window.
+- every 5 minutes it checks whether Telegram requested a sync or whether the
+  latest data is older than 30 minutes.
 
 If the MacBook is asleep with the lid closed, sync does not run during deep
-sleep. It will catch up when the user session starts or at the next interval
-while the Mac is awake.
+sleep. It will catch up after the Mac wakes, while the user session is active,
+through the 5-minute watcher.
 
 Immediate manual sync:
 
@@ -132,6 +134,7 @@ python3 scripts/set_telegram_webhook.py
 - `/carga`
 - `/tendencia`
 - `/feedback`
+- `/sync`
 - `/perfil`
 - `/checkin`
 - `/ajustar`
@@ -149,6 +152,7 @@ Examples:
 
 ```text
 /feedback
+/sync
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
 /perfil peso 71.5 ftp 235
 /checkin rpe 6 sueno 7 energia 6 sin molestias nota piernas algo cargadas
@@ -160,6 +164,8 @@ Examples:
 Check-ins are stored in Postgres and used by `/feedback` and `/ajustar`.
 The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
 `/carga`, `/ajustar`, and `/malaga`.
+`/sync` requests a Garmin sync from Telegram. The Railway bot stores the request,
+and the local Mac watcher executes it while the Mac is awake.
 
 Useful `/perfil` fields:
 

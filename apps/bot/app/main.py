@@ -18,6 +18,8 @@ from .coach import (
     format_profile,
     format_profile_help,
     format_profile_saved,
+    format_sync_requested,
+    format_syncinfo,
     format_status,
     format_strength,
     format_today,
@@ -29,12 +31,15 @@ from .coach import (
 )
 from .config import settings
 from .store import (
+    complete_sync_request,
     load_checkins,
     load_profile,
     load_sync,
     load_sync_history,
+    load_sync_request,
     save_checkin,
     save_profile,
+    save_sync_request,
     save_sync,
 )
 
@@ -51,7 +56,37 @@ def health() -> dict[str, str]:
 async def sync(payload: dict, x_sync_secret: str | None = Header(default=None)) -> dict:
     require_sync_secret(x_sync_secret)
     document = save_sync(payload)
+    request_state = load_sync_request()
+    if request_state and request_state.get("status") == "pending":
+        complete_sync_request(status="completed")
     return {"ok": True, "received_at": document["received_at"]}
+
+
+@app.post("/sync/request")
+async def request_sync(payload: dict | None = None, x_sync_secret: str | None = Header(default=None)) -> dict:
+    require_sync_secret(x_sync_secret)
+    payload = payload or {}
+    document = save_sync_request(str(payload.get("requested_by")) if payload.get("requested_by") else None)
+    return {"ok": True, "request": document}
+
+
+@app.get("/sync/request")
+def sync_request(x_sync_secret: str | None = Header(default=None)) -> dict:
+    require_sync_secret(x_sync_secret)
+    document = load_sync_request()
+    return {"request": document, "pending": bool(document and document.get("status") == "pending")}
+
+
+@app.post("/sync/request/complete")
+async def sync_request_complete(payload: dict | None = None, x_sync_secret: str | None = Header(default=None)) -> dict:
+    require_sync_secret(x_sync_secret)
+    payload = payload or {}
+    status = str(payload.get("status") or "completed")
+    if status not in {"completed", "failed"}:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    error = str(payload.get("error"))[:500] if payload.get("error") else None
+    document = complete_sync_request(status=status, error=error)
+    return {"ok": True, "request": document}
 
 
 @app.get("/status")
@@ -127,6 +162,9 @@ def route_message(text: str, user_id: str | None = None) -> str:
         return format_trend(sync, load_sync_history())
     if command == "/feedback":
         return format_feedback(sync, load_checkins(), profile)
+    if command == "/sync":
+        document = save_sync_request(user_id)
+        return format_sync_requested(document, sync)
     if command == "/perfil":
         if not args:
             return format_profile(profile)
@@ -152,9 +190,7 @@ def route_message(text: str, user_id: str | None = None) -> str:
     if command == "/status":
         return format_status(sync)
     if command == "/syncinfo":
-        if not sync:
-            return "Sin sincronizaciones todavia."
-        return f"Ultima sincronizacion recibida: {sync.get('received_at')}"
+        return format_syncinfo(sync, load_sync_request())
     return "Te leo. Usa /help para ver los comandos disponibles."
 
 

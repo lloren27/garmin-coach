@@ -55,6 +55,11 @@ The sync reads `~/.garminconnect` by default and posts summarized data to
 `GARMIN_COACH_API_URL`.
 Each successful sync updates the latest state and appends one compact snapshot
 to history when Postgres is enabled.
+The payload includes activities plus Garmin wellness and physiology signals that
+can affect training: resting heart rate, calories, sleep, HRV, body battery,
+stress, respiration, SpO2, intensity minutes, body composition, training status,
+race predictions, lactate threshold, FTP, endurance score, and hill score when
+available for the account/device.
 
 ## 3b. Automate Mac sync
 
@@ -131,6 +136,7 @@ python3 scripts/set_telegram_webhook.py
 - `/ultima`
 - `/proximo`
 - `/fatiga`
+- `/salud`
 - `/carga`
 - `/tendencia`
 - `/feedback`
@@ -153,6 +159,7 @@ Examples:
 ```text
 /feedback
 /sync
+/salud
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
 /perfil peso 71.5 ftp 235
 /checkin rpe 6 sueno 7 energia 6 sin molestias nota piernas algo cargadas

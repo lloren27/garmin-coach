@@ -13,6 +13,7 @@ def format_help() -> str:
         "/ultima - ultima actividad\n"
         "/proximo - entreno recomendado\n"
         "/fatiga - riesgo de fatiga\n"
+        "/salud - recuperacion, reposo, calorias y metricas Garmin\n"
         "/carga - carga running/bici/fuerza\n"
         "/tendencia - evolucion semanal\n"
         "/feedback - analiza la ultima actividad\n"
@@ -84,6 +85,9 @@ def format_today(sync: dict[str, Any] | None) -> str:
     daily = _clean_dict(wellness.get("daily"))
     sleep = _clean_dict(wellness.get("sleep"))
     hrv = _clean_dict(wellness.get("hrv"))
+    calories = _clean_dict(wellness.get("calories"))
+    stress = _clean_dict(wellness.get("stress"))
+    body_battery = _clean_dict(wellness.get("body_battery"))
     readiness = wellness.get("training_readiness")
     fatigue = summary.get("fatigue", {})
 
@@ -95,6 +99,12 @@ def format_today(sync: dict[str, Any] | None) -> str:
     if daily:
         lines.append(f"Pasos: {daily.get('steps', 'n/a')}")
         lines.append(f"Pulso reposo: {daily.get('resting_hr', 'n/a')}")
+    if calories:
+        lines.append(f"Calorias: activas {calories.get('active_kcal', 'n/a')}, total {calories.get('total_kcal', 'n/a')}")
+    if stress and stress.get("avg"):
+        lines.append(f"Estres medio: {stress.get('avg')}")
+    if body_battery and (body_battery.get("current") or body_battery.get("charged")):
+        lines.append(f"Body battery: actual {body_battery.get('current', 'n/a')}, carga {body_battery.get('charged', 'n/a')}")
     if sleep and sleep.get("sleep_seconds"):
         lines.append(f"Sueno: {_format_duration(sleep.get('sleep_seconds'))}")
         if sleep.get("score"):
@@ -106,6 +116,97 @@ def format_today(sync: dict[str, Any] | None) -> str:
         lines.append(f"Training readiness: {score}")
     lines.append(f"Fatiga estimada: {fatigue.get('level', 'n/a')}")
     lines.append(f"Recomendacion: {summary.get('next_workout', {}).get('title', 'rodaje facil')}")
+    return "\n".join(lines)
+
+
+def format_health(sync: dict[str, Any] | None) -> str:
+    if not sync:
+        return "Todavia no tengo datos sincronizados desde Garmin."
+
+    payload = sync.get("payload", {})
+    wellness = payload.get("wellness", {})
+    physiology = payload.get("physiology", {})
+    daily = _clean_dict(wellness.get("daily"))
+    sleep = _clean_dict(wellness.get("sleep"))
+    hrv = _clean_dict(wellness.get("hrv"))
+    readiness = _clean_dict(wellness.get("training_readiness"))
+    training_status = _clean_dict(wellness.get("training_status"))
+    body_battery = _clean_dict(wellness.get("body_battery"))
+    calories = _clean_dict(wellness.get("calories"))
+    stress = _clean_dict(wellness.get("stress"))
+    respiration = _clean_dict(wellness.get("respiration"))
+    spo2 = _clean_dict(wellness.get("spo2"))
+    resting_hr = _clean_dict(wellness.get("resting_hr"))
+    intensity = _clean_dict(wellness.get("intensity_minutes"))
+    body = _clean_dict(wellness.get("body"))
+    lactate = _clean_dict(physiology.get("lactate_threshold"))
+    ftp = _clean_dict(physiology.get("cycling_ftp"))
+    races = _clean_dict(physiology.get("race_predictions"))
+    endurance = _clean_dict(physiology.get("endurance_score"))
+    hill = _clean_dict(physiology.get("hill_score"))
+
+    lines = ["Salud y recuperacion Garmin"]
+    if daily:
+        lines.append(
+            f"Dia: pasos {daily.get('steps', 'n/a')}, reposo {daily.get('resting_hr', resting_hr.get('value', 'n/a'))}, "
+            f"activas {daily.get('active_kcal', calories.get('active_kcal', 'n/a'))} kcal"
+        )
+    elif resting_hr:
+        lines.append(f"Pulso reposo: {resting_hr.get('value', 'n/a')}")
+    if sleep:
+        parts = [f"total {_format_duration(sleep.get('sleep_seconds'))}"]
+        if sleep.get("score"):
+            parts.append(f"score {sleep.get('score')}")
+        if sleep.get("deep_seconds"):
+            parts.append(f"profundo {_format_duration(sleep.get('deep_seconds'))}")
+        if sleep.get("rem_seconds"):
+            parts.append(f"REM {_format_duration(sleep.get('rem_seconds'))}")
+        lines.append("Sueno: " + ", ".join(parts))
+    if hrv:
+        lines.append(
+            f"HRV: noche {hrv.get('last_night_avg', 'n/a')}, media {hrv.get('weekly_avg', 'n/a')}, estado {hrv.get('status', 'n/a')}"
+        )
+    if readiness:
+        lines.append(f"Readiness: {readiness.get('score', 'n/a')} ({readiness.get('level', 'n/a')})")
+    if training_status:
+        lines.append(
+            f"Training status: {training_status.get('status', 'n/a')}, carga {training_status.get('acute_load', 'n/a')}, ratio {training_status.get('load_ratio', 'n/a')}"
+        )
+    if body_battery:
+        lines.append(
+            f"Body battery: actual {body_battery.get('current', 'n/a')}, carga {body_battery.get('charged', 'n/a')}, drenaje {body_battery.get('drained', 'n/a')}"
+        )
+    if stress:
+        lines.append(f"Estres: medio {stress.get('avg', 'n/a')}, max {stress.get('max', 'n/a')}, estado {stress.get('status', 'n/a')}")
+    if calories:
+        lines.append(
+            f"Calorias: activas {calories.get('active_kcal', 'n/a')}, BMR {calories.get('bmr_kcal', 'n/a')}, total {calories.get('total_kcal', 'n/a')}"
+        )
+    if intensity:
+        lines.append(
+            f"Intensidad: dia {intensity.get('daily', 'n/a')} min, semana {intensity.get('weekly_total', 'n/a')}/{intensity.get('weekly_goal', 'n/a')} min"
+        )
+    if respiration:
+        lines.append(
+            f"Respiracion: despierto {respiration.get('avg_waking', 'n/a')}, sueno {respiration.get('avg_sleep', 'n/a')}"
+        )
+    if spo2:
+        lines.append(f"SpO2: media {spo2.get('avg', 'n/a')}, minima {spo2.get('lowest', 'n/a')}")
+    if body:
+        lines.append(
+            f"Cuerpo: peso {body.get('weight_kg', 'n/a')} kg, grasa {body.get('body_fat_pct', 'n/a')}%, IMC {body.get('bmi', 'n/a')}"
+        )
+    if lactate:
+        lines.append(f"Umbral lactato Garmin: FC {lactate.get('heart_rate', 'n/a')}, ritmo {lactate.get('pace', 'n/a')}")
+    if ftp:
+        lines.append(f"FTP Garmin: {ftp.get('ftp', ftp.get('watts', 'n/a'))} W")
+    if races:
+        lines.append(f"Prediccion carrera: 10K {races.get('ten_k', 'n/a')}, media {races.get('half_marathon', 'n/a')}, maraton {races.get('marathon', 'n/a')}")
+    if endurance or hill:
+        lines.append(f"Scores: endurance {endurance.get('score', 'n/a')}, hill {hill.get('score', 'n/a')}")
+    if len(lines) == 1:
+        lines.append("Garmin no devolvio senales wellness utiles en la ultima sync.")
+    lines.append("Lectura: estos datos afinan descanso, carga invisible, energia disponible y riesgo de fatiga.")
     return "\n".join(lines)
 
 

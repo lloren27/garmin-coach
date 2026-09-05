@@ -11,6 +11,7 @@ from .coach import (
     format_fatigue,
     format_feedback,
     format_help,
+    format_health,
     format_latest,
     format_load,
     format_malaga,
@@ -156,6 +157,8 @@ def route_message(text: str, user_id: str | None = None) -> str:
         return format_next(sync)
     if command == "/fatiga":
         return format_fatigue(sync)
+    if command == "/salud":
+        return format_health(sync)
     if command == "/carga":
         return format_load(sync, profile)
     if command == "/tendencia":

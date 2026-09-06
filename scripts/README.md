@@ -9,3 +9,5 @@ Utility scripts for local project setup.
 - `run_sync.sh`: runs a full local Garmin sync immediately.
 - `run_requested_sync.sh`: checks Railway for pending or stale sync state and
   runs a full sync only when needed.
+- `run_ai_worker.sh`: checks Railway for natural-language jobs and processes
+  them locally with Ollama.

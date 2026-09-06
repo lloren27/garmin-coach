@@ -17,6 +17,7 @@ def format_help() -> str:
         "/carga - carga running/bici/fuerza\n"
         "/tendencia - evolucion semanal\n"
         "/feedback - analiza la ultima actividad\n"
+        "/coach - pregunta libre al entrenador local\n"
         "/sync - solicita sincronizacion desde el Mac\n"
         "/perfil - guarda sexo, edad, peso, altura, FC, FTP y objetivos\n"
         "/checkin - guarda sensaciones: rpe, sueno, energia, molestias\n"
@@ -72,6 +73,25 @@ def format_sync_requested(document: dict[str, Any], sync: dict[str, Any] | None 
         lines.append(f"Ultimos datos actuales: {sync.get('received_at')}")
     lines.append("El Mac la ejecutara en cuanto este despierto y el watcher local la detecte.")
     return "\n".join(lines)
+
+
+def format_ai_help() -> str:
+    return (
+        "Coach local\n"
+        "Escribe /coach y tu pregunta, o escribe directamente en lenguaje natural.\n"
+        "Ejemplos:\n"
+        "/coach que hago manana si estoy cansado?\n"
+        "/coach analiza mi ultima actividad con la salud de hoy\n"
+        "/coach puedo meter series esta tarde?"
+    )
+
+
+def format_ai_queued(document: dict[str, Any]) -> str:
+    return (
+        "Te lo preparo con el coach local.\n"
+        f"Trabajo: {document.get('id')}\n"
+        "El Mac lo procesara con Ollama en cuanto este despierto."
+    )
 
 
 def format_today(sync: dict[str, Any] | None) -> str:

@@ -10,7 +10,8 @@ from pathlib import Path
 
 LABEL = "com.lloren27.garmin-coach.sync"
 WATCH_LABEL = "com.lloren27.garmin-coach.sync-watch"
-LABELS = (LABEL, WATCH_LABEL)
+AI_LABEL = "com.lloren27.garmin-coach.ai-worker"
+LABELS = (LABEL, WATCH_LABEL, AI_LABEL)
 
 
 def run(command: list[str], check: bool = True) -> subprocess.CompletedProcess:

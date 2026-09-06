@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ SYNC_HISTORY_FILE = DATA_DIR / "sync_history.jsonl"
 CHECKINS_FILE = DATA_DIR / "checkins.jsonl"
 PROFILE_FILE = DATA_DIR / "athlete_profile.json"
 SYNC_REQUEST_FILE = DATA_DIR / "sync_request.json"
+AI_JOBS_FILE = DATA_DIR / "ai_jobs.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -151,6 +153,105 @@ def complete_sync_request(status: str = "completed", error: str | None = None) -
     return document
 
 
+def create_ai_job(chat_id: str, text: str, user_id: str | None = None) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    document = {
+        "id": str(uuid.uuid4()),
+        "chat_id": str(chat_id),
+        "user_id": user_id,
+        "text": text.strip(),
+        "status": "pending",
+        "created_at": now,
+        "claimed_at": None,
+        "completed_at": None,
+        "answer": None,
+        "error": None,
+    }
+    if DATABASE_URL:
+        create_ai_job_postgres(document)
+        return document
+
+    jobs = load_ai_jobs_file()
+    jobs.append(document)
+    save_ai_jobs_file(jobs)
+    return document
+
+
+def claim_next_ai_job() -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return claim_next_ai_job_postgres()
+
+    jobs = load_ai_jobs_file()
+    now = datetime.now(timezone.utc).isoformat()
+    claimed = None
+    for job in jobs:
+        if job.get("status") == "pending" or _stale_running_job(job):
+            job["status"] = "running"
+            job["claimed_at"] = now
+            claimed = job
+            break
+    if claimed:
+        save_ai_jobs_file(jobs)
+    return claimed
+
+
+def complete_ai_job(
+    job_id: str,
+    status: str = "completed",
+    answer: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return complete_ai_job_postgres(job_id, status, answer, error)
+
+    jobs = load_ai_jobs_file()
+    now = datetime.now(timezone.utc).isoformat()
+    completed = None
+    for job in jobs:
+        if job.get("id") == job_id:
+            job.update(
+                {
+                    "status": status,
+                    "completed_at": now,
+                    "answer": answer,
+                    "error": error,
+                }
+            )
+            completed = job
+            break
+    if completed:
+        save_ai_jobs_file(jobs)
+    return completed
+
+
+def load_ai_jobs_file() -> list[dict[str, Any]]:
+    if not AI_JOBS_FILE.exists():
+        return []
+    value = json.loads(AI_JOBS_FILE.read_text())
+    return value if isinstance(value, list) else []
+
+
+def save_ai_jobs_file(jobs: list[dict[str, Any]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    AI_JOBS_FILE.write_text(json.dumps(jobs[-100:], indent=2, ensure_ascii=True) + "\n")
+
+
+def _stale_running_job(job: dict[str, Any]) -> bool:
+    if job.get("status") != "running":
+        return False
+    claimed_at = job.get("claimed_at")
+    if not claimed_at:
+        return True
+    try:
+        claimed = datetime.fromisoformat(str(claimed_at).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if claimed.tzinfo is None:
+        claimed = claimed.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - claimed.astimezone(timezone.utc)
+    return age.total_seconds() > 15 * 60
+
+
 def save_sync_postgres(document: dict[str, Any]) -> None:
     import psycopg
     from psycopg.types.json import Jsonb
@@ -250,6 +351,98 @@ def load_checkins_postgres(limit: int) -> list[dict[str, Any]]:
     return list(reversed(checkins))
 
 
+def create_ai_job_postgres(document: dict[str, Any]) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+        conn.execute(
+            """
+            insert into coach_ai_jobs (id, status, document, created_at)
+            values (%s, %s, %s, %s)
+            """,
+            (document["id"], document["status"], Jsonb(document), document["created_at"]),
+        )
+
+
+def claim_next_ai_job_postgres() -> dict[str, Any] | None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    now = datetime.now(timezone.utc).isoformat()
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+        with conn.transaction():
+            row = conn.execute(
+                """
+                select id, document
+                from coach_ai_jobs
+                where status = 'pending'
+                   or (status = 'running' and updated_at < now() - interval '15 minutes')
+                order by created_at asc
+                limit 1
+                for update skip locked
+                """
+            ).fetchone()
+            if not row:
+                return None
+            job = row[1]
+            if isinstance(job, str):
+                job = json.loads(job)
+            job["status"] = "running"
+            job["claimed_at"] = now
+            conn.execute(
+                """
+                update coach_ai_jobs
+                set status = %s, document = %s, updated_at = now()
+                where id = %s
+                """,
+                ("running", Jsonb(job), row[0]),
+            )
+            return job
+
+
+def complete_ai_job_postgres(
+    job_id: str,
+    status: str,
+    answer: str | None,
+    error: str | None,
+) -> dict[str, Any] | None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    now = datetime.now(timezone.utc).isoformat()
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+        row = conn.execute(
+            "select document from coach_ai_jobs where id = %s",
+            (job_id,),
+        ).fetchone()
+        if not row:
+            return None
+        job = row[0]
+        if isinstance(job, str):
+            job = json.loads(job)
+        job.update(
+            {
+                "status": status,
+                "completed_at": now,
+                "answer": answer,
+                "error": error,
+            }
+        )
+        conn.execute(
+            """
+            update coach_ai_jobs
+            set status = %s, document = %s, updated_at = now()
+            where id = %s
+            """,
+            (status, Jsonb(job), job_id),
+        )
+        return job
+
+
 def save_profile_postgres(document: dict[str, Any]) -> None:
     save_state_postgres("athlete_profile", document)
 
@@ -319,5 +512,22 @@ def ensure_schema(conn: Any) -> None:
             document jsonb not null,
             created_at timestamptz not null default now()
         )
+        """
+    )
+    conn.execute(
+        """
+        create table if not exists coach_ai_jobs (
+            id text primary key,
+            status text not null,
+            document jsonb not null,
+            created_at timestamptz not null default now(),
+            updated_at timestamptz not null default now()
+        )
+        """
+    )
+    conn.execute(
+        """
+        create index if not exists coach_ai_jobs_status_created_idx
+        on coach_ai_jobs (status, created_at)
         """
     )

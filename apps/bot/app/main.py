@@ -4,6 +4,8 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
+    format_ai_help,
+    format_ai_queued,
     format_adjust,
     format_bike,
     format_checkin_help,
@@ -32,7 +34,10 @@ from .coach import (
 )
 from .config import settings
 from .store import (
+    claim_next_ai_job,
+    complete_ai_job,
     complete_sync_request,
+    create_ai_job,
     load_checkins,
     load_profile,
     load_sync,
@@ -114,6 +119,48 @@ def profile(x_sync_secret: str | None = Header(default=None)) -> dict:
     return {"profile": load_profile()}
 
 
+@app.get("/ai/jobs/next")
+def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
+    require_sync_secret(x_sync_secret)
+    job = claim_next_ai_job()
+    if not job:
+        return {"job": None}
+    return {
+        "job": job,
+        "context": {
+            "sync": load_sync(),
+            "profile": load_profile(),
+            "checkins": load_checkins(5),
+            "history": load_sync_history(4),
+        },
+    }
+
+
+@app.post("/ai/jobs/{job_id}/complete")
+async def complete_ai_job_endpoint(
+    job_id: str,
+    payload: dict | None = None,
+    x_sync_secret: str | None = Header(default=None),
+) -> dict:
+    require_sync_secret(x_sync_secret)
+    payload = payload or {}
+    status = str(payload.get("status") or "completed")
+    if status not in {"completed", "failed"}:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    answer = str(payload.get("answer"))[:3500] if payload.get("answer") else None
+    error = str(payload.get("error"))[:500] if payload.get("error") else None
+    document = complete_ai_job(job_id, status=status, answer=answer, error=error)
+    if not document:
+        raise HTTPException(status_code=404, detail="Job not found")
+    chat_id = document.get("chat_id")
+    if chat_id:
+        if status == "completed" and answer:
+            await send_telegram_message(chat_id, answer)
+        elif status == "failed":
+            await send_telegram_message(chat_id, "No he podido procesarlo con el coach local. Revisa que el Mac y Ollama esten activos.")
+    return {"ok": True, "job": document}
+
+
 def require_sync_secret(x_sync_secret: str | None) -> None:
     if settings.sync_secret and x_sync_secret != settings.sync_secret:
         raise HTTPException(status_code=401, detail="Invalid sync secret")
@@ -135,14 +182,15 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
     if not chat_id:
         return {"ok": True}
 
-    response = route_message(text, str(user.get("id")) if user.get("id") else None)
+    response = route_message(text, str(user.get("id")) if user.get("id") else None, str(chat_id))
     await send_telegram_message(chat_id, response)
     return {"ok": True}
 
 
-def route_message(text: str, user_id: str | None = None) -> str:
+def route_message(text: str, user_id: str | None = None, chat_id: str | None = None) -> str:
     sync = load_sync()
     profile = load_profile()
+    ai_chat_id = chat_id or user_id or "telegram"
     command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
     args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
     if command in {"/start", "/help"}:
@@ -165,6 +213,11 @@ def route_message(text: str, user_id: str | None = None) -> str:
         return format_trend(sync, load_sync_history())
     if command == "/feedback":
         return format_feedback(sync, load_checkins(), profile)
+    if command == "/coach":
+        if not args:
+            return format_ai_help()
+        document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=args)
+        return format_ai_queued(document)
     if command == "/sync":
         document = save_sync_request(user_id)
         return format_sync_requested(document, sync)
@@ -194,6 +247,9 @@ def route_message(text: str, user_id: str | None = None) -> str:
         return format_status(sync)
     if command == "/syncinfo":
         return format_syncinfo(sync, load_sync_request())
+    if text and not command.startswith("/"):
+        document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=text)
+        return format_ai_queued(document)
     return "Te leo. Usa /help para ver los comandos disponibles."
 
 

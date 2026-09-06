@@ -77,6 +77,8 @@ It runs:
 - at 18:30, 21:15, and 21:45, around the usual evening training window.
 - every 5 minutes it checks whether Telegram requested a sync or whether the
   latest data is older than 30 minutes.
+- every minute it checks whether Telegram has natural-language jobs for the
+  local Ollama coach.
 
 If the MacBook is asleep with the lid closed, sync does not run during deep
 sleep. It will catch up after the Mac wakes, while the user session is active,
@@ -93,6 +95,10 @@ Logs:
 ```text
 ~/Library/Logs/garmin-coach-sync.out.log
 ~/Library/Logs/garmin-coach-sync.err.log
+~/Library/Logs/garmin-coach-sync-watch.out.log
+~/Library/Logs/garmin-coach-sync-watch.err.log
+~/Library/Logs/garmin-coach-ai-worker.out.log
+~/Library/Logs/garmin-coach-ai-worker.err.log
 ```
 
 Uninstall:
@@ -129,6 +135,32 @@ then run:
 python3 scripts/set_telegram_webhook.py
 ```
 
+## 6. Local Ollama coach
+
+The Railway bot does not call paid LLM APIs for natural-language coaching. It
+stores a pending job, and the Mac processes it locally with Ollama.
+
+Defaults:
+
+```text
+OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3.5:2b
+GARMIN_COACH_AI_MAX_JOBS=3
+```
+
+Check Ollama:
+
+```bash
+ollama list
+curl http://127.0.0.1:11434/api/tags
+```
+
+Run the worker manually:
+
+```bash
+scripts/run_ai_worker.sh
+```
+
 ## Telegram commands
 
 - `/hoy`
@@ -140,6 +172,7 @@ python3 scripts/set_telegram_webhook.py
 - `/carga`
 - `/tendencia`
 - `/feedback`
+- `/coach`
 - `/sync`
 - `/perfil`
 - `/checkin`
@@ -158,6 +191,7 @@ Examples:
 
 ```text
 /feedback
+/coach que hago manana si estoy cansado?
 /sync
 /salud
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
@@ -173,6 +207,8 @@ The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
 `/carga`, `/ajustar`, and `/malaga`.
 `/sync` requests a Garmin sync from Telegram. The Railway bot stores the request,
 and the local Mac watcher executes it while the Mac is awake.
+`/coach` and natural-language messages create a local AI job processed by Ollama
+on the Mac. Commands stay deterministic and do not need AI.
 
 Useful `/perfil` fields:
 

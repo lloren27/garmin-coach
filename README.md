@@ -196,13 +196,17 @@ Examples:
 /salud
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
 /perfil peso 71.5 ftp 235
-/checkin rpe 6 sueno 7 energia 6 sin molestias nota piernas algo cargadas
-/checkin rpe 8 sueno 4 energia 3 molestia gemelo
+/checkin sin molestias nota piernas normales
+/checkin molestia gemelo derecho nota aparece al subir ritmo
 /ajustar
 /ajustar hoy estoy cansado y dormi mal
 ```
 
 Check-ins are stored in Postgres and used by `/feedback` and `/ajustar`.
+Recovery decisions prioritize objective Garmin wellness data when available:
+sleep, HRV, readiness, body battery, stress, resting heart rate, and recent load.
+Check-ins are treated as subjective context, with pain and injury signals getting
+strong priority because Garmin cannot reliably detect them.
 The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
 `/carga`, `/ajustar`, and `/malaga`.
 `/sync` requests a Garmin sync from Telegram. The Railway bot stores the request,

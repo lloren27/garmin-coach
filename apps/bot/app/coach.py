@@ -20,8 +20,8 @@ def format_help() -> str:
         "/coach - pregunta libre al entrenador local\n"
         "/sync - solicita sincronizacion desde el Mac\n"
         "/perfil - guarda sexo, edad, peso, altura, FC, FTP y objetivos\n"
-        "/checkin - guarda sensaciones: rpe, sueno, energia, molestias\n"
-        "/ajustar - adapta el proximo entreno con tus sensaciones\n"
+        "/checkin - guarda contexto subjetivo y molestias\n"
+        "/ajustar - adapta el proximo entreno con Garmin + molestias\n"
         "/bici - resumen de ciclismo\n"
         "/fuerza - resumen de fuerza\n"
         "/malaga - foco Maraton de Malaga\n"
@@ -448,7 +448,7 @@ def format_feedback(
     lines.append(f"Lectura: {_activity_coach_reading(activity, fatigue)}")
     lines.append(f"Impacto en plan: {_activity_plan_impact(activity, summary)}")
     if latest_checkin:
-        lines.append(f"Con tu check-in: {_checkin_reading(latest_checkin)}")
+        lines.append(f"Contexto subjetivo: {_checkin_reading(latest_checkin)}")
     lines.append(f"Siguiente paso: {_next_step_after_activity(activity, fatigue, latest_checkin)}")
     return "\n".join(lines)
 
@@ -470,8 +470,10 @@ def format_checkin_help() -> str:
     return (
         "Check-in\n"
         "Escribe algo asi:\n"
-        "/checkin rpe 6 sueno 7 energia 6 molestia gemelo nota piernas cargadas\n"
-        "Campos utiles: rpe 1-10, sueno 1-10, energia 1-10, molestias/no molestias, nota libre."
+        "/checkin sin molestias nota piernas normales\n"
+        "/checkin molestia gemelo derecho nota aparece al subir ritmo\n"
+        "Campos utiles: molestias/no molestias, dolor, rpe 1-10, animo 1-10 y nota libre.\n"
+        "Sueno y energia se priorizan desde Garmin cuando esten disponibles."
     )
 
 
@@ -504,7 +506,7 @@ def format_checkin_saved(document: dict[str, Any]) -> str:
     if not parts and checkin.get("raw"):
         parts.append("Nota libre guardada")
     details = "\n".join(parts) if parts else "Guardado."
-    return f"Check-in guardado\n{details}\nLo usare en /ajustar y /feedback."
+    return f"Check-in guardado\n{details}\nLo usare como contexto. Dolor y molestias si cambian /ajustar y /feedback."
 
 
 def format_profile_help() -> str:
@@ -651,10 +653,11 @@ def format_adjust(
 
     summary = sync.get("payload", {}).get("summary", {})
     fatigue = summary.get("fatigue", {})
+    wellness = sync.get("payload", {}).get("wellness", {})
     activity = _latest_activity(sync)
     transient = parse_checkin(note) if note.strip() else {}
     latest = transient or _latest_checkin(checkins)
-    risk = _adjustment_risk(fatigue, activity, latest)
+    risk = _adjustment_risk(fatigue, activity, latest, wellness)
 
     if risk >= 5:
         recommendation = "cambia el proximo entreno por descanso o 30-40 min muy facil."
@@ -672,12 +675,15 @@ def format_adjust(
         f"Riesgo estimado: {_risk_label(risk)} ({risk}/7)",
         f"Decision: {recommendation}",
         f"Detalle: {details}",
-        f"Por que: {_adjustment_reason(fatigue, activity, latest)}",
+        f"Por que: {_adjustment_reason(fatigue, activity, latest, wellness)}",
     ]
+    recovery = _recovery_reading(wellness)
+    if recovery:
+        lines.append(f"Recuperacion Garmin: {recovery}")
     if latest:
-        lines.append(f"Sensaciones usadas: {_checkin_reading(latest)}")
+        lines.append(f"Contexto subjetivo: {_checkin_reading(latest)}")
     else:
-        lines.append("Tip: anade sensaciones con /checkin para afinar mas.")
+        lines.append("Tip: anade /checkin sobre todo si hay molestias, dolor o algo raro que Garmin no vea.")
     context = _profile_context_line(_profile_payload(profile))
     if context:
         lines.append(f"Perfil usado: {context}")
@@ -982,8 +988,8 @@ def _next_step_after_activity(
     fatigue: dict[str, Any],
     checkin: dict[str, Any],
 ) -> str:
-    if checkin and (_safe_float(checkin.get("sleep")) <= 4 or checkin.get("pain")):
-        return "descanso o regenerativo, porque las sensaciones pesan mas que el plan."
+    if checkin.get("pain") or (checkin.get("soreness") and checkin.get("soreness") != "no"):
+        return "descanso o regenerativo, porque hay molestias reportadas que Garmin no puede valorar bien."
     if fatigue.get("level") == "alta":
         return "24-48 h faciles antes de otro estimulo fuerte."
     if _safe_float(activity.get("training_effect")) >= 3.5:
@@ -1043,6 +1049,7 @@ def _adjustment_risk(
     fatigue: dict[str, Any],
     activity: dict[str, Any] | None,
     checkin: dict[str, Any],
+    wellness: dict[str, Any] | None = None,
 ) -> int:
     risk = 0
     if fatigue.get("level") == "alta":
@@ -1053,14 +1060,15 @@ def _adjustment_risk(
         risk += 1
     if activity and _safe_float(activity.get("training_effect")) >= 3.5:
         risk += 1
-    if _safe_float(checkin.get("sleep")) and _safe_float(checkin.get("sleep")) <= 4:
+    risk += _objective_recovery_risk(wellness or {})
+    if not _has_objective_recovery(wellness or {}) and _safe_float(checkin.get("sleep")) and _safe_float(checkin.get("sleep")) <= 3:
         risk += 1
-    if _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 4:
+    if not _has_objective_recovery(wellness or {}) and _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 3:
         risk += 1
-    if _safe_float(checkin.get("rpe")) >= 8:
+    if _safe_float(checkin.get("rpe")) >= 9:
         risk += 1
     if checkin.get("pain") or (checkin.get("soreness") and checkin.get("soreness") != "no"):
-        risk += 2
+        risk += 5 if checkin.get("pain") else 3
     return min(risk, 7)
 
 
@@ -1076,6 +1084,7 @@ def _adjustment_reason(
     fatigue: dict[str, Any],
     activity: dict[str, Any] | None,
     checkin: dict[str, Any],
+    wellness: dict[str, Any] | None = None,
 ) -> str:
     reasons = []
     if fatigue.get("level"):
@@ -1086,11 +1095,122 @@ def _adjustment_reason(
         reasons.append("dolor reportado")
     elif checkin.get("soreness") and checkin.get("soreness") != "no":
         reasons.append("molestias reportadas")
-    if _safe_float(checkin.get("sleep")) and _safe_float(checkin.get("sleep")) <= 4:
-        reasons.append("sueno bajo")
-    if _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 4:
-        reasons.append("energia baja")
+    reasons.extend(_objective_recovery_reasons(wellness or {}))
+    if not _has_objective_recovery(wellness or {}) and _safe_float(checkin.get("sleep")) and _safe_float(checkin.get("sleep")) <= 3:
+        reasons.append("sueno subjetivo muy bajo")
+    if not _has_objective_recovery(wellness or {}) and _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 3:
+        reasons.append("energia subjetiva muy baja")
+    if _safe_float(checkin.get("rpe")) >= 9:
+        reasons.append("RPE subjetivo muy alto")
     return ", ".join(reasons) if reasons else "no hay senales de alarma fuertes."
+
+
+def _has_objective_recovery(wellness: dict[str, Any]) -> bool:
+    if not wellness:
+        return False
+    sleep = _clean_dict(wellness.get("sleep"))
+    hrv = _clean_dict(wellness.get("hrv"))
+    readiness = _clean_dict(wellness.get("training_readiness"))
+    body_battery = _clean_dict(wellness.get("body_battery"))
+    stress = _clean_dict(wellness.get("stress"))
+    return bool(sleep or hrv or readiness or body_battery or stress)
+
+
+def _objective_recovery_risk(wellness: dict[str, Any]) -> int:
+    sleep = _clean_dict(wellness.get("sleep"))
+    hrv = _clean_dict(wellness.get("hrv"))
+    readiness = _clean_dict(wellness.get("training_readiness"))
+    body_battery = _clean_dict(wellness.get("body_battery"))
+    stress = _clean_dict(wellness.get("stress"))
+
+    risk = 0
+    sleep_hours = _safe_float(sleep.get("sleep_seconds")) / 3600 if sleep.get("sleep_seconds") else 0
+    sleep_score = _safe_float(sleep.get("score"))
+    if sleep_score and sleep_score < 50:
+        risk += 2
+    elif sleep_score and sleep_score < 65:
+        risk += 1
+    elif sleep_hours and sleep_hours < 5:
+        risk += 2
+    elif sleep_hours and sleep_hours < 6:
+        risk += 1
+
+    readiness_score = _safe_float(readiness.get("score"))
+    if readiness_score and readiness_score < 40:
+        risk += 2
+    elif readiness_score and readiness_score < 60:
+        risk += 1
+
+    hrv_status = str(hrv.get("status") or "").lower()
+    if any(token in hrv_status for token in ("low", "unbalanced", "strained", "poor")):
+        risk += 1
+
+    battery = _safe_float(body_battery.get("current"))
+    if battery and battery < 25:
+        risk += 2
+    elif battery and battery < 40:
+        risk += 1
+
+    stress_avg = _safe_float(stress.get("avg"))
+    if stress_avg and stress_avg > 70:
+        risk += 2
+    elif stress_avg and stress_avg > 55:
+        risk += 1
+
+    return min(risk, 3)
+
+
+def _objective_recovery_reasons(wellness: dict[str, Any]) -> list[str]:
+    sleep = _clean_dict(wellness.get("sleep"))
+    hrv = _clean_dict(wellness.get("hrv"))
+    readiness = _clean_dict(wellness.get("training_readiness"))
+    body_battery = _clean_dict(wellness.get("body_battery"))
+    stress = _clean_dict(wellness.get("stress"))
+
+    reasons = []
+    sleep_hours = _safe_float(sleep.get("sleep_seconds")) / 3600 if sleep.get("sleep_seconds") else 0
+    sleep_score = _safe_float(sleep.get("score"))
+    if sleep_score and sleep_score < 65:
+        reasons.append(f"sleep score Garmin {sleep_score:g}")
+    elif sleep_hours and sleep_hours < 6:
+        reasons.append(f"sueno Garmin {sleep_hours:.1f} h")
+
+    readiness_score = _safe_float(readiness.get("score"))
+    if readiness_score and readiness_score < 60:
+        reasons.append(f"readiness Garmin {readiness_score:g}")
+
+    hrv_status = str(hrv.get("status") or "").lower()
+    if any(token in hrv_status for token in ("low", "unbalanced", "strained", "poor")):
+        reasons.append(f"HRV Garmin {hrv.get('status')}")
+
+    battery = _safe_float(body_battery.get("current"))
+    if battery and battery < 40:
+        reasons.append(f"body battery {battery:g}")
+
+    stress_avg = _safe_float(stress.get("avg"))
+    if stress_avg and stress_avg > 55:
+        reasons.append(f"estres Garmin {stress_avg:g}")
+
+    return reasons
+
+
+def _recovery_reading(wellness: dict[str, Any]) -> str:
+    if not _has_objective_recovery(wellness):
+        return ""
+    reasons = _objective_recovery_reasons(wellness)
+    if reasons:
+        return ", ".join(reasons)
+    sleep = _clean_dict(wellness.get("sleep"))
+    readiness = _clean_dict(wellness.get("training_readiness"))
+    hrv = _clean_dict(wellness.get("hrv"))
+    bits = []
+    if sleep.get("score"):
+        bits.append(f"sleep score {sleep.get('score')}")
+    if readiness.get("score"):
+        bits.append(f"readiness {readiness.get('score')}")
+    if hrv.get("status"):
+        bits.append(f"HRV {hrv.get('status')}")
+    return ", ".join(bits) if bits else "sin alertas objetivas claras"
 
 
 def _ai_intents(text: str) -> list[str]:

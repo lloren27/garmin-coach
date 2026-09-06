@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import date, datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
+
+
+MADRID_TZ = ZoneInfo("Europe/Madrid")
 
 
 def format_help() -> str:
@@ -39,7 +44,7 @@ def format_status(sync: dict[str, Any] | None) -> str:
 
     return (
         "Estado Garmin Coach\n"
-        f"Ultima sincronizacion: {generated_at}\n"
+        f"Ultima sincronizacion: {_format_datetime_es(generated_at)} hora Espana\n"
         f"Carreras 120 dias: {summary.get('runs_count_120d', 'n/a')}\n"
         f"Km ultimos 28 dias: {summary.get('km_28d', 'n/a')}\n"
         f"Media semanal 8 semanas: {summary.get('avg_weekly_km_8w', 'n/a')}\n"
@@ -52,13 +57,13 @@ def format_syncinfo(sync: dict[str, Any] | None, sync_request: dict[str, Any] | 
     if not sync:
         lines.append("Sin sincronizaciones todavia.")
     else:
-        lines.append(f"Ultima sincronizacion recibida: {sync.get('received_at')}")
+        lines.append(f"Ultima sincronizacion recibida: {_format_datetime_es(sync.get('received_at'))} hora Espana")
     if sync_request:
         status = sync_request.get("status", "n/a")
-        requested_at = sync_request.get("requested_at", "n/a")
+        requested_at = _format_datetime_es(sync_request.get("requested_at"))
         lines.append(f"Ultima peticion /sync: {status} ({requested_at})")
         if sync_request.get("completed_at"):
-            lines.append(f"Procesada: {sync_request.get('completed_at')}")
+            lines.append(f"Procesada: {_format_datetime_es(sync_request.get('completed_at'))}")
         if sync_request.get("last_error"):
             lines.append(f"Error: {str(sync_request.get('last_error'))[:160]}")
     return "\n".join(lines)
@@ -67,10 +72,10 @@ def format_syncinfo(sync: dict[str, Any] | None, sync_request: dict[str, Any] | 
 def format_sync_requested(document: dict[str, Any], sync: dict[str, Any] | None = None) -> str:
     lines = [
         "Sincronizacion solicitada",
-        f"Peticion: {document.get('requested_at')}",
+        f"Peticion: {_format_datetime_es(document.get('requested_at'))} hora Espana",
     ]
     if sync:
-        lines.append(f"Ultimos datos actuales: {sync.get('received_at')}")
+        lines.append(f"Ultimos datos actuales: {_format_datetime_es(sync.get('received_at'))} hora Espana")
     lines.append("El Mac la ejecutara en cuanto este despierto y el watcher local la detecte.")
     return "\n".join(lines)
 
@@ -236,7 +241,7 @@ def format_today(sync: dict[str, Any] | None) -> str:
     fatigue = summary.get("fatigue", {})
 
     lines = [
-        f"Hoy ({today.get('date', 'n/a')})",
+        f"Hoy ({_format_date_es(today.get('date'))})",
         f"Actividades: {len(today.get('activities') or [])}",
         f"Entreno: {today.get('training_minutes', 0)} min, {today.get('km', 0)} km",
     ]
@@ -366,7 +371,7 @@ def format_week(sync: dict[str, Any] | None) -> str:
     strength = sports.get("strength", {})
 
     return (
-        f"Semana desde {week.get('start', 'n/a')}\n"
+        f"Semana desde {_format_date_es(week.get('start'))}\n"
         f"Total: {week.get('activities', 0)} actividades, {week.get('hours', 0)} h, {week.get('km', 0)} km\n"
         f"Running: {running.get('sessions', 0)} sesiones, {running.get('km', 0)} km\n"
         f"Ciclismo: {cycling.get('sessions', 0)} sesiones, {cycling.get('km', 0)} km, {cycling.get('hours', 0)} h\n"
@@ -386,7 +391,7 @@ def format_latest(sync: dict[str, Any] | None) -> str:
     activity = activities[-1]
     lines = [
         "Ultima actividad",
-        f"{activity.get('date', 'n/a')} - {activity.get('name', 'Actividad')}",
+        f"{_format_date_es(activity.get('date'))} - {activity.get('name', 'Actividad')}",
         f"Tipo: {activity.get('sport', 'n/a')}",
         f"Duracion: {_format_duration(activity.get('duration_s'))}",
     ]
@@ -422,7 +427,7 @@ def format_feedback(
     sport = activity.get("sport", "other")
     lines = [
         "Feedback ultima actividad",
-        f"{activity.get('date', 'n/a')} - {activity.get('name', 'Actividad')}",
+        f"{_format_date_es(activity.get('date'))} - {activity.get('name', 'Actividad')}",
         f"Tipo: {sport}",
         f"Duracion: {_format_duration(activity.get('duration_s'))}",
     ]
@@ -608,7 +613,7 @@ def format_profile(document: dict[str, Any] | None) -> str:
 
     lines = ["Perfil deportivo"]
     if document.get("updated_at"):
-        lines.append(f"Actualizado: {document.get('updated_at')}")
+        lines.append(f"Actualizado: {_format_datetime_es(document.get('updated_at'))} hora Espana")
     context = _profile_context_line(profile)
     if context:
         lines.append(f"Datos: {context}")
@@ -847,6 +852,7 @@ def format_malaga(sync: dict[str, Any] | None, profile: dict[str, Any] | None = 
     lines = [
         "Maraton de Malaga",
         verdict,
+        f"Fecha objetivo: {_format_date_es((payload.get('race') or {}).get('date'))}",
         f"Nivel actual: {plan_level.get('level', 'n/a')}",
         f"Objetivo plan: {plan_level.get('goal', 'n/a')}",
         f"Marca/objetivo perfil: PB {pb}, objetivo {goal}",
@@ -865,7 +871,9 @@ def _longest_run(summary: dict[str, Any]) -> str:
     if not runs:
         return "n/a"
     run = runs[0]
-    return f"{run.get('km', 'n/a')} km a {run.get('pace', 'n/a')}"
+    date_text = _format_date_es(run.get("date"))
+    prefix = f"{date_text}: " if date_text != "n/a" else ""
+    return f"{prefix}{run.get('km', 'n/a')} km a {run.get('pace', 'n/a')}"
 
 
 def _latest_activity(sync: dict[str, Any]) -> dict[str, Any] | None:
@@ -910,10 +918,55 @@ def _format_duration(seconds: Any) -> str:
     return f"{mins} min"
 
 
+def _format_datetime_es(value: Any) -> str:
+    parsed = _parse_datetime(value)
+    if not parsed:
+        return "n/a"
+    return parsed.astimezone(MADRID_TZ).strftime("%d/%m/%Y %H:%M")
+
+
+def _format_date_es(value: Any) -> str:
+    if isinstance(value, datetime):
+        return _format_datetime_es(value).split()[0]
+    if isinstance(value, date):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, str):
+        parsed = _parse_datetime(value)
+        if parsed:
+            return parsed.astimezone(MADRID_TZ).strftime("%d/%m/%Y")
+        try:
+            return date.fromisoformat(value[:10]).strftime("%d/%m/%Y")
+        except ValueError:
+            return value or "n/a"
+    return "n/a"
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, datetime.min.time(), tzinfo=MADRID_TZ)
+    elif isinstance(value, str) and value.strip():
+        raw = value.strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            try:
+                parsed = datetime.combine(date.fromisoformat(raw[:10]), datetime.min.time(), tzinfo=MADRID_TZ)
+            except ValueError:
+                return None
+    else:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=MADRID_TZ)
+    return parsed.astimezone(timezone.utc).astimezone(MADRID_TZ)
+
+
 def _activity_line(activity: dict[str, Any]) -> str:
     if not activity:
         return "n/a"
-    bits = [str(activity.get("date", "n/a"))]
+    bits = [_format_date_es(activity.get("date"))]
     if activity.get("km"):
         bits.append(f"{activity.get('km')} km")
     if activity.get("sport") == "cycling" and activity.get("avg_speed_kmh"):

@@ -26,12 +26,18 @@ WATCH_OUT_LOG = LOG_DIR / "garmin-coach-sync-watch.out.log"
 WATCH_ERR_LOG = LOG_DIR / "garmin-coach-sync-watch.err.log"
 AI_OUT_LOG = LOG_DIR / "garmin-coach-ai-worker.out.log"
 AI_ERR_LOG = LOG_DIR / "garmin-coach-ai-worker.err.log"
+TIME_ZONE = "Europe/Madrid"
+
+
+def environment_variables() -> dict[str, str]:
+    return {"TZ": TIME_ZONE}
 
 
 def build_plist() -> dict:
     return {
         "Label": LABEL,
         "ProgramArguments": ["/bin/zsh", str(RUN_SCRIPT)],
+        "EnvironmentVariables": environment_variables(),
         "RunAtLoad": True,
         "StartInterval": 4 * 60 * 60,
         "StartCalendarInterval": [
@@ -52,6 +58,7 @@ def build_watch_plist() -> dict:
     return {
         "Label": WATCH_LABEL,
         "ProgramArguments": ["/bin/zsh", str(WATCH_SCRIPT)],
+        "EnvironmentVariables": environment_variables(),
         "RunAtLoad": True,
         "StartInterval": 5 * 60,
         "StandardOutPath": str(WATCH_OUT_LOG),
@@ -65,6 +72,7 @@ def build_ai_plist() -> dict:
     return {
         "Label": AI_LABEL,
         "ProgramArguments": ["/bin/zsh", str(AI_SCRIPT)],
+        "EnvironmentVariables": environment_variables(),
         "RunAtLoad": True,
         "StartInterval": 60,
         "StandardOutPath": str(AI_OUT_LOG),
@@ -121,7 +129,8 @@ def main() -> int:
     print(f"watch stderr log: {WATCH_ERR_LOG}")
     print(f"AI stdout log: {AI_OUT_LOG}")
     print(f"AI stderr log: {AI_ERR_LOG}")
-    print("Schedule: login/start, every 4 hours while awake, 08:20, 08:50, 18:30, 21:15, 21:45.")
+    print(f"Timezone: {TIME_ZONE}.")
+    print("Schedule: login/start, every 4 hours while awake, 08:20, 08:50, 18:30, 21:15, 21:45 local time.")
     print("Watch: every 5 minutes while awake; runs sync if /sync was requested or data is older than 30 minutes.")
     print("AI: every 1 minute while awake; processes natural-language Telegram jobs with local Ollama.")
     print("Run scripts/run_sync.sh for an immediate manual sync.")

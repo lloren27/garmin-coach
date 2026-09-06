@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from statistics import median
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from dotenv import load_dotenv
@@ -18,7 +19,8 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 TOKENSTORE = Path(os.getenv("GARMINTOKENS", "~/.garminconnect")).expanduser()
 API_URL = os.getenv("GARMIN_COACH_API_URL", "http://127.0.0.1:8000").rstrip("/")
 SYNC_SECRET = os.getenv("SYNC_SECRET", "")
-TODAY = date.today()
+MADRID_TZ = ZoneInfo("Europe/Madrid")
+TODAY = datetime.now(MADRID_TZ).date()
 START_DATE = TODAY - timedelta(days=120)
 LAST_7 = TODAY - timedelta(days=6)
 LAST_28 = TODAY - timedelta(days=27)
@@ -684,7 +686,7 @@ def build_payload() -> dict[str, Any]:
     activities = get_activities(client)
     summary = summarize(activities)
     return {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "generated_at": datetime.now(MADRID_TZ).isoformat(timespec="seconds"),
         "summary": summary,
         "wellness": compact_wellness(client),
         "physiology": compact_physiology(client),

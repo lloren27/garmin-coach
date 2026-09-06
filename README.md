@@ -73,8 +73,8 @@ It runs:
 
 - when your user session starts, including after starting the Mac and logging in;
 - every 4 hours while the Mac is awake;
-- at 08:20 and 08:50, after the usual morning session;
-- at 18:30, 21:15, and 21:45, around the usual evening training window.
+- at 08:20 and 08:50 Spain time, after the usual morning session;
+- at 18:30, 21:15, and 21:45 Spain time, around the usual evening training window.
 - every 5 minutes it checks whether Telegram requested a sync or whether the
   latest data is older than 30 minutes.
 - every minute it checks whether Telegram has natural-language jobs for the
@@ -83,6 +83,9 @@ It runs:
 If the MacBook is asleep with the lid closed, sync does not run during deep
 sleep. It will catch up after the Mac wakes, while the user session is active,
 through the 5-minute watcher.
+
+Telegram responses display dates as Spain time using `dd/mm/yyyy` and
+`dd/mm/yyyy hh:mm` for synchronization timestamps.
 
 Immediate manual sync:
 

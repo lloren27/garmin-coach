@@ -209,6 +209,9 @@ The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
 and the local Mac watcher executes it while the Mac is awake.
 `/coach` and natural-language messages create a local AI job processed by Ollama
 on the Mac. Commands stay deterministic and do not need AI.
+Common natural-language training questions are answered immediately with
+deterministic coach readings before falling back to Ollama. This keeps answers
+short, Spanish, and grounded in the computed Garmin data.
 
 Useful `/perfil` fields:
 

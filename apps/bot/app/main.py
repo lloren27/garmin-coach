@@ -4,6 +4,7 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
+    build_ai_brief,
     format_ai_help,
     format_ai_queued,
     format_adjust,
@@ -17,6 +18,7 @@ from .coach import (
     format_latest,
     format_load,
     format_malaga,
+    format_natural_coach,
     format_next,
     format_profile,
     format_profile_help,
@@ -125,13 +127,18 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
     job = claim_next_ai_job()
     if not job:
         return {"job": None}
+    sync = load_sync()
+    profile = load_profile()
+    checkins = load_checkins(5)
+    history = load_sync_history(4)
     return {
         "job": job,
         "context": {
-            "sync": load_sync(),
-            "profile": load_profile(),
-            "checkins": load_checkins(5),
-            "history": load_sync_history(4),
+            "coach_brief": build_ai_brief(str(job.get("text") or ""), sync, profile, checkins, history),
+            "sync": sync,
+            "profile": profile,
+            "checkins": checkins,
+            "history": history,
         },
     }
 
@@ -216,6 +223,9 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
     if command == "/coach":
         if not args:
             return format_ai_help()
+        direct = format_natural_coach(args, sync, profile, load_checkins(), load_sync_history())
+        if direct:
+            return direct
         document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=args)
         return format_ai_queued(document)
     if command == "/sync":
@@ -248,6 +258,9 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
     if command == "/syncinfo":
         return format_syncinfo(sync, load_sync_request())
     if text and not command.startswith("/"):
+        direct = format_natural_coach(text, sync, profile, load_checkins(), load_sync_history())
+        if direct:
+            return direct
         document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=text)
         return format_ai_queued(document)
     return "Te leo. Usa /help para ver los comandos disponibles."

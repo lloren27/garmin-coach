@@ -88,10 +88,134 @@ def format_ai_help() -> str:
 
 def format_ai_queued(document: dict[str, Any]) -> str:
     return (
-        "Te lo preparo con el coach local.\n"
-        f"Trabajo: {document.get('id')}\n"
-        "El Mac lo procesara con Ollama en cuanto este despierto."
+        "Lo miro con el coach local.\n"
+        "Te respondo en unos segundos si el Mac esta despierto."
     )
+
+
+def build_ai_brief(
+    question: str,
+    sync: dict[str, Any] | None,
+    profile: dict[str, Any] | None = None,
+    checkins: list[dict[str, Any]] | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    text = _normalize_text(question)
+    intents = _ai_intents(text)
+    sections = []
+
+    if "tomorrow" in intents or "adjust" in intents:
+        adjustment_note = question if "adjust" in intents else ""
+        sections.append(("decision_entreno", format_adjust(sync, checkins, adjustment_note, profile)))
+        sections.append(("proximo_entreno", format_next(sync)))
+        sections.append(("salud", format_health(sync)))
+    if "latest" in intents:
+        sections.append(("ultima_actividad", format_feedback(sync, checkins, profile)))
+    if "malaga" in intents:
+        sections.append(("malaga", format_malaga(sync, profile)))
+    if "health" in intents:
+        sections.append(("salud", format_health(sync)))
+    if "load" in intents:
+        sections.append(("carga", format_load(sync, profile)))
+        sections.append(("fatiga", format_fatigue(sync)))
+        sections.append(("tendencia", format_trend(sync, history)))
+    if "bike" in intents:
+        sections.append(("bici", format_bike(sync, profile)))
+    if "strength" in intents:
+        sections.append(("fuerza", format_strength(sync)))
+
+    if not sections:
+        sections = [
+            ("hoy", format_today(sync)),
+            ("proximo_entreno", format_next(sync)),
+            ("salud", format_health(sync)),
+            ("ultima_actividad", format_feedback(sync, checkins, profile)),
+        ]
+
+    deduped = []
+    seen = set()
+    for title, content in sections:
+        if title in seen:
+            continue
+        seen.add(title)
+        deduped.append({"title": title, "content": content})
+
+    return {
+        "intents": intents,
+        "primary_intent": intents[0] if intents else "general",
+        "sections": deduped,
+        "instructions": (
+            "Responde solo en espanol, sin Markdown, sin titulares ### y sin inventar datos. "
+            "Usa estas lecturas calculadas como fuente principal."
+        ),
+    }
+
+
+def format_natural_coach(
+    question: str,
+    sync: dict[str, Any] | None,
+    profile: dict[str, Any] | None = None,
+    checkins: list[dict[str, Any]] | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> str | None:
+    brief = build_ai_brief(question, sync, profile, checkins, history)
+    intents = brief.get("intents") or []
+    if not intents:
+        return None
+
+    section_map = {section["title"]: section["content"] for section in brief.get("sections", [])}
+    lines = []
+    if "tomorrow" in intents or "adjust" in intents:
+        lines.append("Para manana:")
+        lines.extend(_natural_section_lines(section_map.get("decision_entreno"), 5))
+        if not section_map.get("decision_entreno"):
+            lines.extend(_natural_section_lines(section_map.get("proximo_entreno"), 4))
+    if "latest" in intents:
+        if lines:
+            lines.append("")
+        lines.append("Sobre la ultima actividad:")
+        lines.extend(_natural_section_lines(section_map.get("ultima_actividad"), 7))
+    if "malaga" in intents:
+        if lines:
+            lines.append("")
+        lines.append("Para Malaga:")
+        lines.extend(_natural_section_lines(section_map.get("malaga"), 7))
+    if "health" in intents:
+        if lines:
+            lines.append("")
+        lines.append("Recuperacion:")
+        lines.extend(_natural_section_lines(section_map.get("salud"), 6))
+    if "load" in intents:
+        if lines:
+            lines.append("")
+        lines.append("Carga:")
+        lines.extend(_natural_section_lines(section_map.get("carga"), 6))
+    if "bike" in intents and "latest" not in intents:
+        if lines:
+            lines.append("")
+        lines.append("Bici:")
+        lines.extend(_natural_section_lines(section_map.get("bici"), 6))
+    if "strength" in intents:
+        if lines:
+            lines.append("")
+        lines.append("Fuerza:")
+        lines.extend(_natural_section_lines(section_map.get("fuerza"), 5))
+
+    return "\n".join(lines).strip() if lines else None
+
+
+def _natural_section_lines(content: str | None, limit: int) -> list[str]:
+    if not content:
+        return []
+    lines = []
+    for line in content.splitlines()[1:]:
+        line = line.strip()
+        if not line or line.startswith("Tip:") or line.startswith("Actualizar:"):
+            continue
+        lines.append(line)
+        if len(lines) >= limit:
+            break
+    return lines
 
 
 def format_today(sync: dict[str, Any] | None) -> str:
@@ -967,6 +1091,27 @@ def _adjustment_reason(
     if _safe_float(checkin.get("energy")) and _safe_float(checkin.get("energy")) <= 4:
         reasons.append("energia baja")
     return ", ".join(reasons) if reasons else "no hay senales de alarma fuertes."
+
+
+def _ai_intents(text: str) -> list[str]:
+    intents = []
+    if any(token in text for token in ("manana", "proximo", "que hago", "entreno", "series", "correr", "rodaje")):
+        intents.append("tomorrow")
+    if any(token in text for token in ("cansado", "cansancio", "molestia", "dolor", "dormi", "sueno", "fatiga", "ajusta")):
+        intents.append("adjust")
+    if any(token in text for token in ("ultima", "actividad", "analiza", "feedback", "entreno de hoy", "salida")):
+        intents.append("latest")
+    if any(token in text for token in ("malaga", "maraton", "sub 3:40", "3:40", "preparacion")):
+        intents.append("malaga")
+    if any(token in text for token in ("salud", "recuperacion", "hrv", "body battery", "estres", "calorias", "reposo")):
+        intents.append("health")
+    if any(token in text for token in ("carga", "semana", "volumen", "tendencia", "fatiga")):
+        intents.append("load")
+    if any(token in text for token in ("bici", "ciclismo", "cycling", "ftp", "watios", "w/kg")):
+        intents.append("bike")
+    if any(token in text for token in ("fuerza", "gym", "pesas", "core")):
+        intents.append("strength")
+    return intents
 
 
 def _profile_payload(document: dict[str, Any] | None) -> dict[str, Any]:

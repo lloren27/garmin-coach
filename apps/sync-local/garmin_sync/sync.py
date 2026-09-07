@@ -444,14 +444,19 @@ def compact_body_battery(value: Any, events: Any = None) -> dict[str, Any]:
 
 
 def compact_calories(value: Any, daily: Any = None) -> dict[str, Any]:
-    latest = _latest_dict(value)
+    latest = _latest_calories_dict(value)
     source = latest or daily if isinstance(daily, dict) else latest
     if not isinstance(source, dict) or "_unavailable" in source:
         return {}
+    active = _pick(source, "active", "activeKilocalories", "activeCalories")
+    bmr = _pick(source, "resting", "bmrKilocalories", "bmrCalories")
+    total = _pick(source, "total", "totalKilocalories", "totalCalories")
+    if total is None and (active is not None or bmr is not None):
+        total = (active or 0) + (bmr or 0)
     return {
-        "active_kcal": _pick(source, "activeKilocalories", "activeCalories"),
-        "total_kcal": _pick(source, "totalKilocalories", "totalCalories"),
-        "bmr_kcal": _pick(source, "bmrKilocalories", "bmrCalories"),
+        "active_kcal": active,
+        "total_kcal": total,
+        "bmr_kcal": bmr,
         "consumed_kcal": _pick(source, "consumedKilocalories", "consumedCalories"),
         "remaining_kcal": _pick(source, "remainingKilocalories", "remainingCalories"),
         "date": _pick(source, "calendarDate", "date"),
@@ -661,6 +666,17 @@ def _latest_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict) and "_unavailable" not in value:
         return value
     return {}
+
+
+def _latest_calories_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, list):
+        for item in reversed(value):
+            if not isinstance(item, dict):
+                continue
+            if _pick(item, "active", "resting", "total", "activeKilocalories", "bmrKilocalories", "totalKilocalories") is not None:
+                return item
+        return {}
+    return _latest_dict(value)
 
 
 def _pick(source: dict[str, Any], *keys: str) -> Any:

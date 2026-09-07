@@ -39,10 +39,10 @@ WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 PIPER_BIN = os.getenv("PIPER_BIN", str(Path(sys.executable).resolve().parent / "piper"))
 PIPER_VOICE_MODEL = os.getenv("PIPER_VOICE_MODEL", "")
 PIPER_SPEAKER = os.getenv("PIPER_SPEAKER", "")
-PIPER_LENGTH_SCALE = os.getenv("PIPER_LENGTH_SCALE", "1.08")
-PIPER_NOISE_SCALE = os.getenv("PIPER_NOISE_SCALE", "0.55")
-PIPER_NOISE_W_SCALE = os.getenv("PIPER_NOISE_W_SCALE", "0.65")
-PIPER_SENTENCE_SILENCE = os.getenv("PIPER_SENTENCE_SILENCE", "0.20")
+PIPER_LENGTH_SCALE = os.getenv("PIPER_LENGTH_SCALE", "1.12")
+PIPER_NOISE_SCALE = os.getenv("PIPER_NOISE_SCALE", "0.45")
+PIPER_NOISE_W_SCALE = os.getenv("PIPER_NOISE_W_SCALE", "0.55")
+PIPER_SENTENCE_SILENCE = os.getenv("PIPER_SENTENCE_SILENCE", "0.25")
 PIPER_VOLUME = os.getenv("PIPER_VOLUME", "1.0")
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
 VOICE_DIR = Path(os.getenv("GARMIN_COACH_VOICE_DIR", "~/Library/Application Support/Garmin Coach/voice")).expanduser()
@@ -181,6 +181,26 @@ def synthesize_voice(text: str, output_dir: Path) -> Path | None:
 
 def prepare_text_for_tts(text: str) -> str:
     value = clean_answer(text)
+    value = re.sub(r"\b(\d{1,2}):(\d{2})\s*/\s*(?:km|kilometros?)\b", _pace_to_tts, value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(\d{1,2}):(\d{2})\b", _time_to_tts, value)
+    value = re.sub(r"\b(\d+(?:[.,]\d+)?)\s*h\s+(\d{1,2})\s*min\b", _duration_to_tts, value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(\d+)[.,](\d+)\s*h\b", _decimal_hours_to_tts, value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*(min|km|h|W|ppm|bpm)\b", _range_unit_to_tts, value, flags=re.IGNORECASE)
+    unit_patterns = (
+        (r"\b(\d+(?:[.,]\d+)?)\s*km/h\b", "kilometros por hora"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*W/kg\b", "vatios por kilo"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*(?:ppm|bpm)\b", "pulsaciones por minuto"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*W\b", "vatios"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*kcal\b", "kilocalorias"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*km\b", "kilometros"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*min\b", "minutos"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*h\b", "horas"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*kg\b", "kilos"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*cm\b", "centimetros"),
+        (r"\b(\d+(?:[.,]\d+)?)\s*%\b", "por ciento"),
+    )
+    for pattern, unit in unit_patterns:
+        value = re.sub(pattern, lambda match: f"{_number_text(match.group(1))} {unit}", value, flags=re.IGNORECASE)
     replacements = (
         (r"\bBody battery\b", "energia corporal Garmin"),
         (r"\bTraining readiness\b", "preparacion Garmin"),
@@ -194,11 +214,11 @@ def prepare_text_for_tts(text: str) -> str:
         (r"\bFTP\b", "efe te pe"),
         (r"\bVT1\b", "umbral ventilatorio uno"),
         (r"\bVT2\b", "umbral ventilatorio dos"),
-        (r"\bZ1\b", "zona uno"),
-        (r"\bZ2\b", "zona dos"),
-        (r"\bZ3\b", "zona tres"),
-        (r"\bZ4\b", "zona cuatro"),
-        (r"\bZ5\b", "zona cinco"),
+        (r"\bZ\s*1\b", "zona uno"),
+        (r"\bZ\s*2\b", "zona dos"),
+        (r"\bZ\s*3\b", "zona tres"),
+        (r"\bZ\s*4\b", "zona cuatro"),
+        (r"\bZ\s*5\b", "zona cinco"),
         (r"\bppm\b", "pulsaciones por minuto"),
         (r"\bbpm\b", "pulsaciones por minuto"),
         (r"\bW/kg\b", "vatios por kilo"),
@@ -216,8 +236,8 @@ def prepare_text_for_tts(text: str) -> str:
     )
     for pattern, replacement in replacements:
         value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
-    value = re.sub(r"(\d{1,2}):(\d{2})\s*/\s*kilometros?\b", _pace_to_tts, value, flags=re.IGNORECASE)
-    value = re.sub(r"(\d+(?:[.,]\d+)?)\s*/\s*(\d+(?:[.,]\d+)?)", r"\1 sobre \2", value)
+    value = re.sub(r"(\d+(?:[.,]\d+)?)\s*/\s*(\d+(?:[.,]\d+)?)", lambda match: f"{_number_text(match.group(1))} sobre {_number_text(match.group(2))}", value)
+    value = re.sub(r"\b\d+(?:[.,]\d+)?\b", lambda match: _number_text(match.group(0)), value)
     value = value.replace("/", " por ")
     value = value.replace(" - ", ". ")
     value = value.replace(":", ". ")
@@ -237,8 +257,72 @@ def _pace_to_tts(match: re.Match[str]) -> str:
     return f"{_number_to_spanish(minutes)} {_number_to_spanish(seconds)} por kilometro"
 
 
+def _time_to_tts(match: re.Match[str]) -> str:
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    return f"{_number_to_spanish(hours)} horas {_number_to_spanish(minutes)}"
+
+
+def _duration_to_tts(match: re.Match[str]) -> str:
+    hours = _number_text(match.group(1))
+    minutes = _number_text(match.group(2))
+    return f"{hours} horas y {minutes} minutos"
+
+
+def _decimal_hours_to_tts(match: re.Match[str]) -> str:
+    hours = int(match.group(1))
+    decimal = match.group(2)
+    minutes = round(float(f"0.{decimal}") * 60)
+    if minutes == 0:
+        return f"{_hours_text(hours)}"
+    return f"{_hours_text(hours)} y {_minutes_text(minutes)}"
+
+
+def _range_unit_to_tts(match: re.Match[str]) -> str:
+    start = _number_text(match.group(1))
+    end = _number_text(match.group(2))
+    unit = match.group(3).lower()
+    unit_labels = {
+        "min": "minutos",
+        "km": "kilometros",
+        "h": "horas",
+        "w": "vatios",
+        "ppm": "pulsaciones por minuto",
+        "bpm": "pulsaciones por minuto",
+    }
+    return f"{start} a {end} {unit_labels.get(unit, unit)}"
+
+
+def _hours_text(value: int) -> str:
+    if value == 1:
+        return "una hora"
+    return f"{_number_to_spanish(value)} horas"
+
+
+def _minutes_text(value: int) -> str:
+    if value == 1:
+        return "un minuto"
+    return f"{_number_to_spanish(value)} minutos"
+
+
+def _number_text(raw: str) -> str:
+    value = raw.strip().replace(",", ".")
+    try:
+        number = float(value)
+    except ValueError:
+        return raw
+    if number.is_integer():
+        return _number_to_spanish(int(number))
+    integer, decimal = value.split(".", 1)
+    decimal = decimal.rstrip("0") or "0"
+    decimal_text = _number_to_spanish(int(decimal)) if len(decimal) <= 2 else " ".join(_number_to_spanish(int(digit)) for digit in decimal)
+    return f"{_number_to_spanish(int(integer))} coma {decimal_text}"
+
+
 def _number_to_spanish(value: int) -> str:
-    words = {
+    if value < 0:
+        return f"menos {_number_to_spanish(abs(value))}"
+    units = {
         0: "cero",
         1: "uno",
         2: "dos",
@@ -269,16 +353,55 @@ def _number_to_spanish(value: int) -> str:
         27: "veintisiete",
         28: "veintiocho",
         29: "veintinueve",
+    }
+    tens_words = {
         30: "treinta",
         40: "cuarenta",
         50: "cincuenta",
+        60: "sesenta",
+        70: "setenta",
+        80: "ochenta",
+        90: "noventa",
     }
-    if value in words:
-        return words[value]
-    if 31 <= value <= 59:
+    hundreds_words = {
+        100: "cien",
+        200: "doscientos",
+        300: "trescientos",
+        400: "cuatrocientos",
+        500: "quinientos",
+        600: "seiscientos",
+        700: "setecientos",
+        800: "ochocientos",
+        900: "novecientos",
+    }
+    if value in units:
+        return units[value]
+    if value < 100:
         tens = value - value % 10
         units = value % 10
-        return f"{words[tens]} y {words[units]}"
+        if units == 0:
+            return tens_words[tens]
+        return f"{tens_words[tens]} y {_number_to_spanish(units)}"
+    if value < 200:
+        return f"ciento {_number_to_spanish(value - 100)}"
+    if value < 1000:
+        hundreds = value - value % 100
+        remainder = value % 100
+        if remainder == 0:
+            return hundreds_words[hundreds]
+        return f"{hundreds_words[hundreds]} {_number_to_spanish(remainder)}"
+    if value < 2000:
+        remainder = value - 1000
+        if remainder == 0:
+            return "mil"
+        return f"mil {_number_to_spanish(remainder)}"
+    if value < 1_000_000:
+        thousands = value // 1000
+        remainder = value % 1000
+        prefix = f"{_number_to_spanish(thousands)} mil"
+        if remainder == 0:
+            return prefix
+        return f"{prefix} {_number_to_spanish(remainder)}"
     return str(value)
 
 

@@ -39,6 +39,11 @@ WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 PIPER_BIN = os.getenv("PIPER_BIN", str(Path(sys.executable).resolve().parent / "piper"))
 PIPER_VOICE_MODEL = os.getenv("PIPER_VOICE_MODEL", "")
 PIPER_SPEAKER = os.getenv("PIPER_SPEAKER", "")
+PIPER_LENGTH_SCALE = os.getenv("PIPER_LENGTH_SCALE", "1.08")
+PIPER_NOISE_SCALE = os.getenv("PIPER_NOISE_SCALE", "0.55")
+PIPER_NOISE_W_SCALE = os.getenv("PIPER_NOISE_W_SCALE", "0.65")
+PIPER_SENTENCE_SILENCE = os.getenv("PIPER_SENTENCE_SILENCE", "0.20")
+PIPER_VOLUME = os.getenv("PIPER_VOLUME", "1.0")
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
 VOICE_DIR = Path(os.getenv("GARMIN_COACH_VOICE_DIR", "~/Library/Application Support/Garmin Coach/voice")).expanduser()
 ANSWER_MAX_CHARS = int(os.getenv("GARMIN_COACH_ANSWER_MAX_CHARS", "1100"))
@@ -154,7 +159,12 @@ def synthesize_voice(text: str, output_dir: Path) -> Path | None:
     command = [piper_path, "--model", str(model_path), "--output_file", str(wav_path)]
     if PIPER_SPEAKER:
         command.extend(["--speaker", PIPER_SPEAKER])
-    subprocess.run(command, input=text, text=True, capture_output=True, check=True, timeout=90)
+    _append_piper_option(command, "--length-scale", PIPER_LENGTH_SCALE)
+    _append_piper_option(command, "--noise-scale", PIPER_NOISE_SCALE)
+    _append_piper_option(command, "--noise-w-scale", PIPER_NOISE_W_SCALE)
+    _append_piper_option(command, "--sentence-silence", PIPER_SENTENCE_SILENCE)
+    _append_piper_option(command, "--volume", PIPER_VOLUME)
+    subprocess.run(command, input=prepare_text_for_tts(text), text=True, capture_output=True, check=True, timeout=90)
 
     ffmpeg_path = shutil.which(FFMPEG_BIN)
     if not ffmpeg_path:
@@ -167,6 +177,109 @@ def synthesize_voice(text: str, output_dir: Path) -> Path | None:
         timeout=90,
     )
     return ogg_path if ogg_path.exists() else wav_path
+
+
+def prepare_text_for_tts(text: str) -> str:
+    value = clean_answer(text)
+    replacements = (
+        (r"\bBody battery\b", "energia corporal Garmin"),
+        (r"\bTraining readiness\b", "preparacion Garmin"),
+        (r"\bTraining effect\b", "efecto de entrenamiento"),
+        (r"\bHRV\b", "variabilidad de pulso"),
+        (r"\bVO2\s*max\b", "uve o dos maximo"),
+        (r"\bFCmax\b", "frecuencia cardiaca maxima"),
+        (r"\bFC reposo\b", "frecuencia cardiaca en reposo"),
+        (r"\bFC umbral\b", "frecuencia cardiaca de umbral"),
+        (r"\bFC\b", "frecuencia cardiaca"),
+        (r"\bFTP\b", "efe te pe"),
+        (r"\bVT1\b", "umbral ventilatorio uno"),
+        (r"\bVT2\b", "umbral ventilatorio dos"),
+        (r"\bZ1\b", "zona uno"),
+        (r"\bZ2\b", "zona dos"),
+        (r"\bZ3\b", "zona tres"),
+        (r"\bZ4\b", "zona cuatro"),
+        (r"\bZ5\b", "zona cinco"),
+        (r"\bppm\b", "pulsaciones por minuto"),
+        (r"\bbpm\b", "pulsaciones por minuto"),
+        (r"\bW/kg\b", "vatios por kilo"),
+        (r"\bW\b", "vatios"),
+        (r"\bkm/h\b", "kilometros por hora"),
+        (r"\bkm\b", "kilometros"),
+        (r"\bkcal\b", "kilocalorias"),
+        (r"\bmin\b", "minutos"),
+        (r"\bh\b", "horas"),
+        (r"\bREM\b", "fase REM"),
+        (r"\bBMR\b", "metabolismo basal"),
+        (r"\bIMC\b", "indice de masa corporal"),
+        (r"\bSpO2\b", "saturacion de oxigeno"),
+        (r"\b10K\b", "diez kilometros"),
+    )
+    for pattern, replacement in replacements:
+        value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+    value = re.sub(r"(\d{1,2}):(\d{2})\s*/\s*kilometros?\b", _pace_to_tts, value, flags=re.IGNORECASE)
+    value = re.sub(r"(\d+(?:[.,]\d+)?)\s*/\s*(\d+(?:[.,]\d+)?)", r"\1 sobre \2", value)
+    value = value.replace("/", " por ")
+    value = value.replace(" - ", ". ")
+    value = value.replace(":", ". ")
+    value = re.sub(r"\(([^)]*)\)", r", \1,", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def _append_piper_option(command: list[str], option: str, value: str) -> None:
+    if value.strip():
+        command.extend([option, value.strip()])
+
+
+def _pace_to_tts(match: re.Match[str]) -> str:
+    minutes = int(match.group(1))
+    seconds = int(match.group(2))
+    return f"{_number_to_spanish(minutes)} {_number_to_spanish(seconds)} por kilometro"
+
+
+def _number_to_spanish(value: int) -> str:
+    words = {
+        0: "cero",
+        1: "uno",
+        2: "dos",
+        3: "tres",
+        4: "cuatro",
+        5: "cinco",
+        6: "seis",
+        7: "siete",
+        8: "ocho",
+        9: "nueve",
+        10: "diez",
+        11: "once",
+        12: "doce",
+        13: "trece",
+        14: "catorce",
+        15: "quince",
+        16: "dieciseis",
+        17: "diecisiete",
+        18: "dieciocho",
+        19: "diecinueve",
+        20: "veinte",
+        21: "veintiuno",
+        22: "veintidos",
+        23: "veintitres",
+        24: "veinticuatro",
+        25: "veinticinco",
+        26: "veintiseis",
+        27: "veintisiete",
+        28: "veintiocho",
+        29: "veintinueve",
+        30: "treinta",
+        40: "cuarenta",
+        50: "cincuenta",
+    }
+    if value in words:
+        return words[value]
+    if 31 <= value <= 59:
+        tens = value - value % 10
+        units = value % 10
+        return f"{words[tens]} y {words[units]}"
+    return str(value)
 
 
 def send_telegram_voice(chat_id: str, audio_path: Path, caption: str) -> None:

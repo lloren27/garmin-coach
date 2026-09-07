@@ -383,7 +383,8 @@ def build_ai_brief(
         "sections": deduped,
         "instructions": (
             "Responde solo en espanol, sin Markdown, sin titulares ### y sin inventar datos. "
-            "Usa estas lecturas calculadas como fuente principal."
+            "Usa estas lecturas calculadas como fuente principal. "
+            "Se breve y accionable. Distancias en km, running en min/km, ciclismo en km/h y W."
         ),
     }
 
@@ -401,6 +402,20 @@ def format_natural_coach(
         return None
 
     section_map = {section["title"]: section["content"] for section in brief.get("sections", [])}
+    if "health" in intents and "load" in intents and "plan de salud" in _normalize_text(question):
+        lines = ["Plan de salud:"]
+        lines.extend(_selected_natural_lines(section_map.get("salud"), ("Sueno:", "HRV:", "Body battery:", "Estres:", "Readiness:"), 4))
+        lines.append("")
+        lines.append("Carga:")
+        lines.extend(
+            _selected_natural_lines(
+                section_map.get("carga"),
+                ("Total semana", "Running 7d:", "Bici 7d:", "Lectura:"),
+                4,
+            )
+        )
+        return "\n".join(lines).strip()
+
     lines = []
     if "tomorrow" in intents or "adjust" in intents:
         lines.append("Para manana:")
@@ -450,6 +465,21 @@ def _natural_section_lines(content: str | None, limit: int) -> list[str]:
         if not line or line.startswith("Tip:") or line.startswith("Actualizar:"):
             continue
         lines.append(line)
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _selected_natural_lines(content: str | None, prefixes: tuple[str, ...], limit: int) -> list[str]:
+    if not content:
+        return []
+    lines = []
+    for line in content.splitlines()[1:]:
+        clean = line.strip()
+        if not clean:
+            continue
+        if any(clean.startswith(prefix) for prefix in prefixes):
+            lines.append(clean)
         if len(lines) >= limit:
             break
     return lines
@@ -629,10 +659,10 @@ def format_latest(sync: dict[str, Any] | None) -> str:
     ]
     if activity.get("km"):
         lines.append(f"Distancia: {activity.get('km')} km")
-    if activity.get("pace"):
-        lines.append(f"Ritmo: {activity.get('pace')}")
-    if activity.get("avg_speed_kmh") and activity.get("sport") == "cycling":
+    if activity.get("sport") == "cycling" and activity.get("avg_speed_kmh"):
         lines.append(f"Velocidad media: {activity.get('avg_speed_kmh')} km/h")
+    elif activity.get("pace"):
+        lines.append(f"Ritmo: {activity.get('pace')}")
     if activity.get("avg_hr"):
         lines.append(f"Pulso medio: {activity.get('avg_hr')}")
     if activity.get("training_effect"):
@@ -980,7 +1010,7 @@ def format_load(sync: dict[str, Any] | None, profile: dict[str, Any] | None = No
 
     lines = [
         "Carga semanal",
-        f"Total semana: {week.get('hours', 0)} h, {week.get('km', 0)} km",
+        f"Total semana (todos los deportes): {week.get('hours', 0)} h, {week.get('km', 0)} km",
         f"Running 7d: {running.get('sessions_7d', 0)} sesiones, {running.get('km_7d', 0)} km, {running.get('hours_7d', 0)} h",
         f"Bici 7d: {cycling.get('sessions_7d', 0)} sesiones, {cycling.get('km_7d', 0)} km, {cycling.get('hours_7d', 0)} h",
         f"Fuerza 7d: {strength.get('sessions_7d', 0)} sesiones, {strength.get('hours_7d', 0)} h",
@@ -1566,9 +1596,9 @@ def _ai_intents(text: str) -> list[str]:
         intents.append("latest")
     if any(token in text for token in ("malaga", "maraton", "sub 3:40", "3:40", "preparacion")):
         intents.append("malaga")
-    if any(token in text for token in ("salud", "recuperacion", "hrv", "body battery", "estres", "calorias", "reposo")):
+    if any(token in text for token in ("salud", "plan de salud", "estado general", "como estoy", "recuperacion", "hrv", "body battery", "estres", "calorias", "reposo")):
         intents.append("health")
-    if any(token in text for token in ("carga", "semana", "volumen", "tendencia", "fatiga")):
+    if any(token in text for token in ("carga", "semana", "volumen", "tendencia", "fatiga", "plan de salud")):
         intents.append("load")
     if any(token in text for token in ("bici", "ciclismo", "cycling", "ftp", "watios", "w/kg")):
         intents.append("bike")

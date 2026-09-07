@@ -23,9 +23,10 @@ if str(BOT_APP_DIR) not in sys.path:
     sys.path.insert(0, str(BOT_APP_DIR))
 
 try:
-    from app.coach import build_ai_brief
+    from app.coach import build_ai_brief, format_natural_coach
 except Exception:
     build_ai_brief = None
+    format_natural_coach = None
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:2b")
@@ -40,6 +41,8 @@ PIPER_VOICE_MODEL = os.getenv("PIPER_VOICE_MODEL", "")
 PIPER_SPEAKER = os.getenv("PIPER_SPEAKER", "")
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
 VOICE_DIR = Path(os.getenv("GARMIN_COACH_VOICE_DIR", "~/Library/Application Support/Garmin Coach/voice")).expanduser()
+ANSWER_MAX_CHARS = int(os.getenv("GARMIN_COACH_ANSWER_MAX_CHARS", "1100"))
+VOICE_ANSWER_MAX_CHARS = int(os.getenv("GARMIN_COACH_VOICE_ANSWER_MAX_CHARS", "850"))
 
 
 def headers() -> dict[str, str]:
@@ -194,14 +197,18 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 "Eres Garmin Coach, un entrenador de running, ciclismo y fuerza. "
                 "Tu respuesta final debe estar SIEMPRE en espanol de Espana. "
                 "No uses ingles, no uses Markdown, no uses encabezados ###, no uses negritas y no uses emojis. "
+                "No saludes y no hagas introducciones genericas. "
                 "Usa principalmente las lecturas calculadas en coach_brief. "
                 "Usa solo los datos del contexto; si falta un dato, dilo con naturalidad. "
                 "No inventes metricas, actividades ni diagnosticos medicos. "
+                "Usa unidades coherentes: distancia en km con 1 decimal, running en min/km, ciclismo en km/h y W. "
+                "Nunca expreses ciclismo como min/km ni conviertas km a metros salvo distancias menores de 1 km. "
+                "Si una metrica no esta clara, omitela. "
                 "Empieza por la decision o lectura principal. "
                 "Cuando la pregunta sea sobre que hacer manana, responde con una recomendacion concreta primero. "
                 "Cuando pregunte por Malaga, evalua running/maraton aunque la ultima actividad sea bici. "
                 "No muestres razonamiento interno. "
-                "Limita la respuesta a 120 palabras."
+                "Responde en 4-7 lineas y menos de 90 palabras."
             ),
         },
         {
@@ -214,7 +221,7 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 f"{json.dumps(compact.get('coach_brief', {}), ensure_ascii=True)}\n\n"
                 "Contexto Garmin adicional, solo para desempatar:\n"
                 f"{json.dumps(compact.get('extra_context', {}), ensure_ascii=True)}\n\n"
-                "Recuerda: respuesta final solo en espanol natural, sin Markdown."
+                "Recuerda: respuesta final solo en espanol natural, sin Markdown, breve y accionable."
             ),
         },
     ]
@@ -225,7 +232,7 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
             "messages": messages,
             "stream": False,
             "think": False,
-            "options": {"temperature": 0.15, "num_ctx": 4096, "num_predict": 180},
+            "options": {"temperature": 0.1, "num_ctx": 4096, "num_predict": 160},
         },
         timeout=OLLAMA_TIMEOUT_SECONDS,
     )
@@ -234,8 +241,71 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
     content = (data.get("message") or {}).get("content") or data.get("response") or ""
     answer = clean_answer(str(content))
     if is_bad_answer(answer):
-        return fallback_answer(question, compact)
-    return answer
+        return polish_coach_answer(fallback_answer(question, compact))
+    return polish_coach_answer(answer)
+
+
+def deterministic_answer(question: str, context: dict[str, Any]) -> str | None:
+    if format_natural_coach is None:
+        return None
+    answer = format_natural_coach(
+        question,
+        context.get("sync"),
+        context.get("profile"),
+        context.get("checkins"),
+        context.get("history"),
+    )
+    return polish_coach_answer(answer) if answer else None
+
+
+def polish_coach_answer(value: str, max_chars: int = ANSWER_MAX_CHARS) -> str:
+    value = clean_answer(value)
+    banned_starts = (
+        "hola",
+        "he analizado",
+        "based on",
+        "here is",
+        "te ofrezco",
+        "a continuacion",
+    )
+    lines = []
+    for raw_line in value.splitlines():
+        line = raw_line.strip(" -\t")
+        if not line:
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        normalized = _normalize(line)
+        if any(normalized.startswith(prefix) for prefix in banned_starts):
+            continue
+        line = _fix_unit_language(line)
+        lines.append(line)
+        if len([item for item in lines if item]) >= 10:
+            break
+    polished = "\n".join(lines).strip()
+    if not polished:
+        polished = "No tengo contexto suficiente para afinar; lanza /sync y repite la pregunta."
+    return trim_answer(polished, max_chars=max_chars)
+
+
+def trim_answer(value: str, max_chars: int = ANSWER_MAX_CHARS) -> str:
+    if len(value) <= max_chars:
+        return value
+    snippet = value[: max_chars - 1].rstrip()
+    sentence_cut = max(snippet.rfind("."), snippet.rfind("\n"))
+    if sentence_cut >= max_chars * 0.55:
+        snippet = snippet[: sentence_cut + 1].rstrip()
+    return snippet.rstrip(" ,;:") + "."
+
+
+def _fix_unit_language(value: str) -> str:
+    value = re.sub(r"\bHR promedio\b", "pulso medio", value, flags=re.IGNORECASE)
+    value = re.sub(r"\bHR media\b", "pulso medio", value, flags=re.IGNORECASE)
+    value = re.sub(r"\bpace\b", "ritmo", value, flags=re.IGNORECASE)
+    if "cicl" in _normalize(value) or "bici" in _normalize(value):
+        value = re.sub(r"\britmo\s+(?:medio\s+)?(?:de\s+)?\d{1,2}:\d{2}\s*/\s*km\b", "velocidad media no disponible", value, flags=re.IGNORECASE)
+        value = re.sub(r"\b\d{1,2}:\d{2}\s*/\s*km\b", "velocidad media no disponible", value)
+    return value
 
 
 def clean_answer(value: str) -> str:
@@ -372,7 +442,6 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
             print(json.dumps({"ok": True, "job": job_id, "status": "completed", "type": "lab_test"}))
             return
 
-        check_ollama()
         if job.get("audio_file_id"):
             with tempfile.TemporaryDirectory(prefix="garmin-coach-voice-") as tmp:
                 audio_path = download_telegram_audio(str(job["audio_file_id"]), Path(tmp))
@@ -382,7 +451,10 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
             question = f"{question}\n{transcript}".strip()
             context = enrich_context_for_question(question, context)
 
-        answer = call_ollama(question, context)
+        answer = deterministic_answer(question, context)
+        if not answer:
+            check_ollama()
+            answer = call_ollama(question, context)
         payload: dict[str, Any] = {"status": "completed", "answer": answer}
         if transcript:
             payload["transcript"] = transcript
@@ -391,9 +463,11 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
             try:
                 VOICE_DIR.mkdir(parents=True, exist_ok=True)
                 with tempfile.TemporaryDirectory(prefix="garmin-coach-piper-", dir=str(VOICE_DIR)) as tmp:
+                    answer = trim_answer(answer, VOICE_ANSWER_MAX_CHARS)
                     voice_path = synthesize_voice(answer, Path(tmp))
                     if voice_path:
                         send_telegram_voice(str(job["chat_id"]), voice_path, answer)
+                        payload["answer"] = answer
                         payload["notify_telegram"] = False
                         payload["response_mode"] = "voice"
             except Exception as voice_exc:

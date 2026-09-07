@@ -151,6 +151,32 @@ OLLAMA_MODEL=qwen3.5:2b
 GARMIN_COACH_AI_MAX_JOBS=3
 ```
 
+Voice messages are also processed locally on the Mac. Railway only queues the
+Telegram `file_id`; the Mac downloads the audio, transcribes it with
+`faster-whisper`, asks the local coach, and returns a Piper voice response when
+the Piper model is configured. If Piper is not available, the answer falls back
+to text.
+
+Install the local voice stack:
+
+```bash
+./install_voice_stack.command
+```
+
+Voice defaults:
+
+```text
+WHISPER_MODEL=small
+WHISPER_DEVICE=auto
+WHISPER_COMPUTE_TYPE=int8
+PIPER_BIN=/Users/lloren27/Projects/garmin-coach/apps/sync-local/.venv/bin/piper
+PIPER_VOICE_MODEL=~/Library/Application Support/Garmin Coach/piper/es_ES-mls_10246-low.onnx
+FFMPEG_BIN=ffmpeg
+```
+
+If Homebrew cannot install `ffmpeg`, the installer falls back to the
+`imageio-ffmpeg` binary inside the local sync virtualenv.
+
 Check Ollama:
 
 ```bash
@@ -195,6 +221,7 @@ Examples:
 ```text
 /feedback
 /coach que hago manana si estoy cansado?
+/manda una nota de voz con una pregunta de entrenamiento
 /sync
 /salud
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40

@@ -29,6 +29,7 @@ from .coach import (
     format_strength,
     format_today,
     format_trend,
+    format_voice_queued,
     merge_profile,
     format_week,
     parse_checkin,
@@ -156,11 +157,21 @@ async def complete_ai_job_endpoint(
         raise HTTPException(status_code=400, detail="Invalid status")
     answer = str(payload.get("answer"))[:3500] if payload.get("answer") else None
     error = str(payload.get("error"))[:500] if payload.get("error") else None
-    document = complete_ai_job(job_id, status=status, answer=answer, error=error)
+    transcript = str(payload.get("transcript"))[:3500] if payload.get("transcript") else None
+    response_mode = str(payload.get("response_mode"))[:40] if payload.get("response_mode") else None
+    notify_telegram = bool(payload.get("notify_telegram", True))
+    document = complete_ai_job(
+        job_id,
+        status=status,
+        answer=answer,
+        error=error,
+        transcript=transcript,
+        response_mode=response_mode,
+    )
     if not document:
         raise HTTPException(status_code=404, detail="Job not found")
     chat_id = document.get("chat_id")
-    if chat_id:
+    if chat_id and notify_telegram:
         if status == "completed" and answer:
             await send_telegram_message(chat_id, answer)
         elif status == "failed":
@@ -180,6 +191,7 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
     chat = message.get("chat") or {}
     user = message.get("from") or {}
     text = (message.get("text") or "").strip()
+    voice = message.get("voice") or message.get("audio")
 
     if settings.telegram_allowed_user_id:
         if str(user.get("id")) != settings.telegram_allowed_user_id:
@@ -189,7 +201,21 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
     if not chat_id:
         return {"ok": True}
 
-    response = route_message(text, str(user.get("id")) if user.get("id") else None, str(chat_id))
+    user_id = str(user.get("id")) if user.get("id") else None
+    if voice and voice.get("file_id"):
+        document = create_ai_job(
+            chat_id=str(chat_id),
+            user_id=user_id,
+            text=(message.get("caption") or "").strip(),
+            audio_file_id=str(voice.get("file_id")),
+            audio_unique_id=str(voice.get("file_unique_id")) if voice.get("file_unique_id") else None,
+            audio_duration=int(voice.get("duration")) if voice.get("duration") else None,
+            source_kind="voice" if message.get("voice") else "audio",
+            response_mode="voice",
+        )
+        response = format_voice_queued(document)
+    else:
+        response = route_message(text, user_id, str(chat_id))
     await send_telegram_message(chat_id, response)
     return {"ok": True}
 

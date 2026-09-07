@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unicodedata
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -11,10 +16,29 @@ import httpx
 from .sync import API_URL, SYNC_SECRET
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+BOT_APP_DIR = PROJECT_ROOT / "apps" / "bot"
+if str(BOT_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(BOT_APP_DIR))
+
+try:
+    from app.coach import build_ai_brief
+except Exception:
+    build_ai_brief = None
+
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:2b")
 MAX_JOBS = int(os.getenv("GARMIN_COACH_AI_MAX_JOBS", "3"))
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
+WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto")
+WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+PIPER_BIN = os.getenv("PIPER_BIN", str(Path(sys.executable).resolve().parent / "piper"))
+PIPER_VOICE_MODEL = os.getenv("PIPER_VOICE_MODEL", "")
+PIPER_SPEAKER = os.getenv("PIPER_SPEAKER", "")
+FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
+VOICE_DIR = Path(os.getenv("GARMIN_COACH_VOICE_DIR", "~/Library/Application Support/Garmin Coach/voice")).expanduser()
 
 
 def headers() -> dict[str, str]:
@@ -33,9 +57,110 @@ def post_json(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     return response.json()
 
 
+def telegram_api(method: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is required for voice jobs")
+    response = httpx.post(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}",
+        data=payload or {},
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram {method} failed: {data}")
+    return data
+
+
 def check_ollama() -> None:
     response = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=5)
     response.raise_for_status()
+
+
+def download_telegram_audio(file_id: str, output_dir: Path) -> Path:
+    file_data = telegram_api("getFile", {"file_id": file_id})
+    file_path = (file_data.get("result") or {}).get("file_path")
+    if not file_path:
+        raise RuntimeError("Telegram did not return an audio file path")
+
+    suffix = Path(str(file_path)).suffix or ".oga"
+    output_path = output_dir / f"telegram_audio{suffix}"
+    url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+    response = httpx.get(url, timeout=60)
+    response.raise_for_status()
+    output_path.write_bytes(response.content)
+    return output_path
+
+
+def transcribe_audio(audio_path: Path) -> str:
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as exc:
+        raise RuntimeError("faster-whisper is not installed in the local sync venv") from exc
+
+    model = WhisperModel(WHISPER_MODEL, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
+    segments, _info = model.transcribe(str(audio_path), language="es", vad_filter=True)
+    transcript = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
+    return re.sub(r"\s+", " ", transcript).strip()
+
+
+def enrich_context_for_question(question: str, context: dict[str, Any]) -> dict[str, Any]:
+    if not question or build_ai_brief is None:
+        return context
+    enriched = dict(context)
+    enriched["coach_brief"] = build_ai_brief(
+        question,
+        enriched.get("sync"),
+        enriched.get("profile"),
+        enriched.get("checkins"),
+        enriched.get("history"),
+    )
+    return enriched
+
+
+def synthesize_voice(text: str, output_dir: Path) -> Path | None:
+    if not PIPER_VOICE_MODEL:
+        return None
+    model_path = Path(PIPER_VOICE_MODEL).expanduser()
+    if not model_path.exists():
+        raise RuntimeError(f"Piper voice model not found: {model_path}")
+    piper_path = shutil.which(PIPER_BIN) or PIPER_BIN
+    wav_path = output_dir / "coach_response.wav"
+    command = [piper_path, "--model", str(model_path), "--output_file", str(wav_path)]
+    if PIPER_SPEAKER:
+        command.extend(["--speaker", PIPER_SPEAKER])
+    subprocess.run(command, input=text, text=True, capture_output=True, check=True, timeout=90)
+
+    ffmpeg_path = shutil.which(FFMPEG_BIN)
+    if not ffmpeg_path:
+        return wav_path
+    ogg_path = output_dir / "coach_response.ogg"
+    subprocess.run(
+        [ffmpeg_path, "-y", "-i", str(wav_path), "-c:a", "libopus", "-b:a", "32k", str(ogg_path)],
+        capture_output=True,
+        check=True,
+        timeout=90,
+    )
+    return ogg_path if ogg_path.exists() else wav_path
+
+
+def send_telegram_voice(chat_id: str, audio_path: Path, caption: str) -> None:
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is required to send voice responses")
+    method = "sendVoice" if audio_path.suffix == ".ogg" else "sendAudio"
+    field = "voice" if method == "sendVoice" else "audio"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    with audio_path.open("rb") as file:
+        response = httpx.post(
+            url,
+            data={"chat_id": chat_id, "caption": caption[:1000]},
+            files={field: (audio_path.name, file, "audio/ogg" if audio_path.suffix == ".ogg" else "audio/wav")},
+            timeout=90,
+        )
+    response.raise_for_status()
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram {method} failed: {data}")
 
 
 def call_ollama(question: str, context: dict[str, Any]) -> str:
@@ -205,13 +330,43 @@ def _normalize(value: str) -> str:
 
 def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
     job_id = job["id"]
+    transcript = None
     try:
         check_ollama()
-        answer = call_ollama(str(job.get("text") or ""), context)
-        post_json(f"/ai/jobs/{job_id}/complete", {"status": "completed", "answer": answer})
+        question = str(job.get("text") or "").strip()
+        if job.get("audio_file_id"):
+            with tempfile.TemporaryDirectory(prefix="garmin-coach-voice-") as tmp:
+                audio_path = download_telegram_audio(str(job["audio_file_id"]), Path(tmp))
+                transcript = transcribe_audio(audio_path)
+            if not transcript:
+                raise RuntimeError("No he podido transcribir la nota de voz")
+            question = f"{question}\n{transcript}".strip()
+            context = enrich_context_for_question(question, context)
+
+        answer = call_ollama(question, context)
+        payload: dict[str, Any] = {"status": "completed", "answer": answer}
+        if transcript:
+            payload["transcript"] = transcript
+
+        if job.get("response_mode") == "voice" and job.get("chat_id"):
+            try:
+                VOICE_DIR.mkdir(parents=True, exist_ok=True)
+                with tempfile.TemporaryDirectory(prefix="garmin-coach-piper-", dir=str(VOICE_DIR)) as tmp:
+                    voice_path = synthesize_voice(answer, Path(tmp))
+                    if voice_path:
+                        send_telegram_voice(str(job["chat_id"]), voice_path, answer)
+                        payload["notify_telegram"] = False
+                        payload["response_mode"] = "voice"
+            except Exception as voice_exc:
+                payload["answer"] = f"{answer}\n\n(Audio no disponible en el Mac: {str(voice_exc)[:180]})"
+                payload["response_mode"] = "text"
+        post_json(f"/ai/jobs/{job_id}/complete", payload)
         print(json.dumps({"ok": True, "job": job_id, "status": "completed"}))
     except Exception as exc:
-        post_json(f"/ai/jobs/{job_id}/complete", {"status": "failed", "error": str(exc)[:500]})
+        error_payload: dict[str, Any] = {"status": "failed", "error": str(exc)[:500]}
+        if transcript:
+            error_payload["transcript"] = transcript
+        post_json(f"/ai/jobs/{job_id}/complete", error_payload)
         raise
 
 

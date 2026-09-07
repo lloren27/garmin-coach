@@ -153,13 +153,28 @@ def complete_sync_request(status: str = "completed", error: str | None = None) -
     return document
 
 
-def create_ai_job(chat_id: str, text: str, user_id: str | None = None) -> dict[str, Any]:
+def create_ai_job(
+    chat_id: str,
+    text: str,
+    user_id: str | None = None,
+    audio_file_id: str | None = None,
+    audio_unique_id: str | None = None,
+    audio_duration: int | None = None,
+    source_kind: str = "text",
+    response_mode: str = "text",
+) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
     document = {
         "id": str(uuid.uuid4()),
         "chat_id": str(chat_id),
         "user_id": user_id,
         "text": text.strip(),
+        "audio_file_id": audio_file_id,
+        "audio_unique_id": audio_unique_id,
+        "audio_duration": audio_duration,
+        "source_kind": source_kind,
+        "response_mode": response_mode,
+        "transcript": None,
         "status": "pending",
         "created_at": now,
         "claimed_at": None,
@@ -200,9 +215,11 @@ def complete_ai_job(
     status: str = "completed",
     answer: str | None = None,
     error: str | None = None,
+    transcript: str | None = None,
+    response_mode: str | None = None,
 ) -> dict[str, Any] | None:
     if DATABASE_URL:
-        return complete_ai_job_postgres(job_id, status, answer, error)
+        return complete_ai_job_postgres(job_id, status, answer, error, transcript, response_mode)
 
     jobs = load_ai_jobs_file()
     now = datetime.now(timezone.utc).isoformat()
@@ -217,6 +234,10 @@ def complete_ai_job(
                     "error": error,
                 }
             )
+            if transcript is not None:
+                job["transcript"] = transcript
+            if response_mode is not None:
+                job["response_mode"] = response_mode
             completed = job
             break
     if completed:
@@ -408,6 +429,8 @@ def complete_ai_job_postgres(
     status: str,
     answer: str | None,
     error: str | None,
+    transcript: str | None = None,
+    response_mode: str | None = None,
 ) -> dict[str, Any] | None:
     import psycopg
     from psycopg.types.json import Jsonb
@@ -432,6 +455,10 @@ def complete_ai_job_postgres(
                 "error": error,
             }
         )
+        if transcript is not None:
+            job["transcript"] = transcript
+        if response_mode is not None:
+            job["response_mode"] = response_mode
         conn.execute(
             """
             update coach_ai_jobs

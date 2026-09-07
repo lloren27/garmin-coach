@@ -27,7 +27,7 @@ if [[ ! -x ".venv/bin/python" ]]; then
   fi
 fi
 
-if ! .venv/bin/python -c "import garminconnect, httpx, dotenv" >/dev/null 2>&1; then
+if ! .venv/bin/python -c "import garminconnect, httpx, dotenv, faster_whisper" >/dev/null 2>&1; then
   .venv/bin/python -m pip install -r requirements.txt
 fi
 

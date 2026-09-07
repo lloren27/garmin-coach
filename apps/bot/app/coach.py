@@ -30,7 +30,8 @@ def format_help() -> str:
         "/bici - resumen de ciclismo\n"
         "/fuerza - resumen de fuerza\n"
         "/malaga - foco Maraton de Malaga\n"
-        "/syncinfo - ultima sincronizacion"
+        "/syncinfo - ultima sincronizacion\n"
+        "Tambien puedes mandar una nota de voz: el Mac la transcribe y el coach local responde."
     )
 
 
@@ -95,6 +96,15 @@ def format_ai_queued(document: dict[str, Any]) -> str:
     return (
         "Lo miro con el coach local.\n"
         "Te respondo en unos segundos si el Mac esta despierto."
+    )
+
+
+def format_voice_queued(document: dict[str, Any]) -> str:
+    duration = document.get("audio_duration")
+    duration_text = f" ({duration} s)" if duration else ""
+    return (
+        f"Audio recibido{duration_text}.\n"
+        "Lo transcribe el Mac con faster-whisper y te contesto con el coach local."
     )
 
 

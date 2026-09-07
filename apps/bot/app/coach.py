@@ -555,68 +555,136 @@ def format_health(sync: dict[str, Any] | None) -> str:
     races = _clean_dict(physiology.get("race_predictions"))
     endurance = _clean_dict(physiology.get("endurance_score"))
     hill = _clean_dict(physiology.get("hill_score"))
+    missing_groups = _missing_metric_groups(
+        [
+            (wellness.get("hrv"), hrv, "HRV"),
+            (wellness.get("training_readiness"), readiness, "readiness"),
+            (wellness.get("training_status"), training_status, "training status"),
+            (wellness.get("calories"), calories, "calorias"),
+            (wellness.get("intensity_minutes"), intensity, "intensidad"),
+            (wellness.get("respiration"), respiration, "respiracion"),
+            (wellness.get("spo2"), spo2, "SpO2"),
+            (wellness.get("body"), body, "cuerpo"),
+            (physiology.get("lactate_threshold"), lactate, "umbral lactato"),
+            (physiology.get("endurance_score"), endurance, "endurance score"),
+            (physiology.get("hill_score"), hill, "hill score"),
+        ]
+    )
 
     lines = ["Salud y recuperacion Garmin"]
     if daily:
-        lines.append(
-            f"Dia: pasos {daily.get('steps', 'n/a')}, reposo {daily.get('resting_hr', resting_hr.get('value', 'n/a'))}, "
-            f"activas {daily.get('active_kcal', calories.get('active_kcal', 'n/a'))} kcal"
+        _append_parts(
+            lines,
+            "Dia",
+            [
+                _metric_part("pasos", daily.get("steps")),
+                _metric_part("reposo", daily.get("resting_hr", resting_hr.get("value"))),
+                _metric_part("activas", daily.get("active_kcal", calories.get("active_kcal")), "kcal"),
+            ],
         )
     elif resting_hr:
-        lines.append(f"Pulso reposo: {resting_hr.get('value', 'n/a')}")
+        _append_parts(lines, "Pulso reposo", [_metric_part("", resting_hr.get("value"))])
     if sleep:
-        parts = [f"total {_format_duration(sleep.get('sleep_seconds'))}"]
-        if sleep.get("score"):
-            parts.append(f"score {sleep.get('score')}")
+        parts = []
+        if sleep.get("sleep_seconds"):
+            parts.append(f"total {_format_duration(sleep.get('sleep_seconds'))}")
+        parts.append(_metric_part("score", sleep.get("score")))
         if sleep.get("deep_seconds"):
             parts.append(f"profundo {_format_duration(sleep.get('deep_seconds'))}")
         if sleep.get("rem_seconds"):
             parts.append(f"REM {_format_duration(sleep.get('rem_seconds'))}")
-        lines.append("Sueno: " + ", ".join(parts))
+        _append_parts(lines, "Sueno", parts)
     if hrv:
-        lines.append(
-            f"HRV: noche {hrv.get('last_night_avg', 'n/a')}, media {hrv.get('weekly_avg', 'n/a')}, estado {hrv.get('status', 'n/a')}"
+        _append_parts(
+            lines,
+            "HRV",
+            [
+                _metric_part("noche", hrv.get("last_night_avg")),
+                _metric_part("media", hrv.get("weekly_avg")),
+                _metric_part("estado", hrv.get("status")),
+            ],
         )
     if readiness:
-        lines.append(f"Readiness: {readiness.get('score', 'n/a')} ({readiness.get('level', 'n/a')})")
+        _append_parts(lines, "Readiness", [_metric_part("score", readiness.get("score")), _metric_part("nivel", readiness.get("level"))])
     if training_status:
-        lines.append(
-            f"Training status: {training_status.get('status', 'n/a')}, carga {training_status.get('acute_load', 'n/a')}, ratio {training_status.get('load_ratio', 'n/a')}"
+        _append_parts(
+            lines,
+            "Training status",
+            [
+                _metric_part("estado", training_status.get("status")),
+                _metric_part("carga", training_status.get("acute_load")),
+                _metric_part("ratio", training_status.get("load_ratio")),
+            ],
         )
     if body_battery:
-        lines.append(
-            f"Body battery: actual {body_battery.get('current', 'n/a')}, carga {body_battery.get('charged', 'n/a')}, drenaje {body_battery.get('drained', 'n/a')}"
+        _append_parts(
+            lines,
+            "Body battery",
+            [
+                _metric_part("actual", body_battery.get("current")),
+                _metric_part("carga", body_battery.get("charged")),
+                _metric_part("drenaje", body_battery.get("drained")),
+            ],
         )
     if stress:
-        lines.append(f"Estres: medio {stress.get('avg', 'n/a')}, max {stress.get('max', 'n/a')}, estado {stress.get('status', 'n/a')}")
+        _append_parts(
+            lines,
+            "Estres",
+            [
+                _metric_part("medio", stress.get("avg")),
+                _metric_part("max", stress.get("max")),
+                _metric_part("estado", stress.get("status")),
+            ],
+        )
     if calories:
-        lines.append(
-            f"Calorias: activas {calories.get('active_kcal', 'n/a')}, BMR {calories.get('bmr_kcal', 'n/a')}, total {calories.get('total_kcal', 'n/a')}"
+        _append_parts(
+            lines,
+            "Calorias",
+            [
+                _metric_part("activas", calories.get("active_kcal"), "kcal"),
+                _metric_part("BMR", calories.get("bmr_kcal"), "kcal"),
+                _metric_part("total", calories.get("total_kcal"), "kcal"),
+            ],
         )
     if intensity:
-        lines.append(
-            f"Intensidad: dia {intensity.get('daily', 'n/a')} min, semana {intensity.get('weekly_total', 'n/a')}/{intensity.get('weekly_goal', 'n/a')} min"
-        )
+        weekly = None
+        if _has_value(intensity.get("weekly_total")) and _has_value(intensity.get("weekly_goal")):
+            weekly = f"semana {_format_metric_value(intensity.get('weekly_total'))}/{_format_metric_value(intensity.get('weekly_goal'))} min"
+        _append_parts(lines, "Intensidad", [_metric_part("dia", intensity.get("daily"), "min"), weekly])
     if respiration:
-        lines.append(
-            f"Respiracion: despierto {respiration.get('avg_waking', 'n/a')}, sueno {respiration.get('avg_sleep', 'n/a')}"
-        )
+        _append_parts(lines, "Respiracion", [_metric_part("despierto", respiration.get("avg_waking")), _metric_part("sueno", respiration.get("avg_sleep"))])
     if spo2:
-        lines.append(f"SpO2: media {spo2.get('avg', 'n/a')}, minima {spo2.get('lowest', 'n/a')}")
+        _append_parts(lines, "SpO2", [_metric_part("media", spo2.get("avg")), _metric_part("minima", spo2.get("lowest"))])
     if body:
-        lines.append(
-            f"Cuerpo: peso {body.get('weight_kg', 'n/a')} kg, grasa {body.get('body_fat_pct', 'n/a')}%, IMC {body.get('bmi', 'n/a')}"
+        _append_parts(
+            lines,
+            "Cuerpo",
+            [
+                _metric_part("peso", body.get("weight_kg"), "kg"),
+                _metric_part("grasa", body.get("body_fat_pct"), "%"),
+                _metric_part("IMC", body.get("bmi")),
+            ],
         )
     if lactate:
-        lines.append(f"Umbral lactato Garmin: FC {lactate.get('heart_rate', 'n/a')}, ritmo {lactate.get('pace', 'n/a')}")
+        _append_parts(lines, "Umbral lactato Garmin", [_metric_part("FC", lactate.get("heart_rate")), _metric_part("ritmo", lactate.get("pace"))])
     if ftp:
-        lines.append(f"FTP Garmin: {ftp.get('ftp', ftp.get('watts', 'n/a'))} W")
+        _append_parts(lines, "FTP Garmin", [_metric_part("", ftp.get("ftp", ftp.get("watts")), "W")])
     if races:
-        lines.append(f"Prediccion carrera: 10K {races.get('ten_k', 'n/a')}, media {races.get('half_marathon', 'n/a')}, maraton {races.get('marathon', 'n/a')}")
+        _append_parts(
+            lines,
+            "Prediccion carrera",
+            [
+                _metric_part("10K", races.get("ten_k")),
+                _metric_part("media", races.get("half_marathon")),
+                _metric_part("maraton", races.get("marathon")),
+            ],
+        )
     if endurance or hill:
-        lines.append(f"Scores: endurance {endurance.get('score', 'n/a')}, hill {hill.get('score', 'n/a')}")
+        _append_parts(lines, "Scores", [_metric_part("endurance", endurance.get("score")), _metric_part("hill", hill.get("score"))])
     if len(lines) == 1:
         lines.append("Garmin no devolvio senales wellness utiles en la ultima sync.")
+    if missing_groups:
+        lines.append("Sin dato real en esta sync: " + _format_missing_groups(missing_groups))
     lines.append("Lectura: estos datos afinan descanso, carga invisible, energia disponible y riesgo de fatiga.")
     return "\n".join(lines)
 
@@ -1161,8 +1229,56 @@ def _latest_checkin(checkins: list[dict[str, Any]] | None) -> dict[str, Any]:
 
 def _clean_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict) and "_unavailable" not in value:
-        return value
+        return {key: item for key, item in value.items() if _has_value(item)}
     return {}
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "none", "null", "n/a", "nan"}
+    if isinstance(value, dict):
+        return bool(_clean_dict(value))
+    if isinstance(value, list):
+        return any(_has_value(item) for item in value)
+    return True
+
+
+def _append_parts(lines: list[str], label: str, parts: list[str | None]) -> None:
+    clean = [part for part in parts if _has_value(part)]
+    if clean:
+        lines.append(f"{label}: " + ", ".join(clean))
+
+
+def _metric_part(label: str, value: Any, unit: str = "") -> str | None:
+    if not _has_value(value):
+        return None
+    formatted = _format_metric_value(value)
+    suffix = unit if unit == "%" else f" {unit}".rstrip()
+    if label:
+        return f"{label} {formatted}{suffix}"
+    return f"{formatted}{suffix}".strip()
+
+
+def _format_metric_value(value: Any) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _missing_metric_groups(groups: list[tuple[Any, dict[str, Any], str]]) -> list[str]:
+    missing = []
+    for raw, clean, label in groups:
+        if isinstance(raw, dict) and raw and not clean:
+            missing.append(label)
+    return missing
+
+
+def _format_missing_groups(groups: list[str]) -> str:
+    visible = groups[:6]
+    suffix = f" y {len(groups) - len(visible)} mas" if len(groups) > len(visible) else ""
+    return ", ".join(visible) + suffix
 
 
 def _readiness_score(value: Any) -> Any:

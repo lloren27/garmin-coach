@@ -29,6 +29,8 @@ def format_help() -> str:
         "/pruebas - historico de pruebas de esfuerzo\n"
         "/zonas - zonas actuales desde perfil/prueba\n"
         "/aplicar_prueba - aplica la ultima propuesta al perfil\n"
+        "/corregir_prueba - corrige la prueba pendiente\n"
+        "/descartar_prueba - descarta la prueba pendiente\n"
         "/checkin - guarda contexto subjetivo y molestias\n"
         "/ajustar - adapta el proximo entreno con Garmin + molestias\n"
         "/bici - resumen de ciclismo\n"
@@ -117,7 +119,7 @@ def format_lab_test_help() -> str:
         "Prueba de esfuerzo\n"
         "Envia el PDF o DOCX a este chat con el texto /prueba_esfuerzo en el comentario del archivo.\n"
         "El Mac lo leera localmente y propondra datos para el perfil: FCmax, VT1, VT2, VO2max, ritmos, potencia y notas.\n"
-        "No se aplicara nada automaticamente. Para confirmar: /aplicar_prueba"
+        "No se aplicara nada automaticamente. Corrige con /corregir_prueba y confirma con /aplicar_prueba."
     )
 
 
@@ -198,6 +200,78 @@ def format_lab_test_applied(document: dict[str, Any] | None, profile_document: d
     lines.append("Usare estos datos para zonas, feedback, carga y ajustes.")
     lines.append("Nota: respeta siempre las indicaciones del profesional si el informe marca limitaciones.")
     return "\n".join(lines)
+
+
+def format_lab_test_correction_help() -> str:
+    return (
+        "Corregir prueba de esfuerzo\n"
+        "Ejemplo:\n"
+        "/corregir_prueba fcmax 181 fcreposo 52 vt1 142 vt2 164 vo2max 52.3 ritmo_umbral 4:45 peso 72.5\n"
+        "Tambien puedes corregir potencia: ftp 230 potencia_vt1 180 potencia_vt2 245.\n"
+        "Luego revisa /ver_prueba y confirma con /aplicar_prueba."
+    )
+
+
+def parse_lab_test_correction(text: str) -> dict[str, dict[str, Any]]:
+    normalized = _normalize_text(text)
+    extracted: dict[str, Any] = {}
+    profile_update: dict[str, Any] = {}
+
+    numeric_fields = (
+        ("max_hr", ("fcmax", "fc_max", "maxhr"), 90, 230, int),
+        ("resting_hr", ("fcreposo", "fc_reposo", "reposo", "resting_hr"), 30, 100, int),
+        ("vt1_hr", ("vt1", "vt1_fc", "fcvt1", "umbral_aerobico"), 70, 190, int),
+        ("vt2_hr", ("vt2", "vt2_fc", "fcvt2", "umbral_anaerobico"), 90, 220, int),
+        ("lactate_hr", ("fcumbral", "fc_umbral", "umbral", "lactate_hr"), 90, 220, int),
+        ("vo2max", ("vo2max", "vo2_max"), 25, 90, float),
+        ("weight_kg", ("peso", "weight"), 35, 200, float),
+        ("ftp", ("ftp",), 50, 600, int),
+        ("vt1_power", ("potencia_vt1", "watts_vt1", "w_vt1"), 50, 600, int),
+        ("vt2_power", ("potencia_vt2", "watts_vt2", "w_vt2"), 50, 600, int),
+    )
+    for key, labels, minimum, maximum, caster in numeric_fields:
+        value = _bounded_number(_extract_float_after(normalized, labels), minimum, maximum)
+        if value is None:
+            continue
+        extracted[key] = int(value) if caster is int else round(float(value), 1)
+
+    for key, labels in (
+        ("vt1_pace", ("ritmo_vt1", "pace_vt1")),
+        ("vt2_pace", ("ritmo_vt2", "pace_vt2")),
+        ("threshold_pace", ("ritmo_umbral", "pace_umbral", "threshold_pace")),
+    ):
+        value = _extract_time_after(normalized, labels)
+        if value:
+            extracted[key] = value
+
+    for key in ("max_hr", "resting_hr", "lactate_hr", "vt1_hr", "vt2_hr", "vo2max", "weight_kg", "ftp", "vt1_power", "vt2_power"):
+        if key in extracted:
+            profile_update[key] = extracted[key]
+    if "vt2_hr" in extracted and "lactate_hr" not in profile_update:
+        extracted["lactate_hr"] = extracted["vt2_hr"]
+        profile_update["lactate_hr"] = extracted["vt2_hr"]
+    if "threshold_pace" in extracted:
+        profile_update["running_threshold_pace"] = extracted["threshold_pace"]
+    elif "vt2_pace" in extracted:
+        profile_update["running_threshold_pace"] = extracted["vt2_pace"]
+
+    return {"extracted": extracted, "profile_update": profile_update}
+
+
+def format_lab_test_corrected(document: dict[str, Any] | None) -> str:
+    if not document:
+        return "No encuentro una prueba pendiente para corregir."
+    return "Prueba corregida\n" + format_lab_test(document)
+
+
+def format_lab_test_discarded(document: dict[str, Any] | None) -> str:
+    if not document:
+        return "No encuentro una prueba pendiente para descartar."
+    return (
+        "Prueba descartada\n"
+        f"ID: {_short_id(document.get('id'))}\n"
+        "No se aplicara al perfil. Puedes subir otra con /prueba_esfuerzo."
+    )
 
 
 def format_zones(profile_document: dict[str, Any] | None, lab_test: dict[str, Any] | None = None) -> str:

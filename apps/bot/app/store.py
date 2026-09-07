@@ -171,6 +171,57 @@ def mark_lab_test_applied(test_id: str | None = None) -> dict[str, Any] | None:
     return selected
 
 
+def update_lab_test(test_id: str | None, extracted_update: dict[str, Any], profile_update: dict[str, Any]) -> dict[str, Any] | None:
+    tests = load_lab_tests(100)
+    selected = select_lab_test(tests, test_id)
+    if not selected:
+        return None
+
+    extracted = dict(selected.get("extracted") or {})
+    extracted.update({key: value for key, value in extracted_update.items() if value not in (None, "")})
+    update = dict(selected.get("profile_update") or {})
+    update.update({key: value for key, value in profile_update.items() if value not in (None, "")})
+    selected["extracted"] = extracted
+    selected["profile_update"] = update
+    selected["status"] = "pending"
+    selected["corrected_at"] = datetime.now(timezone.utc).isoformat()
+
+    notes = list(selected.get("notes") or [])
+    if "Correccion manual aplicada desde Telegram." not in notes:
+        notes.append("Correccion manual aplicada desde Telegram.")
+    selected["notes"] = notes
+
+    save_lab_tests(tests)
+    save_state("pending_lab_test", selected)
+    return selected
+
+
+def discard_lab_test(test_id: str | None = None) -> dict[str, Any] | None:
+    tests = load_lab_tests(100)
+    selected = select_lab_test(tests, test_id)
+    if not selected:
+        return None
+
+    selected["status"] = "discarded"
+    selected["discarded_at"] = datetime.now(timezone.utc).isoformat()
+    save_lab_tests(tests)
+    pending = load_pending_lab_test()
+    if pending and pending.get("id") == selected.get("id"):
+        save_state("pending_lab_test", {})
+    return selected
+
+
+def select_lab_test(tests: list[dict[str, Any]], test_id: str | None = None) -> dict[str, Any] | None:
+    for item in reversed(tests):
+        full_id = str(item.get("id") or "")
+        if test_id and full_id != test_id and not full_id.startswith(test_id):
+            continue
+        if not test_id and item.get("status") != "pending":
+            continue
+        return item
+    return None
+
+
 def save_lab_tests(tests: list[dict[str, Any]]) -> None:
     state = {"tests": tests[-100:]}
     if DATABASE_URL:

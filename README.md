@@ -209,6 +209,8 @@ scripts/run_ai_worker.sh
 - `/ver_prueba`
 - `/zonas`
 - `/aplicar_prueba`
+- `/corregir_prueba`
+- `/descartar_prueba`
 - `/checkin`
 - `/ajustar`
 - `/bici`
@@ -229,7 +231,9 @@ Examples:
 /manda una nota de voz con una pregunta de entrenamiento
 Adjunta un PDF o DOCX con /prueba_esfuerzo en el comentario del archivo
 /zonas
+/corregir_prueba fcmax 181 fcreposo 52 vt1 142 vt2 164 vo2max 52.3 ritmo_umbral 4:45
 /aplicar_prueba
+/descartar_prueba
 /sync
 /salud
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
@@ -250,7 +254,9 @@ The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
 Lab test PDF/DOCX files can be uploaded from Telegram. Add `/prueba_esfuerzo`
 as the file caption, then the Mac processes the document locally and stores a
 pending proposal. Review it with `/ver_prueba` or `/pruebas`, preview zones with
-`/zonas`, and apply it to the athlete profile with `/aplicar_prueba`.
+`/zonas`, correct values with `/corregir_prueba`, discard the pending proposal
+with `/descartar_prueba`, and apply it to the athlete profile with
+`/aplicar_prueba`.
 `/sync` requests a Garmin sync from Telegram. The Railway bot stores the request,
 and the local Mac watcher executes it while the Mac is awake.
 `/coach` and natural-language messages create a local AI job processed by Ollama

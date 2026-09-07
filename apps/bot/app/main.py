@@ -17,6 +17,9 @@ from .coach import (
     format_health,
     format_lab_test,
     format_lab_test_applied,
+    format_lab_test_corrected,
+    format_lab_test_correction_help,
+    format_lab_test_discarded,
     format_lab_test_help,
     format_lab_test_queued,
     format_lab_tests,
@@ -38,6 +41,7 @@ from .coach import (
     format_zones,
     merge_profile,
     format_week,
+    parse_lab_test_correction,
     parse_checkin,
     parse_profile,
 )
@@ -47,6 +51,7 @@ from .store import (
     complete_ai_job,
     complete_sync_request,
     create_ai_job,
+    discard_lab_test,
     load_checkins,
     load_lab_tests,
     load_pending_lab_test,
@@ -60,6 +65,7 @@ from .store import (
     save_sync_request,
     save_sync,
     mark_lab_test_applied,
+    update_lab_test,
 )
 
 
@@ -322,6 +328,19 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
         document = save_profile(merge_profile(profile, profile_update, user_id))
         applied = mark_lab_test_applied(str(lab_test.get("id")) if lab_test.get("id") else None)
         return format_lab_test_applied(applied or lab_test, document)
+    if command == "/corregir_prueba":
+        if not args:
+            return format_lab_test_correction_help()
+        test_id, correction_text = split_optional_lab_test_id(args)
+        correction = parse_lab_test_correction(correction_text)
+        if not correction.get("extracted") and not correction.get("profile_update"):
+            return format_lab_test_correction_help()
+        document = update_lab_test(test_id, correction.get("extracted") or {}, correction.get("profile_update") or {})
+        return format_lab_test_corrected(document)
+    if command == "/descartar_prueba":
+        test_id = args.split()[0] if args else None
+        document = discard_lab_test(test_id)
+        return format_lab_test_discarded(document)
     if command == "/checkin":
         if not args:
             return format_checkin_help()
@@ -375,3 +394,14 @@ def find_lab_test_for_apply(test_id: str | None = None) -> dict | None:
         if full_id == test_id or full_id.startswith(test_id):
             return item
     return None
+
+
+def split_optional_lab_test_id(args: str) -> tuple[str | None, str]:
+    first = args.split(maxsplit=1)[0] if args else ""
+    if first and len(first) >= 4:
+        for item in reversed(load_lab_tests(100)):
+            full_id = str(item.get("id") or "")
+            if full_id == first or full_id.startswith(first):
+                rest = args.split(maxsplit=1)[1] if len(args.split(maxsplit=1)) > 1 else ""
+                return full_id, rest
+    return None, args

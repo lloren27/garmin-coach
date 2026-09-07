@@ -25,6 +25,10 @@ def format_help() -> str:
         "/coach - pregunta libre al entrenador local\n"
         "/sync - solicita sincronizacion desde el Mac\n"
         "/perfil - guarda sexo, edad, peso, altura, FC, FTP y objetivos\n"
+        "/prueba_esfuerzo - sube PDF/DOCX de prueba deportiva\n"
+        "/pruebas - historico de pruebas de esfuerzo\n"
+        "/zonas - zonas actuales desde perfil/prueba\n"
+        "/aplicar_prueba - aplica la ultima propuesta al perfil\n"
         "/checkin - guarda contexto subjetivo y molestias\n"
         "/ajustar - adapta el proximo entreno con Garmin + molestias\n"
         "/bici - resumen de ciclismo\n"
@@ -106,6 +110,150 @@ def format_voice_queued(document: dict[str, Any]) -> str:
         f"Audio recibido{duration_text}.\n"
         "Lo transcribe el Mac con faster-whisper y te contesto con el coach local."
     )
+
+
+def format_lab_test_help() -> str:
+    return (
+        "Prueba de esfuerzo\n"
+        "Envia el PDF o DOCX a este chat con el texto /prueba_esfuerzo en el comentario del archivo.\n"
+        "El Mac lo leera localmente y propondra datos para el perfil: FCmax, VT1, VT2, VO2max, ritmos, potencia y notas.\n"
+        "No se aplicara nada automaticamente. Para confirmar: /aplicar_prueba"
+    )
+
+
+def format_lab_test_queued(document: dict[str, Any]) -> str:
+    name = document.get("document_name") or "documento"
+    return (
+        "Prueba de esfuerzo recibida\n"
+        f"Archivo: {name}\n"
+        "El Mac la procesara localmente y te mandara una propuesta antes de tocar el perfil."
+    )
+
+
+def format_lab_tests(tests: list[dict[str, Any]]) -> str:
+    if not tests:
+        return "Todavia no tengo pruebas de esfuerzo guardadas. Usa /prueba_esfuerzo y adjunta un PDF o DOCX."
+    lines = ["Pruebas de esfuerzo"]
+    for item in tests[-5:]:
+        source = item.get("source") or {}
+        extracted = item.get("extracted") or {}
+        label = _short_id(item.get("id"))
+        status = item.get("status", "n/a")
+        date_text = _format_datetime_es(item.get("created_at"))
+        bits = []
+        if extracted.get("max_hr"):
+            bits.append(f"FCmax {extracted.get('max_hr')}")
+        if extracted.get("vt1_hr"):
+            bits.append(f"VT1 {extracted.get('vt1_hr')}")
+        if extracted.get("vt2_hr") or extracted.get("lactate_hr"):
+            bits.append(f"VT2 {extracted.get('vt2_hr') or extracted.get('lactate_hr')}")
+        if extracted.get("vo2max"):
+            bits.append(f"VO2max {extracted.get('vo2max')}")
+        summary = ", ".join(bits) if bits else "sin metricas clave detectadas"
+        lines.append(f"{label} - {status} - {date_text} - {source.get('name', 'archivo')} - {summary}")
+    lines.append("Ver detalle: /ver_prueba")
+    return "\n".join(lines)
+
+
+def format_lab_test(document: dict[str, Any] | None) -> str:
+    if not document:
+        return "No hay prueba pendiente. Usa /pruebas para ver el historico."
+    extracted = document.get("extracted") or {}
+    update = document.get("profile_update") or {}
+    source = document.get("source") or {}
+    lines = [
+        "Prueba de esfuerzo",
+        f"ID: {_short_id(document.get('id'))}",
+        f"Estado: {document.get('status', 'n/a')}",
+        f"Archivo: {source.get('name', 'n/a')}",
+        f"Procesada: {_format_datetime_es(document.get('created_at'))} hora Espana",
+    ]
+    metric_lines = _lab_metric_lines(extracted)
+    if metric_lines:
+        lines.append("Datos detectados:")
+        lines.extend(metric_lines)
+    else:
+        lines.append("No he detectado metricas claras. Conviene revisar el texto extraido.")
+    if update:
+        lines.append("Propuesta para perfil:")
+        lines.extend(_profile_update_lines(update))
+        lines.append("Aplicar: /aplicar_prueba")
+    notes = document.get("notes") or []
+    if notes:
+        lines.append("Notas:")
+        lines.extend(f"- {note}" for note in notes[:5])
+    return "\n".join(lines)
+
+
+def format_lab_test_applied(document: dict[str, Any] | None, profile_document: dict[str, Any] | None) -> str:
+    if not document:
+        return "No encuentro una prueba pendiente para aplicar."
+    lines = [
+        "Prueba aplicada al perfil",
+        f"ID: {_short_id(document.get('id'))}",
+    ]
+    update = document.get("profile_update") or {}
+    if update:
+        lines.extend(_profile_update_lines(update))
+    lines.append("Usare estos datos para zonas, feedback, carga y ajustes.")
+    lines.append("Nota: respeta siempre las indicaciones del profesional si el informe marca limitaciones.")
+    return "\n".join(lines)
+
+
+def format_zones(profile_document: dict[str, Any] | None, lab_test: dict[str, Any] | None = None) -> str:
+    profile = _profile_payload(profile_document).copy()
+    source = "perfil"
+    if lab_test and (lab_test.get("profile_update") or lab_test.get("extracted")):
+        source = f"prueba {_short_id(lab_test.get('id'))}"
+        profile.update(lab_test.get("profile_update") or {})
+    vt1 = _safe_float(profile.get("vt1_hr"))
+    vt2 = _safe_float(profile.get("vt2_hr") or profile.get("lactate_hr"))
+    max_hr = _safe_float(profile.get("max_hr"))
+    resting = _safe_float(profile.get("resting_hr"))
+
+    lines = ["Zonas actuales", f"Fuente: {source}"]
+    if vt1 and vt2:
+        lines.extend(
+            [
+                f"Z1 recuperacion: < {round(vt1 * 0.9)} ppm",
+                f"Z2 aerobica: {round(vt1 * 0.9)}-{round(vt1)} ppm",
+                f"Z3 tempo: {round(vt1 + 1)}-{round(vt2 - 1)} ppm",
+                f"Z4 umbral: {round(vt2)}-{round(vt2 * 1.04)} ppm",
+                f"Z5 alta intensidad: > {round(vt2 * 1.04)} ppm",
+            ]
+        )
+    elif max_hr and resting:
+        reserve = max_hr - resting
+        lines.extend(
+            [
+                f"Z1 recuperacion: {round(resting + reserve * 0.50)}-{round(resting + reserve * 0.60)} ppm",
+                f"Z2 aerobica: {round(resting + reserve * 0.60)}-{round(resting + reserve * 0.70)} ppm",
+                f"Z3 tempo: {round(resting + reserve * 0.70)}-{round(resting + reserve * 0.80)} ppm",
+                f"Z4 umbral: {round(resting + reserve * 0.80)}-{round(resting + reserve * 0.90)} ppm",
+                f"Z5 alta intensidad: > {round(resting + reserve * 0.90)} ppm",
+            ]
+        )
+    elif max_hr:
+        lines.extend(
+            [
+                f"Z1 recuperacion: < {round(max_hr * 0.72)} ppm",
+                f"Z2 aerobica: {round(max_hr * 0.72)}-{round(max_hr * 0.80)} ppm",
+                f"Z3 tempo: {round(max_hr * 0.80)}-{round(max_hr * 0.87)} ppm",
+                f"Z4 umbral: {round(max_hr * 0.87)}-{round(max_hr * 0.93)} ppm",
+                f"Z5 alta intensidad: > {round(max_hr * 0.93)} ppm",
+            ]
+        )
+    else:
+        return "Aun faltan datos para calcular zonas. Sube una prueba de esfuerzo o completa /perfil fcmax fcreposo fcumbral."
+
+    if profile.get("running_threshold_pace"):
+        lines.append(f"Ritmo umbral running: {profile.get('running_threshold_pace')}/km")
+    if profile.get("ftp"):
+        lines.append(f"FTP bici: {profile.get('ftp')} W")
+    if profile.get("vo2max"):
+        lines.append(f"VO2max medido: {profile.get('vo2max')}")
+    lines.append("Estas zonas son operativas para entrenar; si el informe medico marca limites, manda eso.")
+    return "\n".join(lines)
 
 
 def build_ai_brief(
@@ -634,6 +782,15 @@ def format_profile(document: dict[str, Any] | None) -> str:
             f"reposo {profile.get('resting_hr', 'n/a')}, "
             f"umbral {profile.get('lactate_hr', 'n/a')}"
         )
+    if profile.get("vt1_hr") or profile.get("vt2_hr") or profile.get("vo2max"):
+        lines.append(
+            "Prueba esfuerzo: "
+            f"VT1 {profile.get('vt1_hr', 'n/a')}, "
+            f"VT2 {profile.get('vt2_hr', 'n/a')}, "
+            f"VO2max {profile.get('vo2max', 'n/a')}"
+        )
+    if profile.get("lab_test_id"):
+        lines.append(f"Prueba base: {_short_id(profile.get('lab_test_id'))}")
     if profile.get("ftp") or profile.get("weight_kg"):
         lines.append(f"Bici: FTP {profile.get('ftp', 'n/a')} W, peso {profile.get('weight_kg', 'n/a')} kg")
     if profile.get("running_threshold_pace"):
@@ -926,6 +1083,55 @@ def _format_duration(seconds: Any) -> str:
     if hours:
         return f"{hours} h {mins:02d} min"
     return f"{mins} min"
+
+
+def _short_id(value: Any) -> str:
+    text = str(value or "")
+    return text[:8] if text else "n/a"
+
+
+def _lab_metric_lines(extracted: dict[str, Any]) -> list[str]:
+    mapping = (
+        ("max_hr", "FCmax", "ppm"),
+        ("resting_hr", "FC reposo", "ppm"),
+        ("vt1_hr", "VT1 FC", "ppm"),
+        ("vt2_hr", "VT2 FC", "ppm"),
+        ("lactate_hr", "FC umbral", "ppm"),
+        ("vo2max", "VO2max", "ml/kg/min"),
+        ("vt1_pace", "VT1 ritmo", "/km"),
+        ("vt2_pace", "VT2 ritmo", "/km"),
+        ("threshold_pace", "Ritmo umbral", "/km"),
+        ("ftp", "FTP", "W"),
+        ("vt1_power", "VT1 potencia", "W"),
+        ("vt2_power", "VT2 potencia", "W"),
+        ("weight_kg", "Peso", "kg"),
+    )
+    lines = []
+    for key, label, unit in mapping:
+        value = extracted.get(key)
+        if value not in (None, ""):
+            separator = "" if unit.startswith("/") else " "
+            suffix = f"{separator}{unit}" if unit and not str(value).endswith(unit) else ""
+            lines.append(f"- {label}: {value}{suffix}")
+    return lines
+
+
+def _profile_update_lines(update: dict[str, Any]) -> list[str]:
+    labels = {
+        "max_hr": "FCmax",
+        "resting_hr": "FC reposo",
+        "lactate_hr": "FC umbral",
+        "vt1_hr": "VT1 FC",
+        "vt2_hr": "VT2 FC",
+        "vo2max": "VO2max",
+        "running_threshold_pace": "Ritmo umbral running",
+        "ftp": "FTP",
+        "vt1_power": "VT1 potencia",
+        "vt2_power": "VT2 potencia",
+        "weight_kg": "Peso",
+        "lab_test_id": "Prueba base",
+    }
+    return [f"- {labels.get(key, key)}: {value}" for key, value in update.items() if value not in (None, "")]
 
 
 def _format_datetime_es(value: Any) -> str:

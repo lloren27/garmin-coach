@@ -15,6 +15,11 @@ from .coach import (
     format_feedback,
     format_help,
     format_health,
+    format_lab_test,
+    format_lab_test_applied,
+    format_lab_test_help,
+    format_lab_test_queued,
+    format_lab_tests,
     format_latest,
     format_load,
     format_malaga,
@@ -30,6 +35,7 @@ from .coach import (
     format_today,
     format_trend,
     format_voice_queued,
+    format_zones,
     merge_profile,
     format_week,
     parse_checkin,
@@ -42,14 +48,18 @@ from .store import (
     complete_sync_request,
     create_ai_job,
     load_checkins,
+    load_lab_tests,
+    load_pending_lab_test,
     load_profile,
     load_sync,
     load_sync_history,
     load_sync_request,
     save_checkin,
+    save_lab_test,
     save_profile,
     save_sync_request,
     save_sync,
+    mark_lab_test_applied,
 )
 
 
@@ -122,6 +132,13 @@ def profile(x_sync_secret: str | None = Header(default=None)) -> dict:
     return {"profile": load_profile()}
 
 
+@app.post("/lab-tests")
+async def lab_tests_endpoint(payload: dict | None = None, x_sync_secret: str | None = Header(default=None)) -> dict:
+    require_sync_secret(x_sync_secret)
+    document = save_lab_test(payload or {})
+    return {"ok": True, "lab_test": document, "message": format_lab_test(document)}
+
+
 @app.get("/ai/jobs/next")
 def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
     require_sync_secret(x_sync_secret)
@@ -191,7 +208,9 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
     chat = message.get("chat") or {}
     user = message.get("from") or {}
     text = (message.get("text") or "").strip()
+    caption = (message.get("caption") or "").strip()
     voice = message.get("voice") or message.get("audio")
+    telegram_document = message.get("document")
 
     if settings.telegram_allowed_user_id:
         if str(user.get("id")) != settings.telegram_allowed_user_id:
@@ -202,7 +221,24 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
         return {"ok": True}
 
     user_id = str(user.get("id")) if user.get("id") else None
-    if voice and voice.get("file_id"):
+    if telegram_document and telegram_document.get("file_id"):
+        if not is_supported_lab_test_document(telegram_document):
+            response = "Documento no soportado. Para pruebas de esfuerzo usa PDF o DOCX con /prueba_esfuerzo."
+        else:
+            document = create_ai_job(
+                chat_id=str(chat_id),
+                user_id=user_id,
+                text=caption,
+                document_file_id=str(telegram_document.get("file_id")),
+                document_unique_id=str(telegram_document.get("file_unique_id")) if telegram_document.get("file_unique_id") else None,
+                document_name=str(telegram_document.get("file_name")) if telegram_document.get("file_name") else None,
+                document_mime_type=str(telegram_document.get("mime_type")) if telegram_document.get("mime_type") else None,
+                document_size=int(telegram_document.get("file_size")) if telegram_document.get("file_size") else None,
+                source_kind="lab_test",
+                response_mode="text",
+            )
+            response = format_lab_test_queued(document)
+    elif voice and voice.get("file_id"):
         document = create_ai_job(
             chat_id=str(chat_id),
             user_id=user_id,
@@ -266,6 +302,26 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
             return format_profile_help()
         document = save_profile(merge_profile(profile, update, user_id))
         return format_profile_saved(document)
+    if command == "/prueba_esfuerzo":
+        return format_lab_test_help()
+    if command == "/pruebas":
+        return format_lab_tests(load_lab_tests())
+    if command == "/ver_prueba":
+        return format_lab_test(load_pending_lab_test() or (load_lab_tests(1)[-1] if load_lab_tests(1) else None))
+    if command == "/zonas":
+        return format_zones(profile, load_pending_lab_test() or (load_lab_tests(1)[-1] if load_lab_tests(1) else None))
+    if command == "/aplicar_prueba":
+        lab_test = find_lab_test_for_apply(args.split()[0] if args else None)
+        if not lab_test:
+            return format_lab_test_applied(None, profile)
+        update = lab_test.get("profile_update") or {}
+        if not update:
+            return "La prueba no tiene una propuesta aplicable al perfil."
+        profile_update = dict(update)
+        profile_update["lab_test_id"] = lab_test.get("id")
+        document = save_profile(merge_profile(profile, profile_update, user_id))
+        applied = mark_lab_test_applied(str(lab_test.get("id")) if lab_test.get("id") else None)
+        return format_lab_test_applied(applied or lab_test, document)
     if command == "/checkin":
         if not args:
             return format_checkin_help()
@@ -298,3 +354,24 @@ async def send_telegram_message(chat_id: int | str, text: str) -> None:
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
     async with httpx.AsyncClient(timeout=10) as client:
         await client.post(url, json={"chat_id": chat_id, "text": text})
+
+
+def is_supported_lab_test_document(document: dict) -> bool:
+    filename = str(document.get("file_name") or "").lower()
+    mime_type = str(document.get("mime_type") or "").lower()
+    return (
+        filename.endswith(".pdf")
+        or filename.endswith(".docx")
+        or mime_type == "application/pdf"
+        or mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
+def find_lab_test_for_apply(test_id: str | None = None) -> dict | None:
+    if not test_id:
+        return load_pending_lab_test()
+    for item in reversed(load_lab_tests(100)):
+        full_id = str(item.get("id") or "")
+        if full_id == test_id or full_id.startswith(test_id):
+            return item
+    return None

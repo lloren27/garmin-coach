@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from .lab_tests import parse_lab_test
 from .sync import API_URL, SYNC_SECRET
 
 
@@ -87,6 +88,27 @@ def download_telegram_audio(file_id: str, output_dir: Path) -> Path:
     output_path = output_dir / f"telegram_audio{suffix}"
     url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
     response = httpx.get(url, timeout=60)
+    response.raise_for_status()
+    output_path.write_bytes(response.content)
+    return output_path
+
+
+def download_telegram_document(job: dict[str, Any], output_dir: Path) -> Path:
+    file_id = str(job.get("document_file_id") or "")
+    if not file_id:
+        raise RuntimeError("Missing Telegram document file_id")
+    file_data = telegram_api("getFile", {"file_id": file_id})
+    file_path = (file_data.get("result") or {}).get("file_path")
+    if not file_path:
+        raise RuntimeError("Telegram did not return a document file path")
+
+    filename = str(job.get("document_name") or Path(str(file_path)).name or "lab-test")
+    suffix = Path(filename).suffix or Path(str(file_path)).suffix
+    if suffix.lower() not in {".pdf", ".docx"}:
+        raise RuntimeError("Solo puedo procesar pruebas de esfuerzo en PDF o DOCX")
+    output_path = output_dir / f"lab_test{suffix.lower()}"
+    url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+    response = httpx.get(url, timeout=90)
     response.raise_for_status()
     output_path.write_bytes(response.content)
     return output_path
@@ -332,8 +354,25 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
     job_id = job["id"]
     transcript = None
     try:
-        check_ollama()
         question = str(job.get("text") or "").strip()
+        if job.get("document_file_id"):
+            with tempfile.TemporaryDirectory(prefix="garmin-coach-lab-") as tmp:
+                document_path = download_telegram_document(job, Path(tmp))
+                result = parse_lab_test(document_path)
+            result["source"] = {
+                "name": job.get("document_name") or "prueba_esfuerzo",
+                "mime_type": job.get("document_mime_type"),
+                "telegram_file_id": job.get("document_file_id"),
+                "telegram_unique_id": job.get("document_unique_id"),
+                "caption": question,
+            }
+            saved = post_json("/lab-tests", result)
+            answer = saved.get("message") or "Prueba de esfuerzo procesada. Revisa /ver_prueba."
+            post_json(f"/ai/jobs/{job_id}/complete", {"status": "completed", "answer": answer})
+            print(json.dumps({"ok": True, "job": job_id, "status": "completed", "type": "lab_test"}))
+            return
+
+        check_ollama()
         if job.get("audio_file_id"):
             with tempfile.TemporaryDirectory(prefix="garmin-coach-voice-") as tmp:
                 audio_path = download_telegram_audio(str(job["audio_file_id"]), Path(tmp))

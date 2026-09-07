@@ -15,6 +15,7 @@ CHECKINS_FILE = DATA_DIR / "checkins.jsonl"
 PROFILE_FILE = DATA_DIR / "athlete_profile.json"
 SYNC_REQUEST_FILE = DATA_DIR / "sync_request.json"
 AI_JOBS_FILE = DATA_DIR / "ai_jobs.json"
+LAB_TESTS_FILE = DATA_DIR / "lab_tests.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -107,6 +108,78 @@ def load_profile() -> dict[str, Any] | None:
     return json.loads(PROFILE_FILE.read_text())
 
 
+def save_lab_test(result: dict[str, Any]) -> dict[str, Any]:
+    document = {
+        "id": str(result.get("id") or uuid.uuid4()),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "pending",
+        "source": result.get("source") or {},
+        "extracted": result.get("extracted") or {},
+        "profile_update": result.get("profile_update") or {},
+        "notes": result.get("notes") or [],
+        "raw_excerpt": str(result.get("raw_excerpt") or "")[:2500],
+    }
+    tests = load_lab_tests(100)
+    tests.append(document)
+    save_lab_tests(tests)
+    save_state("pending_lab_test", document)
+    return document
+
+
+def load_lab_tests(limit: int = 10) -> list[dict[str, Any]]:
+    if DATABASE_URL:
+        state = load_state_postgres("lab_tests") or {}
+        tests = state.get("tests") or []
+        return tests[-limit:] if isinstance(tests, list) else []
+
+    if not LAB_TESTS_FILE.exists():
+        return []
+    state = json.loads(LAB_TESTS_FILE.read_text(encoding="utf-8"))
+    tests = state.get("tests") if isinstance(state, dict) else state
+    return tests[-limit:] if isinstance(tests, list) else []
+
+
+def load_pending_lab_test() -> dict[str, Any] | None:
+    document = load_state("pending_lab_test")
+    if document:
+        return document
+    for item in reversed(load_lab_tests(100)):
+        if item.get("status") == "pending":
+            return item
+    return None
+
+
+def mark_lab_test_applied(test_id: str | None = None) -> dict[str, Any] | None:
+    tests = load_lab_tests(100)
+    selected = None
+    for item in reversed(tests):
+        if test_id and item.get("id") != test_id:
+            continue
+        if not test_id and item.get("status") != "pending":
+            continue
+        selected = item
+        break
+    if not selected:
+        return None
+
+    selected["status"] = "applied"
+    selected["applied_at"] = datetime.now(timezone.utc).isoformat()
+    save_lab_tests(tests)
+    pending = load_pending_lab_test()
+    if pending and pending.get("id") == selected.get("id"):
+        save_state("pending_lab_test", {})
+    return selected
+
+
+def save_lab_tests(tests: list[dict[str, Any]]) -> None:
+    state = {"tests": tests[-100:]}
+    if DATABASE_URL:
+        save_state_postgres("lab_tests", state)
+        return
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    LAB_TESTS_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
 def save_sync_request(requested_by: str | None = None) -> dict[str, Any]:
     document = {
         "requested_at": datetime.now(timezone.utc).isoformat(),
@@ -160,6 +233,11 @@ def create_ai_job(
     audio_file_id: str | None = None,
     audio_unique_id: str | None = None,
     audio_duration: int | None = None,
+    document_file_id: str | None = None,
+    document_unique_id: str | None = None,
+    document_name: str | None = None,
+    document_mime_type: str | None = None,
+    document_size: int | None = None,
     source_kind: str = "text",
     response_mode: str = "text",
 ) -> dict[str, Any]:
@@ -172,6 +250,11 @@ def create_ai_job(
         "audio_file_id": audio_file_id,
         "audio_unique_id": audio_unique_id,
         "audio_duration": audio_duration,
+        "document_file_id": document_file_id,
+        "document_unique_id": document_unique_id,
+        "document_name": document_name,
+        "document_mime_type": document_mime_type,
+        "document_size": document_size,
         "source_kind": source_kind,
         "response_mode": response_mode,
         "transcript": None,
@@ -511,6 +594,25 @@ def load_state_postgres(key: str) -> dict[str, Any] | None:
     if isinstance(document, str):
         return json.loads(document)
     return document
+
+
+def save_state(key: str, document: dict[str, Any]) -> None:
+    if DATABASE_URL:
+        save_state_postgres(key, document)
+        return
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = DATA_DIR / f"{key}.json"
+    path.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def load_state(key: str) -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return load_state_postgres(key)
+    path = DATA_DIR / f"{key}.json"
+    if not path.exists():
+        return None
+    document = json.loads(path.read_text(encoding="utf-8"))
+    return document if isinstance(document, dict) and document else None
 
 
 def ensure_schema(conn: Any) -> None:

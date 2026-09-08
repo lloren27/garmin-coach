@@ -11,3 +11,5 @@ Utility scripts for local project setup.
   runs a full sync only when needed.
 - `run_ai_worker.sh`: checks Railway for natural-language jobs and processes
   them locally with Ollama.
+- `install_wattwise_core.py`: clones, builds, and starts wattwise-core locally
+  with Docker on `127.0.0.1:8010`, storing local secrets in `.env`.

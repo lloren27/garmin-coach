@@ -190,6 +190,39 @@ Run the worker manually:
 scripts/run_ai_worker.sh
 ```
 
+## 7. Local wattwise-core analytics
+
+`wattwise-core` runs as a separate local Docker service. It is not deployed to
+Railway. Garmin Coach will use it from the Mac for cycling analytics once the
+integration layer is enabled.
+
+Install and start it:
+
+```bash
+./install_wattwise_core.command
+```
+
+Defaults:
+
+```text
+WATTWISE_API_URL=http://127.0.0.1:8010
+WATTWISE_DOCKER_CONTAINER=garmin-coach-wattwise
+WATTWISE_DOCKER_VOLUME=garmin_coach_wattwise_data
+```
+
+The installer clones the official source into `data/wattwise-core`, builds a
+local Docker image, generates local secrets, starts the API, waits for
+`/readyz`, mints an access token, and stores the values in `.env`.
+
+Useful checks:
+
+```bash
+curl http://127.0.0.1:8010/readyz
+docker logs garmin-coach-wattwise
+docker stop garmin-coach-wattwise
+docker start garmin-coach-wattwise
+```
+
 ## Telegram commands
 
 - `/hoy`

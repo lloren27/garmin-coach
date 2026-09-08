@@ -2,12 +2,28 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
 
 MADRID_TZ = ZoneInfo("Europe/Madrid")
+_DATE_ONE_DAY = timedelta(days=1)
+_SPANISH_MONTHS = {
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "setiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
+}
 
 
 def format_help() -> str:
@@ -339,6 +355,7 @@ def build_ai_brief(
 ) -> dict[str, Any]:
     text = _normalize_text(question)
     intents = _ai_intents(text)
+    dated_activity = _activity_from_question(question, sync)
     sections = []
 
     if "tomorrow" in intents or "adjust" in intents:
@@ -346,7 +363,12 @@ def build_ai_brief(
         sections.append(("decision_entreno", format_adjust(sync, checkins, adjustment_note, profile)))
         sections.append(("proximo_entreno", format_next(sync)))
         sections.append(("salud", format_health(sync)))
-    if "latest" in intents:
+    if "dated_activity" in intents:
+        if dated_activity:
+            sections.append(("actividad_fecha", format_feedback(sync, checkins, profile, dated_activity, "Feedback actividad solicitada")))
+        else:
+            sections.append(("actividad_fecha", "No encuentro una actividad en Garmin para esa fecha dentro de la ultima sincronizacion."))
+    elif "latest" in intents:
         sections.append(("ultima_actividad", format_feedback(sync, checkins, profile)))
     if "malaga" in intents:
         sections.append(("malaga", format_malaga(sync, profile)))
@@ -402,6 +424,11 @@ def format_natural_coach(
         return None
 
     section_map = {section["title"]: section["content"] for section in brief.get("sections", [])}
+    if "dated_activity" in intents:
+        lines = ["Sobre la actividad solicitada:"]
+        lines.extend(_natural_section_lines(section_map.get("actividad_fecha"), 12))
+        return "\n".join(lines).strip()
+
     if "health" in intents and "load" in intents and "plan de salud" in _normalize_text(question):
         lines = ["Plan de salud:"]
         lines.extend(_selected_natural_lines(section_map.get("salud"), ("Sueno:", "HRV:", "Body battery:", "Estres:", "Readiness:"), 4))
@@ -722,7 +749,7 @@ def format_latest(sync: dict[str, Any] | None) -> str:
     lines = [
         "Ultima actividad",
         f"{_format_date_es(activity.get('date'))} - {activity.get('name', 'Actividad')}",
-        f"Tipo: {activity.get('sport', 'n/a')}",
+        f"Tipo: {_sport_label(activity.get('sport'))}",
         f"Duracion: {_format_duration(activity.get('duration_s'))}",
     ]
     if activity.get("km"):
@@ -732,9 +759,9 @@ def format_latest(sync: dict[str, Any] | None) -> str:
     elif activity.get("pace"):
         lines.append(f"Ritmo: {activity.get('pace')}")
     if activity.get("avg_hr"):
-        lines.append(f"Pulso medio: {activity.get('avg_hr')}")
+        lines.append(f"Pulso medio: {_format_compact_number(activity.get('avg_hr'))} ppm")
     if activity.get("training_effect"):
-        lines.append(f"Training effect: {activity.get('training_effect')}")
+        lines.append(f"Training effect: {_format_compact_number(activity.get('training_effect'), 1)}")
     lines.append(f"Feedback: {_latest_feedback(activity)}")
     return "\n".join(lines)
 
@@ -743,11 +770,13 @@ def format_feedback(
     sync: dict[str, Any] | None,
     checkins: list[dict[str, Any]] | None = None,
     profile: dict[str, Any] | None = None,
+    activity: dict[str, Any] | None = None,
+    title: str = "Feedback ultima actividad",
 ) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
 
-    activity = _latest_activity(sync)
+    activity = activity or _latest_activity(sync)
     if not activity:
         return "No encuentro actividades recientes para analizar."
 
@@ -756,9 +785,9 @@ def format_feedback(
     latest_checkin = _latest_checkin(checkins)
     sport = activity.get("sport", "other")
     lines = [
-        "Feedback ultima actividad",
+        title,
         f"{_format_date_es(activity.get('date'))} - {activity.get('name', 'Actividad')}",
-        f"Tipo: {sport}",
+        f"Tipo: {_sport_label(sport)}",
         f"Duracion: {_format_duration(activity.get('duration_s'))}",
     ]
     if activity.get("km"):
@@ -768,17 +797,21 @@ def format_feedback(
     elif activity.get("pace"):
         lines.append(f"Ritmo: {activity.get('pace')}")
     if activity.get("avg_hr"):
-        lines.append(f"Pulso medio: {activity.get('avg_hr')}")
+        lines.append(f"Pulso medio: {_format_compact_number(activity.get('avg_hr'))} ppm")
         hr_context = _relative_hr_line(activity.get("avg_hr"), profile)
         if hr_context:
             lines.append(hr_context)
     if activity.get("avg_power") or activity.get("normalized_power"):
-        lines.append(f"Potencia: media {activity.get('avg_power', 'n/a')} W, NP {activity.get('normalized_power', 'n/a')} W")
+        lines.append(
+            "Potencia: "
+            f"media {_format_compact_number(activity.get('avg_power'))} W, "
+            f"NP {_format_compact_number(activity.get('normalized_power'))} W"
+        )
         power_context = _power_context_line(activity, profile)
         if power_context:
             lines.append(power_context)
     if activity.get("training_effect"):
-        lines.append(f"Training effect: {activity.get('training_effect')}")
+        lines.append(f"Training effect: {_format_compact_number(activity.get('training_effect'), 1)}")
 
     lines.append(f"Lectura: {_activity_coach_reading(activity, fatigue)}")
     lines.append(f"Impacto en plan: {_activity_plan_impact(activity, summary)}")
@@ -1220,6 +1253,85 @@ def _latest_activity(sync: dict[str, Any]) -> dict[str, Any] | None:
     return activities[-1] if activities else None
 
 
+def _activity_from_question(question: str, sync: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not sync:
+        return None
+    text = _normalize_text(question)
+    if not _looks_like_activity_date(text):
+        return None
+    target_date = _extract_activity_date(question, sync)
+    if not target_date:
+        return None
+
+    activities = sync.get("payload", {}).get("summary", {}).get("activities") or []
+    same_day = [activity for activity in activities if _activity_date(activity) == target_date]
+    if not same_day:
+        return None
+
+    sport_hints = []
+    if any(token in text for token in ("bici", "ciclismo", "cycling", "ruta")):
+        sport_hints.append("cycling")
+    if any(token in text for token in ("run", "running", "carrera", "correr", "rodaje")):
+        sport_hints.append("running")
+    if sport_hints:
+        hinted = [activity for activity in same_day if activity.get("sport") in sport_hints]
+        if hinted:
+            return hinted[-1]
+    return same_day[-1]
+
+
+def _activity_date(activity: dict[str, Any]) -> date | None:
+    parsed = _parse_datetime(activity.get("date"))
+    return parsed.date() if parsed else None
+
+
+def _extract_activity_date(question: str, sync: dict[str, Any]) -> date | None:
+    text = _normalize_text(question)
+    reference = _reference_date(sync)
+
+    if "hoy" in text and any(token in text for token in ("actividad", "salida", "entreno", "carrera", "bici")):
+        return reference
+    if "ayer" in text and any(token in text for token in ("actividad", "salida", "entreno", "carrera", "bici")):
+        return reference - _DATE_ONE_DAY
+
+    numeric = re.search(r"\b([0-3]?\d)[/-]([01]?\d)(?:[/-](\d{2,4}))?\b", text)
+    if numeric:
+        day = int(numeric.group(1))
+        month = int(numeric.group(2))
+        year = _normalize_year(numeric.group(3), reference.year)
+        return _safe_date(year, month, day)
+
+    month_names = "|".join(_SPANISH_MONTHS)
+    named = re.search(rf"\b([0-3]?\d)\s+de\s+({month_names})(?:\s+de\s+(\d{{2,4}}))?\b", text)
+    if named:
+        day = int(named.group(1))
+        month = _SPANISH_MONTHS[named.group(2)]
+        year = _normalize_year(named.group(3), reference.year)
+        return _safe_date(year, month, day)
+
+    return None
+
+
+def _reference_date(sync: dict[str, Any]) -> date:
+    payload = sync.get("payload", {})
+    parsed = _parse_datetime(payload.get("generated_at") or sync.get("received_at"))
+    return parsed.date() if parsed else datetime.now(MADRID_TZ).date()
+
+
+def _normalize_year(value: str | None, default: int) -> int:
+    if not value:
+        return default
+    year = int(value)
+    return 2000 + year if year < 100 else year
+
+
+def _safe_date(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
 def _latest_checkin(checkins: list[dict[str, Any]] | None) -> dict[str, Any]:
     if not checkins:
         return {}
@@ -1303,6 +1415,24 @@ def _format_duration(seconds: Any) -> str:
     if hours:
         return f"{hours} h {mins:02d} min"
     return f"{mins} min"
+
+
+def _sport_label(value: Any) -> str:
+    labels = {
+        "running": "running",
+        "cycling": "ciclismo",
+        "strength": "fuerza",
+    }
+    return labels.get(str(value or ""), str(value or "n/a"))
+
+
+def _format_compact_number(value: Any, digits: int = 0) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "n/a"
+    rounded = round(float(value), digits)
+    if digits == 0:
+        return str(int(rounded))
+    return f"{rounded:.{digits}f}".rstrip("0").rstrip(".")
 
 
 def _short_id(value: Any) -> str:
@@ -1704,6 +1834,8 @@ def _recovery_reading(wellness: dict[str, Any]) -> str:
 
 def _ai_intents(text: str) -> list[str]:
     intents = []
+    if _looks_like_activity_date(text):
+        intents.append("dated_activity")
     if any(token in text for token in ("manana", "proximo", "que hago", "entreno", "series", "correr", "rodaje")):
         intents.append("tomorrow")
     if any(token in text for token in ("cansado", "cansancio", "molestia", "dolor", "dormi", "sueno", "fatiga", "ajusta")):
@@ -1721,6 +1853,19 @@ def _ai_intents(text: str) -> list[str]:
     if any(token in text for token in ("fuerza", "gym", "pesas", "core")):
         intents.append("strength")
     return intents
+
+
+def _looks_like_activity_date(text: str) -> bool:
+    month_names = "|".join(_SPANISH_MONTHS)
+    mentions_activity = any(token in text for token in ("actividad", "salida", "entreno", "carrera", "bici", "ruta"))
+    return bool(
+        (mentions_activity and re.search(r"\b[0-3]?\d[/-][01]?\d(?:[/-]\d{2,4})?\b", text))
+        or re.search(rf"\b[0-3]?\d\s+de\s+(?:{month_names})(?:\s+de\s+\d{{2,4}})?\b", text)
+        or (
+            any(token in text for token in ("hoy", "ayer"))
+            and mentions_activity
+        )
+    )
 
 
 def _profile_payload(document: dict[str, Any] | None) -> dict[str, Any]:

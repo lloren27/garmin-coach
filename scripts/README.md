@@ -13,3 +13,7 @@ Utility scripts for local project setup.
   them locally with Ollama.
 - `install_wattwise_core.py`: clones, builds, and starts wattwise-core locally
   with Docker on `127.0.0.1:8010`, storing local secrets in `.env`.
+- `run_wattwise_bridge.sh`: downloads recent Garmin activities, using TCX for
+  running and FIT originals for cycling by default, imports them into local
+  wattwise-core, and stores import state in ignored local data. The main Garmin
+  sync runs this bridge automatically when `WATTWISE_BRIDGE_AFTER_SYNC=1`.

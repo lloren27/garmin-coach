@@ -223,6 +223,42 @@ docker stop garmin-coach-wattwise
 docker start garmin-coach-wattwise
 ```
 
+Import recent Garmin activities into wattwise-core:
+
+```bash
+scripts/run_wattwise_bridge.sh
+```
+
+Bridge defaults:
+
+```text
+WATTWISE_BRIDGE_DAYS=60
+WATTWISE_BRIDGE_LIMIT=12
+WATTWISE_BRIDGE_SPORTS=running,cycling
+WATTWISE_BRIDGE_RUNNING_FORMAT=tcx
+WATTWISE_BRIDGE_CYCLING_FORMAT=original
+WATTWISE_BRIDGE_AFTER_SYNC=1
+WATTWISE_AI_CONTEXT=1
+WATTWISE_AI_LOOKBACK_DAYS=28
+```
+
+The bridge can import both running and cycling into wattwise-core. Running uses
+TCX by default because some Garmin FIT exports contain invalid speed sentinel
+values that wattwise-core correctly quarantines. Cycling keeps the original FIT
+by default because that usually preserves power data for NP, IF, TSS, CP/W',
+and W'bal. Garmin Coach's own sync remains the primary source for running pace,
+distance, heart rate, and marathon coaching while Wattwise adds deeper cycling
+load context.
+
+When `WATTWISE_BRIDGE_AFTER_SYNC=1`, every successful local Garmin sync also
+tries to push new eligible activities into wattwise-core. If wattwise-core is
+not running, the normal Garmin-to-Railway sync still completes.
+
+When `WATTWISE_AI_CONTEXT=1`, the local Ollama worker adds a compact
+wattwise-core summary to natural-language coaching jobs. That gives `/coach`
+and free-text Telegram questions access to cycling TSS, IF, VI, and load while
+keeping Railway isolated from the local Wattwise service.
+
 ## Telegram commands
 
 - `/hoy`

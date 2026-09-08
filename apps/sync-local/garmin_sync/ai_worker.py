@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,10 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:2b")
 MAX_JOBS = int(os.getenv("GARMIN_COACH_AI_MAX_JOBS", "3"))
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
+WATTWISE_API_URL = os.getenv("WATTWISE_API_URL", "http://127.0.0.1:8010").rstrip("/")
+WATTWISE_ACCESS_TOKEN = os.getenv("WATTWISE_ACCESS_TOKEN", "")
+WATTWISE_AI_CONTEXT = os.getenv("WATTWISE_AI_CONTEXT", "1")
+WATTWISE_AI_LOOKBACK_DAYS = int(os.getenv("WATTWISE_AI_LOOKBACK_DAYS", "28"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto")
@@ -52,6 +57,10 @@ VOICE_ANSWER_MAX_CHARS = int(os.getenv("GARMIN_COACH_VOICE_ANSWER_MAX_CHARS", "8
 
 def headers() -> dict[str, str]:
     return {"X-Sync-Secret": SYNC_SECRET} if SYNC_SECRET else {}
+
+
+def wattwise_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {WATTWISE_ACCESS_TOKEN}"}
 
 
 def get_json(path: str) -> dict[str, Any]:
@@ -443,6 +452,8 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 "Empieza por la decision o lectura principal. "
                 "Cuando la pregunta sea sobre que hacer manana, responde con una recomendacion concreta primero. "
                 "Cuando pregunte por Malaga, evalua running/maraton aunque la ultima actividad sea bici. "
+                "Si hay contexto Wattwise, usalo sobre todo para ciclismo, potencia, IF, TSS, VI y carga; "
+                "para running prioriza Garmin Coach si Wattwise no trae distancia, ritmo o FC. "
                 "No muestres razonamiento interno. "
                 "Responde en 4-7 lineas y menos de 90 palabras."
             ),
@@ -599,32 +610,110 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
     wellness = payload.get("wellness") or {}
     physiology = payload.get("physiology") or {}
     activities = summary.get("activities") or []
+    wattwise = fetch_wattwise_context()
+
+    extra_context = {
+        "last_sync": sync.get("received_at"),
+        "race": payload.get("race"),
+        "profile": _profile_payload(context.get("profile")),
+        "summary": {
+            "runs_count_120d": summary.get("runs_count_120d"),
+            "km_28d": summary.get("km_28d"),
+            "km_56d": summary.get("km_56d"),
+            "avg_weekly_km_8w": summary.get("avg_weekly_km_8w"),
+            "longest_120d": summary.get("longest_120d"),
+            "today": summary.get("today"),
+            "week": summary.get("week"),
+            "sports": summary.get("sports"),
+            "fatigue": summary.get("fatigue"),
+            "next_workout": summary.get("next_workout"),
+        },
+        "recent_activities": activities[-8:],
+        "wellness": wellness,
+        "physiology": physiology,
+        "checkins": context.get("checkins") or [],
+        "history": compact_history(context.get("history") or []),
+    }
+    if wattwise:
+        extra_context["wattwise"] = wattwise
 
     return {
         "coach_brief": context.get("coach_brief") or {},
-        "extra_context": {
-            "last_sync": sync.get("received_at"),
-            "race": payload.get("race"),
-            "profile": _profile_payload(context.get("profile")),
-            "summary": {
-                "runs_count_120d": summary.get("runs_count_120d"),
-                "km_28d": summary.get("km_28d"),
-                "km_56d": summary.get("km_56d"),
-                "avg_weekly_km_8w": summary.get("avg_weekly_km_8w"),
-                "longest_120d": summary.get("longest_120d"),
-                "today": summary.get("today"),
-                "week": summary.get("week"),
-                "sports": summary.get("sports"),
-                "fatigue": summary.get("fatigue"),
-                "next_workout": summary.get("next_workout"),
-            },
-            "recent_activities": activities[-8:],
-            "wellness": wellness,
-            "physiology": physiology,
-            "checkins": context.get("checkins") or [],
-            "history": compact_history(context.get("history") or []),
-        },
+        "extra_context": extra_context,
     }
+
+
+def fetch_wattwise_context() -> dict[str, Any] | None:
+    if WATTWISE_AI_CONTEXT.strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    if not WATTWISE_ACCESS_TOKEN:
+        return None
+
+    end = date.today()
+    start = end - timedelta(days=max(WATTWISE_AI_LOOKBACK_DAYS - 1, 0))
+    query = f"from={start.isoformat()}&to={end.isoformat()}"
+    try:
+        with httpx.Client(timeout=20, headers=wattwise_headers()) as client:
+            activities = _wattwise_get_json(client, "/v1/activities", params={"limit": 12}).get("data", [])
+            coggan = _wattwise_get_json(client, f"/v1/performance/coggan?{query}")
+            load = _wattwise_get_json(client, f"/v1/performance/load-fitness?{query}")
+    except Exception as exc:
+        return {"status": "unavailable", "error": str(exc)[:180]}
+
+    cycling_metrics = []
+    for item in coggan.get("items", []):
+        values = item.get("values") or {}
+        if values.get("tss") is None and values.get("intensity_factor") is None:
+            continue
+        cycling_metrics.append(
+            {
+                "date": item.get("local_date"),
+                "activity_id": item.get("activity_id"),
+                "tss": _round(values.get("tss")),
+                "intensity_factor": _round(values.get("intensity_factor"), 2),
+                "variability_index": _round(values.get("variability_index"), 2),
+            }
+        )
+
+    load_items = load.get("items") or []
+    latest_load = next((item for item in reversed(load_items) if (item.get("values") or {}).get("load") is not None), None)
+    return {
+        "status": "ok",
+        "source": "local_wattwise_core",
+        "lookback_days": WATTWISE_AI_LOOKBACK_DAYS,
+        "note": "Use Wattwise mainly for cycling power/load. Running imports may be sparse; use Garmin Coach summary for running pace, distance and HR.",
+        "recent_activities": [_compact_wattwise_activity(item) for item in activities[:8]],
+        "cycling_power_metrics": cycling_metrics[-8:],
+        "latest_load": latest_load.get("values") if latest_load else None,
+    }
+
+
+def _wattwise_get_json(client: httpx.Client, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    response = client.get(f"{WATTWISE_API_URL}{path}", params=params)
+    response.raise_for_status()
+    return response.json()
+
+
+def _compact_wattwise_activity(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "date": item.get("local_date"),
+        "sport": item.get("sport"),
+        "distance_km": _round((item.get("distance_m") or 0) / 1000, 1) if item.get("distance_m") else None,
+        "moving_min": _round((item.get("moving_time_s") or 0) / 60, 1) if item.get("moving_time_s") else None,
+        "avg_power_w": item.get("avg_power_w"),
+        "has_power": item.get("has_power"),
+        "has_hr": item.get("has_hr"),
+        "has_gps": item.get("has_gps"),
+    }
+
+
+def _round(value: Any, digits: int = 1) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
 
 
 def compact_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:

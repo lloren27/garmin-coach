@@ -723,7 +723,24 @@ def main() -> int:
     response = httpx.post(f"{API_URL}/sync", json=payload, headers=headers, timeout=30)
     response.raise_for_status()
     print(json.dumps(response.json(), indent=2))
+    maybe_run_wattwise_bridge()
     return 0
+
+
+def maybe_run_wattwise_bridge() -> None:
+    enabled = os.getenv("WATTWISE_BRIDGE_AFTER_SYNC", "1").strip().lower()
+    if enabled in {"0", "false", "no", "off"}:
+        return
+    if not os.getenv("WATTWISE_ACCESS_TOKEN"):
+        return
+    try:
+        from .wattwise_bridge import main as run_wattwise_bridge
+
+        exit_code = run_wattwise_bridge()
+        if exit_code:
+            print(json.dumps({"wattwise_bridge": "partial", "exit_code": exit_code}))
+    except Exception as exc:
+        print(json.dumps({"wattwise_bridge": "skipped", "error": str(exc)[:300]}))
 
 
 if __name__ == "__main__":

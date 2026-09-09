@@ -731,7 +731,7 @@ def maybe_run_wattwise_bridge() -> None:
     enabled = os.getenv("WATTWISE_BRIDGE_AFTER_SYNC", "1").strip().lower()
     if enabled in {"0", "false", "no", "off"}:
         return
-    if not os.getenv("WATTWISE_ACCESS_TOKEN"):
+    if not os.getenv("WATTWISE_ACCESS_TOKEN") and not os.getenv("WATTWISE_OWNER_SECRET"):
         return
     try:
         from .wattwise_bridge import main as run_wattwise_bridge

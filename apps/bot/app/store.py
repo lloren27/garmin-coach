@@ -16,6 +16,7 @@ PROFILE_FILE = DATA_DIR / "athlete_profile.json"
 SYNC_REQUEST_FILE = DATA_DIR / "sync_request.json"
 AI_JOBS_FILE = DATA_DIR / "ai_jobs.json"
 LAB_TESTS_FILE = DATA_DIR / "lab_tests.json"
+WATTWISE_FILE = DATA_DIR / "wattwise_snapshot.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -55,6 +56,29 @@ def load_sync_history(limit: int = 10) -> list[dict[str, Any]]:
         if line.strip():
             rows.append(json.loads(line))
     return rows[-limit:]
+
+
+def save_wattwise(payload: dict[str, Any]) -> dict[str, Any]:
+    document = {
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "payload": payload,
+    }
+    if DATABASE_URL:
+        save_state_postgres("wattwise_snapshot", document)
+        return document
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    WATTWISE_FILE.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    return document
+
+
+def load_wattwise() -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return load_state_postgres("wattwise_snapshot")
+    if not WATTWISE_FILE.exists():
+        return None
+    document = json.loads(WATTWISE_FILE.read_text(encoding="utf-8"))
+    return document if isinstance(document, dict) else None
 
 
 def save_checkin(checkin: dict[str, Any]) -> dict[str, Any]:

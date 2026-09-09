@@ -50,6 +50,7 @@ def format_help() -> str:
         "/checkin - guarda contexto subjetivo y molestias\n"
         "/ajustar - adapta el proximo entreno con Garmin + molestias\n"
         "/bici - resumen de ciclismo\n"
+        "/potencia - analisis Wattwise de potencia y carga ciclista\n"
         "/fuerza - resumen de fuerza\n"
         "/malaga - foco Maraton de Malaga\n"
         "/syncinfo - ultima sincronizacion\n"
@@ -352,6 +353,7 @@ def build_ai_brief(
     profile: dict[str, Any] | None = None,
     checkins: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
+    wattwise: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     text = _normalize_text(question)
     intents = _ai_intents(text)
@@ -365,21 +367,33 @@ def build_ai_brief(
         sections.append(("salud", format_health(sync)))
     if "dated_activity" in intents:
         if dated_activity:
-            sections.append(("actividad_fecha", format_feedback(sync, checkins, profile, dated_activity, "Feedback actividad solicitada")))
+            sections.append(
+                (
+                    "actividad_fecha",
+                    format_feedback(
+                        sync,
+                        checkins,
+                        profile,
+                        dated_activity,
+                        "Feedback actividad solicitada",
+                        wattwise,
+                    ),
+                )
+            )
         else:
             sections.append(("actividad_fecha", "No encuentro una actividad en Garmin para esa fecha dentro de la ultima sincronizacion."))
     elif "latest" in intents:
-        sections.append(("ultima_actividad", format_feedback(sync, checkins, profile)))
+        sections.append(("ultima_actividad", format_feedback(sync, checkins, profile, wattwise=wattwise)))
     if "malaga" in intents:
         sections.append(("malaga", format_malaga(sync, profile)))
     if "health" in intents:
         sections.append(("salud", format_health(sync)))
     if "load" in intents:
-        sections.append(("carga", format_load(sync, profile)))
-        sections.append(("fatiga", format_fatigue(sync)))
+        sections.append(("carga", format_load(sync, profile, wattwise)))
+        sections.append(("fatiga", format_fatigue(sync, wattwise)))
         sections.append(("tendencia", format_trend(sync, history)))
     if "bike" in intents:
-        sections.append(("bici", format_bike(sync, profile)))
+        sections.append(("bici", format_bike(sync, profile, wattwise)))
     if "strength" in intents:
         sections.append(("fuerza", format_strength(sync)))
 
@@ -388,7 +402,7 @@ def build_ai_brief(
             ("hoy", format_today(sync)),
             ("proximo_entreno", format_next(sync)),
             ("salud", format_health(sync)),
-            ("ultima_actividad", format_feedback(sync, checkins, profile)),
+            ("ultima_actividad", format_feedback(sync, checkins, profile, wattwise=wattwise)),
         ]
 
     deduped = []
@@ -417,8 +431,9 @@ def format_natural_coach(
     profile: dict[str, Any] | None = None,
     checkins: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
+    wattwise: dict[str, Any] | None = None,
 ) -> str | None:
-    brief = build_ai_brief(question, sync, profile, checkins, history)
+    brief = build_ai_brief(question, sync, profile, checkins, history, wattwise)
     intents = brief.get("intents") or []
     if not intents:
         return None
@@ -453,7 +468,7 @@ def format_natural_coach(
         if lines:
             lines.append("")
         lines.append("Sobre la ultima actividad:")
-        lines.extend(_natural_section_lines(section_map.get("ultima_actividad"), 7))
+        lines.extend(_natural_section_lines(section_map.get("ultima_actividad"), 10))
     if "malaga" in intents:
         if lines:
             lines.append("")
@@ -468,12 +483,12 @@ def format_natural_coach(
         if lines:
             lines.append("")
         lines.append("Carga:")
-        lines.extend(_natural_section_lines(section_map.get("carga"), 6))
+        lines.extend(_natural_section_lines(section_map.get("carga"), 9))
     if "bike" in intents and "latest" not in intents:
         if lines:
             lines.append("")
         lines.append("Bici:")
-        lines.extend(_natural_section_lines(section_map.get("bici"), 6))
+        lines.extend(_natural_section_lines(section_map.get("bici"), 9))
     if "strength" in intents:
         if lines:
             lines.append("")
@@ -772,6 +787,7 @@ def format_feedback(
     profile: dict[str, Any] | None = None,
     activity: dict[str, Any] | None = None,
     title: str = "Feedback ultima actividad",
+    wattwise: dict[str, Any] | None = None,
 ) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
@@ -812,6 +828,9 @@ def format_feedback(
             lines.append(power_context)
     if activity.get("training_effect"):
         lines.append(f"Training effect: {_format_compact_number(activity.get('training_effect'), 1)}")
+    wattwise_metric = _wattwise_metric_for_activity(activity, wattwise)
+    if wattwise_metric:
+        lines.append(f"Wattwise: {_wattwise_power_summary(wattwise_metric, include_reading=True)}")
 
     lines.append(f"Lectura: {_activity_coach_reading(activity, fatigue)}")
     lines.append(f"Impacto en plan: {_activity_plan_impact(activity, summary)}")
@@ -1067,7 +1086,7 @@ def format_adjust(
     return "\n".join(lines)
 
 
-def format_fatigue(sync: dict[str, Any] | None) -> str:
+def format_fatigue(sync: dict[str, Any] | None, wattwise: dict[str, Any] | None = None) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
 
@@ -1080,19 +1099,27 @@ def format_fatigue(sync: dict[str, Any] | None) -> str:
     else:
         advice = "puedes entrenar normal si las sensaciones acompanan."
 
-    return (
-        "Fatiga\n"
-        f"Nivel: {level}\n"
-        f"Horas ultimos 7 dias: {fatigue.get('hours_7d', 'n/a')}\n"
-        f"Media semanal 28 dias: {fatigue.get('weekly_avg_hours_28d', 'n/a')}\n"
-        f"Ratio agudo/cronico: {fatigue.get('acute_chronic_ratio', 'n/a')}\n"
-        f"Sesiones duras 7 dias: {fatigue.get('hard_sessions_7d', 'n/a')}\n"
-        f"Dias seguidos con actividad: {fatigue.get('days_since_rest', 'n/a')}\n"
-        f"Consejo: {advice}"
-    )
+    lines = [
+        "Fatiga",
+        f"Nivel: {level}",
+        f"Horas ultimos 7 dias: {fatigue.get('hours_7d', 'n/a')}",
+        f"Media semanal 28 dias: {fatigue.get('weekly_avg_hours_28d', 'n/a')}",
+        f"Ratio agudo/cronico: {fatigue.get('acute_chronic_ratio', 'n/a')}",
+        f"Sesiones duras 7 dias: {fatigue.get('hard_sessions_7d', 'n/a')}",
+        f"Dias seguidos con actividad: {fatigue.get('days_since_rest', 'n/a')}",
+    ]
+    wattwise_load = _wattwise_latest_load(wattwise)
+    if wattwise_load:
+        lines.append(f"Wattwise bici: {_wattwise_load_summary(wattwise_load, include_reading=True)}")
+    lines.append(f"Consejo: {advice}")
+    return "\n".join(lines)
 
 
-def format_load(sync: dict[str, Any] | None, profile: dict[str, Any] | None = None) -> str:
+def format_load(
+    sync: dict[str, Any] | None,
+    profile: dict[str, Any] | None = None,
+    wattwise: dict[str, Any] | None = None,
+) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
 
@@ -1121,6 +1148,13 @@ def format_load(sync: dict[str, Any] | None, profile: dict[str, Any] | None = No
     athlete = _profile_payload(profile)
     if athlete.get("weight_kg") or athlete.get("ftp"):
         lines.append(f"Contexto perfil: peso {athlete.get('weight_kg', 'n/a')} kg, FTP {athlete.get('ftp', 'n/a')} W")
+    wattwise_metrics = _wattwise_metrics(wattwise)
+    if wattwise_metrics:
+        tss_7d = _wattwise_tss_for_days(wattwise_metrics, 7, _reference_date(sync))
+        lines.append(f"Wattwise bici 7d: {len(tss_7d[1])} sesiones con potencia, TSS total {_format_compact_number(tss_7d[0], 1)}")
+    wattwise_load = _wattwise_latest_load(wattwise)
+    if wattwise_load:
+        lines.append(f"Estado Wattwise: {_wattwise_load_summary(wattwise_load, include_reading=True)}")
     lines.append(f"Lectura: {_load_reading(fatigue, equivalent_hours)}")
     return "\n".join(lines)
 
@@ -1161,7 +1195,11 @@ def format_trend(sync: dict[str, Any] | None, history: list[dict[str, Any]] | No
     return "\n".join(lines)
 
 
-def format_bike(sync: dict[str, Any] | None, profile: dict[str, Any] | None = None) -> str:
+def format_bike(
+    sync: dict[str, Any] | None,
+    profile: dict[str, Any] | None = None,
+    wattwise: dict[str, Any] | None = None,
+) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
 
@@ -1183,7 +1221,49 @@ def format_bike(sync: dict[str, Any] | None, profile: dict[str, Any] | None = No
         power_context = _power_context_line(latest, profile)
         if power_context:
             lines.append(power_context)
+    wattwise_metric = _wattwise_metric_for_activity(latest, wattwise) or _wattwise_latest_metric(wattwise)
+    if wattwise_metric:
+        lines.append(f"Wattwise ultima: {_wattwise_power_summary(wattwise_metric, include_reading=True)}")
+        tss_7d, sessions_7d = _wattwise_tss_for_days(_wattwise_metrics(wattwise), 7, _reference_date(sync))
+        lines.append(f"Wattwise 7d: {len(sessions_7d)} sesiones con potencia, TSS total {_format_compact_number(tss_7d, 1)}")
+    wattwise_ftp = _wattwise_ftp_summary(wattwise, profile)
+    if wattwise_ftp:
+        lines.append(wattwise_ftp)
+    wattwise_load = _wattwise_latest_load(wattwise)
+    if wattwise_load:
+        lines.append(f"Estado Wattwise: {_wattwise_load_summary(wattwise_load, include_reading=True)}")
     lines.append("Lectura: la bici suma base aerobica con menos impacto, pero las salidas intensas cuentan como carga dura para las series de running.")
+    return "\n".join(lines)
+
+
+def format_wattwise(
+    wattwise: dict[str, Any] | None,
+    sync: dict[str, Any] | None = None,
+    profile: dict[str, Any] | None = None,
+) -> str:
+    payload = _wattwise_payload(wattwise)
+    metrics = _wattwise_metrics(wattwise)
+    if not payload or payload.get("status") != "ok":
+        return "Todavia no tengo un analisis Wattwise publicado. Ejecuta /sync con el Mac despierto."
+    if not metrics:
+        return "Wattwise esta conectado, pero aun no hay actividades ciclistas con potencia suficiente para calcular TSS e IF."
+
+    latest_metric = _wattwise_latest_metric(wattwise) or {}
+    reference = _reference_date(sync) if sync else datetime.now(MADRID_TZ).date()
+    tss_7d, sessions_7d = _wattwise_tss_for_days(metrics, 7, reference)
+    lines = [
+        "Analisis Wattwise",
+        f"Actualizado: {_format_datetime_es(payload.get('generated_at') or wattwise.get('received_at'))} hora Espana",
+        f"Ultima carga: {_format_date_es(latest_metric.get('date'))}, {_wattwise_power_summary(latest_metric, include_reading=True)}",
+        f"Ultimos 7 dias: {len(sessions_7d)} sesiones con potencia, TSS total {_format_compact_number(tss_7d, 1)}",
+    ]
+    wattwise_ftp = _wattwise_ftp_summary(wattwise, profile)
+    if wattwise_ftp:
+        lines.append(wattwise_ftp)
+    wattwise_load = _wattwise_latest_load(wattwise)
+    if wattwise_load:
+        lines.append(f"Estado de carga: {_wattwise_load_summary(wattwise_load, include_reading=True)}")
+    lines.append("Uso en el plan: esta carga ciclista cuenta al decidir descanso, series y tirada larga; Garmin sigue siendo la fuente principal para running.")
     return "\n".join(lines)
 
 
@@ -1405,6 +1485,145 @@ def _readiness_score(value: Any) -> Any:
 
 def _sport_summary(sync: dict[str, Any], sport: str) -> dict[str, Any]:
     return sync.get("payload", {}).get("summary", {}).get("sports", {}).get(sport, {})
+
+
+def _wattwise_payload(wattwise: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(wattwise, dict):
+        return {}
+    payload = wattwise.get("payload", wattwise)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _wattwise_metrics(wattwise: dict[str, Any] | None) -> list[dict[str, Any]]:
+    metrics = _wattwise_payload(wattwise).get("cycling_power_metrics") or []
+    if not isinstance(metrics, list):
+        return []
+    return sorted(
+        [item for item in metrics if isinstance(item, dict) and item.get("date")],
+        key=lambda item: str(item.get("date")),
+    )
+
+
+def _wattwise_latest_metric(wattwise: dict[str, Any] | None) -> dict[str, Any] | None:
+    metrics = _wattwise_metrics(wattwise)
+    return metrics[-1] if metrics else None
+
+
+def _wattwise_metric_for_activity(
+    activity: dict[str, Any] | None,
+    wattwise: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not activity or activity.get("sport") != "cycling":
+        return None
+    target_date = _activity_date(activity)
+    if not target_date:
+        return None
+    matches = [item for item in _wattwise_metrics(wattwise) if str(item.get("date"))[:10] == target_date.isoformat()]
+    return matches[-1] if matches else None
+
+
+def _wattwise_latest_load(wattwise: dict[str, Any] | None) -> dict[str, Any]:
+    value = _wattwise_payload(wattwise).get("latest_load") or {}
+    return value if isinstance(value, dict) and any(_has_value(item) for item in value.values()) else {}
+
+
+def _wattwise_ftp_summary(
+    wattwise: dict[str, Any] | None,
+    profile: dict[str, Any] | None = None,
+) -> str | None:
+    signature = _wattwise_payload(wattwise).get("fitness_signature") or {}
+    if not isinstance(signature, dict) or not _has_value(signature.get("ftp_w")):
+        return None
+    wattwise_ftp = _safe_float(signature.get("ftp_w"))
+    line = f"FTP Wattwise: {_format_compact_number(wattwise_ftp)} W"
+    if signature.get("effective_date"):
+        line += f" desde {_format_date_es(signature.get('effective_date'))}"
+    coach_ftp = _safe_float(_profile_payload(profile).get("ftp"))
+    if coach_ftp and abs(coach_ftp - wattwise_ftp) >= 2:
+        line += f"; perfil coach {_format_compact_number(coach_ftp)} W, pendiente de unificar"
+    return line
+
+
+def _wattwise_tss_for_days(
+    metrics: list[dict[str, Any]],
+    days: int,
+    reference: date,
+) -> tuple[float, list[dict[str, Any]]]:
+    cutoff = reference - timedelta(days=max(days - 1, 0))
+    selected = []
+    for item in metrics:
+        parsed = _parse_datetime(item.get("date"))
+        if parsed and cutoff <= parsed.date() <= reference:
+            selected.append(item)
+    return round(sum(_safe_float(item.get("tss")) for item in selected), 1), selected
+
+
+def _wattwise_power_summary(metric: dict[str, Any], include_reading: bool = False) -> str:
+    parts = []
+    tss = metric.get("tss")
+    intensity = metric.get("intensity_factor")
+    variability = metric.get("variability_index")
+    if _has_value(tss):
+        label = _wattwise_tss_label(_safe_float(tss)) if include_reading else None
+        parts.append(f"TSS {_format_compact_number(tss, 1)}" + (f" ({label})" if label else ""))
+    if _has_value(intensity):
+        label = _wattwise_if_label(_safe_float(intensity)) if include_reading else None
+        parts.append(f"IF {_format_compact_number(intensity, 2)}" + (f" ({label})" if label else ""))
+    if _has_value(variability):
+        label = _wattwise_vi_label(_safe_float(variability)) if include_reading else None
+        parts.append(f"VI {_format_compact_number(variability, 2)}" + (f" ({label})" if label else ""))
+    return "; ".join(parts) or "sin metricas de potencia calculables"
+
+
+def _wattwise_tss_label(value: float) -> str:
+    if value < 40:
+        return "carga ligera"
+    if value < 80:
+        return "carga moderada"
+    if value < 120:
+        return "carga significativa"
+    return "carga alta"
+
+
+def _wattwise_if_label(value: float) -> str:
+    if value < 0.60:
+        return "recuperacion"
+    if value < 0.75:
+        return "resistencia aerobica"
+    if value < 0.85:
+        return "tempo"
+    if value < 0.95:
+        return "cerca de umbral"
+    return "intensidad muy alta"
+
+
+def _wattwise_vi_label(value: float) -> str:
+    if value <= 1.05:
+        return "esfuerzo uniforme"
+    if value <= 1.15:
+        return "variabilidad controlada"
+    return "esfuerzo variable"
+
+
+def _wattwise_load_summary(values: dict[str, Any], include_reading: bool = False) -> str:
+    parts = []
+    labels = (("fitness", "fitness"), ("fatigue", "fatiga"), ("form", "forma"))
+    for key, label in labels:
+        if _has_value(values.get(key)):
+            parts.append(f"{label} {_format_compact_number(values.get(key), 1)}")
+    if include_reading and _has_value(values.get("form")):
+        parts.append(_wattwise_form_reading(_safe_float(values.get("form"))))
+    return ", ".join(parts) or "sin estado de carga calculable"
+
+
+def _wattwise_form_reading(value: float) -> str:
+    if value < -20:
+        return "carga ciclista reciente alta; prioriza asimilar"
+    if value < -10:
+        return "fatiga ciclista acumulada; evita encadenar calidad"
+    if value <= 5:
+        return "carga ciclista equilibrada"
+    return "buena frescura ciclista"
 
 
 def _format_duration(seconds: Any) -> str:

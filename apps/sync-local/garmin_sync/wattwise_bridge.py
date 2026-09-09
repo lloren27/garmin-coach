@@ -12,14 +12,15 @@ import httpx
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
-from .sync import TOKENSTORE, get_activities, parse_date, sport
+from .sync import API_URL, SYNC_SECRET, TOKENSTORE, get_activities, parse_date, sport
+from .wattwise_context import auth_headers as wattwise_auth_headers
+from .wattwise_context import fetch_wattwise_context
 
 
 ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(ROOT / ".env")
 
 WATTWISE_API_URL = os.getenv("WATTWISE_API_URL", "http://127.0.0.1:8010").rstrip("/")
-WATTWISE_ACCESS_TOKEN = os.getenv("WATTWISE_ACCESS_TOKEN", "")
 STATE_FILE = Path(os.getenv("WATTWISE_BRIDGE_STATE_FILE", ROOT / "data" / "wattwise_bridge_state.json")).expanduser()
 LOOKBACK_DAYS = int(os.getenv("WATTWISE_BRIDGE_DAYS", "60"))
 LIMIT = int(os.getenv("WATTWISE_BRIDGE_LIMIT", "12"))
@@ -33,9 +34,7 @@ CYCLING_FORMAT = os.getenv("WATTWISE_BRIDGE_CYCLING_FORMAT", "original").lower()
 
 
 def auth_headers() -> dict[str, str]:
-    if not WATTWISE_ACCESS_TOKEN:
-        raise RuntimeError("Falta WATTWISE_ACCESS_TOKEN. Ejecuta ./install_wattwise_core.command primero.")
-    return {"Authorization": f"Bearer {WATTWISE_ACCESS_TOKEN}"}
+    return wattwise_auth_headers()
 
 
 def load_state() -> dict[str, Any]:
@@ -169,6 +168,16 @@ def bridge_activity(client: Garmin, activity: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def publish_snapshot() -> dict[str, Any]:
+    snapshot = fetch_wattwise_context()
+    if not snapshot or snapshot.get("status") != "ok":
+        raise RuntimeError(f"No se pudo generar el snapshot Wattwise: {snapshot}")
+    headers = {"X-Sync-Secret": SYNC_SECRET} if SYNC_SECRET else {}
+    response = httpx.post(f"{API_URL}/wattwise", json=snapshot, headers=headers, timeout=30)
+    response.raise_for_status()
+    return response.json()
+
+
 def main() -> int:
     check_wattwise()
     state = load_state()
@@ -191,8 +200,26 @@ def main() -> int:
     state["last_imported"] = imported
     state["last_failed"] = failed
     save_state(state)
-    print(json.dumps({"ok": not failed, "imported": imported, "failed": failed}, indent=2, ensure_ascii=False))
-    return 1 if failed and not imported else 0
+    published = None
+    publish_error = None
+    try:
+        published = publish_snapshot()
+    except Exception as exc:
+        publish_error = str(exc)[:300]
+    print(
+        json.dumps(
+            {
+                "ok": not failed and not publish_error,
+                "imported": imported,
+                "failed": failed,
+                "snapshot_published": bool(published),
+                "snapshot_error": publish_error,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 1 if publish_error or (failed and not imported) else 0
 
 
 if __name__ == "__main__":

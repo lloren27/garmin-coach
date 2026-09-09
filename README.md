@@ -259,6 +259,15 @@ wattwise-core summary to natural-language coaching jobs. That gives `/coach`
 and free-text Telegram questions access to cycling TSS, IF, VI, and load while
 keeping Railway isolated from the local Wattwise service.
 
+After each bridge run, the Mac also publishes a compact Wattwise snapshot to
+Railway. The snapshot contains calculated metrics, never Wattwise credentials
+or activity files, and remains available while the Mac is asleep. Telegram uses
+it in `/bici`, `/feedback`, `/carga`, `/fatiga`, and `/potencia` (`/wattwise` is
+an alias). TSS is shown as cycling load, IF as relative intensity, VI as effort
+variability, and fitness/fatigue/form as planning context.
+The local bridge renews Wattwise's short-lived access token automatically using
+`WATTWISE_OWNER_SECRET`; no periodic manual token replacement is needed.
+
 ## Telegram commands
 
 - `/hoy`
@@ -283,6 +292,7 @@ keeping Railway isolated from the local Wattwise service.
 - `/checkin`
 - `/ajustar`
 - `/bici`
+- `/potencia` (alias `/wattwise`)
 - `/fuerza`
 - `/status`
 - `/malaga`

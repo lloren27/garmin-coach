@@ -36,6 +36,7 @@ def format_help() -> str:
         "/fatiga - riesgo de fatiga\n"
         "/salud - recuperacion, reposo, calorias y metricas Garmin\n"
         "/carga - carga running/bici/fuerza\n"
+        "/running - carga especifica de carrera y ACWR\n"
         "/tendencia - evolucion semanal\n"
         "/feedback - analiza la ultima actividad\n"
         "/coach - pregunta libre al entrenador local\n"
@@ -777,6 +778,12 @@ def format_latest(sync: dict[str, Any] | None) -> str:
         lines.append(f"Pulso medio: {_format_compact_number(activity.get('avg_hr'))} ppm")
     if activity.get("training_effect"):
         lines.append(f"Training effect: {_format_compact_number(activity.get('training_effect'), 1)}")
+    if activity.get("sport") == "running" and activity.get("running_load") is not None:
+        source = "Garmin" if activity.get("running_load_source") == "garmin" else "TRIMP estimado"
+        lines.append(
+            f"Carga running: {_format_compact_number(activity.get('running_load'), 1)} ({source}); "
+            f"{_running_activity_load_reading(activity)}"
+        )
     lines.append(f"Feedback: {_latest_feedback(activity)}")
     return "\n".join(lines)
 
@@ -828,6 +835,12 @@ def format_feedback(
             lines.append(power_context)
     if activity.get("training_effect"):
         lines.append(f"Training effect: {_format_compact_number(activity.get('training_effect'), 1)}")
+    if sport == "running" and activity.get("running_load") is not None:
+        source = "Garmin" if activity.get("running_load_source") == "garmin" else "TRIMP estimado"
+        lines.append(
+            f"Carga running: {_format_compact_number(activity.get('running_load'), 1)} ({source}); "
+            f"{_running_activity_load_reading(activity)}"
+        )
     wattwise_metric = _wattwise_metric_for_activity(activity, wattwise)
     if wattwise_metric:
         lines.append(f"Wattwise: {_wattwise_power_summary(wattwise_metric, include_reading=True)}")
@@ -1104,13 +1117,23 @@ def format_fatigue(sync: dict[str, Any] | None, wattwise: dict[str, Any] | None 
         f"Nivel: {level}",
         f"Horas ultimos 7 dias: {fatigue.get('hours_7d', 'n/a')}",
         f"Media semanal 28 dias: {fatigue.get('weekly_avg_hours_28d', 'n/a')}",
-        f"Ratio agudo/cronico: {fatigue.get('acute_chronic_ratio', 'n/a')}",
+        f"Ratio volumen multideporte (horas): {fatigue.get('acute_chronic_ratio', 'n/a')}",
         f"Sesiones duras 7 dias: {fatigue.get('hard_sessions_7d', 'n/a')}",
         f"Dias seguidos con actividad: {fatigue.get('days_since_rest', 'n/a')}",
     ]
     wattwise_load = _wattwise_latest_load(wattwise)
     if wattwise_load:
         lines.append(f"Wattwise bici: {_wattwise_load_summary(wattwise_load, include_reading=True)}")
+    running_load = sync.get("payload", {}).get("summary", {}).get("running_load") or {}
+    if running_load.get("available"):
+        lines.append(
+            "Running: "
+            f"carga 7d {_format_compact_number(running_load.get('acute_load_7d'), 1)}, "
+            f"ACWR {_format_compact_number(running_load.get('acwr'), 2)} "
+            f"({_running_acwr_label(running_load.get('acwr_status'))})"
+        )
+        if running_load.get("acwr_status") in {"elevada", "pico_alto"}:
+            advice = "la carga running ha subido; haz facil el siguiente entreno y evita encadenar calidad."
     lines.append(f"Consejo: {advice}")
     return "\n".join(lines)
 
@@ -1143,7 +1166,7 @@ def format_load(
         f"Bici 7d: {cycling.get('sessions_7d', 0)} sesiones, {cycling.get('km_7d', 0)} km, {cycling.get('hours_7d', 0)} h",
         f"Fuerza 7d: {strength.get('sessions_7d', 0)} sesiones, {strength.get('hours_7d', 0)} h",
         f"Carga equivalente aprox: {equivalent_hours} h running",
-        f"Ratio agudo/cronico: {fatigue.get('acute_chronic_ratio', 'n/a')}",
+        f"Ratio volumen multideporte (horas): {fatigue.get('acute_chronic_ratio', 'n/a')}",
     ]
     athlete = _profile_payload(profile)
     if athlete.get("weight_kg") or athlete.get("ftp"):
@@ -1155,6 +1178,20 @@ def format_load(
     wattwise_load = _wattwise_latest_load(wattwise)
     if wattwise_load:
         lines.append(f"Estado Wattwise: {_wattwise_load_summary(wattwise_load, include_reading=True)}")
+    running_load = summary.get("running_load") or {}
+    if running_load.get("available"):
+        running_unit = running_load.get("unit") or "carga"
+        lines.append(
+            "Carga running 7d: "
+            f"{_format_compact_number(running_load.get('acute_load_7d'), 1)} {running_unit}; "
+            f"base semanal 28d {_format_compact_number(running_load.get('chronic_weekly_load_28d'), 1)} {running_unit}"
+        )
+        lines.append(
+            f"ACWR running: {_format_compact_number(running_load.get('acwr'), 2)} "
+            f"({_running_acwr_label(running_load.get('acwr_status'))}); "
+            f"monotonia {_format_compact_number(running_load.get('monotony_7d'), 2)}, "
+            f"strain {_format_compact_number(running_load.get('strain_7d'), 1)}"
+        )
     lines.append(f"Lectura: {_load_reading(fatigue, equivalent_hours)}")
     return "\n".join(lines)
 
@@ -1264,6 +1301,54 @@ def format_wattwise(
     if wattwise_load:
         lines.append(f"Estado de carga: {_wattwise_load_summary(wattwise_load, include_reading=True)}")
     lines.append("Uso en el plan: esta carga ciclista cuenta al decidir descanso, series y tirada larga; Garmin sigue siendo la fuente principal para running.")
+    return "\n".join(lines)
+
+
+def format_running(sync: dict[str, Any] | None) -> str:
+    if not sync:
+        return "Todavia no tengo datos sincronizados desde Garmin."
+    summary = sync.get("payload", {}).get("summary", {})
+    running = summary.get("sports", {}).get("running", {})
+    load = summary.get("running_load") or {}
+    if not load.get("available"):
+        return "No puedo calcular aun la carga running. Revisa /perfil fcmax y fcreposo, y ejecuta /sync."
+
+    latest = load.get("latest") or {}
+    sources = load.get("source_counts_28d") or {}
+    basis = load.get("profile_basis") or {}
+    unit = load.get("unit") or "carga"
+    lines = [
+        "Carga de running",
+        f"Volumen 7d: {running.get('sessions_7d', 0)} sesiones, {running.get('km_7d', 0)} km, {running.get('hours_7d', 0)} h",
+        (
+            f"Carga 7d: {_format_compact_number(load.get('acute_load_7d'), 1)} {unit}; "
+            f"base semanal 28d {_format_compact_number(load.get('chronic_weekly_load_28d'), 1)} {unit}"
+        ),
+        (
+            f"ACWR: {_format_compact_number(load.get('acwr'), 2)} "
+            f"({_running_acwr_label(load.get('acwr_status'))})"
+        ),
+        (
+            f"Monotonia 7d: {_format_compact_number(load.get('monotony_7d'), 2)}; "
+            f"strain {_format_compact_number(load.get('strain_7d'), 1)}; "
+            f"dias corriendo {load.get('running_days_7d', 0)}/7"
+        ),
+        (
+            f"Ultima carrera: {_format_date_es(latest.get('date'))}, "
+            f"carga {_format_compact_number(latest.get('load'), 1)} "
+            f"({_running_load_source_label(latest.get('source'))})"
+        ),
+        (
+            f"Base usada: FCmax {_format_compact_number(basis.get('max_hr'))}, "
+            f"FC reposo {_format_compact_number(basis.get('resting_hr'))}, sexo {basis.get('sex') or 'n/a'}"
+        ),
+        (
+            f"Fuentes 28d: Garmin {sources.get('garmin', 0)}, "
+            f"TRIMP estimado {sources.get('estimated_trimp', 0)}"
+        ),
+        f"Lectura: {_running_load_reading(load)}",
+        "Nota: el ACWR describe cambios de carga; no predice por si solo una lesion.",
+    ]
     return "\n".join(lines)
 
 
@@ -1626,6 +1711,48 @@ def _wattwise_form_reading(value: float) -> str:
     return "buena frescura ciclista"
 
 
+def _running_load_source_label(value: Any) -> str:
+    return "Garmin" if value == "garmin" else "TRIMP estimado por FC"
+
+
+def _running_acwr_label(value: Any) -> str:
+    labels = {
+        "baja": "carga reciente por debajo de la base",
+        "estable": "carga estable",
+        "elevada": "subida de carga",
+        "pico_alto": "pico de carga alto",
+        "sin_base": "sin base suficiente",
+    }
+    return labels.get(str(value or ""), "sin lectura")
+
+
+def _running_activity_load_reading(activity: dict[str, Any]) -> str:
+    load = _safe_float(activity.get("running_load"))
+    reserve = _safe_float(activity.get("hr_reserve_pct"))
+    if reserve >= 80 or load >= 120:
+        return "sesion exigente, cuenta como dia duro"
+    if reserve >= 70 or load >= 80:
+        return "carga moderada-alta"
+    if reserve and reserve < 60:
+        return "carga suave"
+    return "carga moderada"
+
+
+def _running_load_reading(load: dict[str, Any]) -> str:
+    status = str(load.get("acwr_status") or "sin_base")
+    monotony = _safe_float(load.get("monotony_7d"))
+    days = int(_safe_float(load.get("running_days_7d")))
+    if status == "pico_alto":
+        return "hay un pico alto frente a tu base de 28 dias; conviene asimilar antes de otra sesion dura."
+    if status == "elevada":
+        return "la carga ha subido; manten faciles los rodajes y vigila la respuesta de las piernas."
+    if monotony >= 2 or days >= 6:
+        return "la carga no es un pico, pero hay poca variacion o pocos descansos; protege la recuperacion."
+    if status == "baja":
+        return "semana por debajo de tu base reciente; puede ser descarga o perdida de continuidad."
+    return "carga estable respecto a las ultimas cuatro semanas."
+
+
 def _format_duration(seconds: Any) -> str:
     if not isinstance(seconds, (int, float)):
         return "n/a"
@@ -1794,6 +1921,10 @@ def _activity_coach_reading(activity: dict[str, Any], fatigue: dict[str, Any]) -
     te = _safe_float(activity.get("training_effect"))
     if te >= 3.5:
         return "sesion claramente exigente; cuenta como dia duro aunque las sensaciones fueran buenas."
+    if sport == "running" and _safe_float(activity.get("running_load")) >= 120:
+        return "carrera exigente por carga cardiovascular; cuenta como dia duro aunque el ritmo fuera controlado."
+    if sport == "running" and _safe_float(activity.get("running_load")) >= 80:
+        return "carga cardiovascular moderada-alta; conviene que el siguiente rodaje sea realmente facil."
     if sport == "running" and _safe_float(activity.get("km")) >= 14:
         return "pieza importante para resistencia especifica; vigila recuperacion las proximas 24-48 h."
     if sport == "cycling" and (_safe_float(activity.get("hours")) >= 2 or te >= 3):
@@ -1832,6 +1963,8 @@ def _next_step_after_activity(
         return "24-48 h faciles antes de otro estimulo fuerte."
     if _safe_float(activity.get("training_effect")) >= 3.5:
         return "siguiente dia facil; no encadenes calidad."
+    if activity.get("sport") == "running" and _safe_float(activity.get("running_load")) >= 120:
+        return "siguiente dia facil o descanso; no encadenes otra sesion de calidad."
     if activity.get("sport") == "running":
         return "mantener el siguiente entreno en zona facil salvo que toque descanso."
     return "si manana corres, que sea facil y con pulso controlado."
@@ -1898,6 +2031,8 @@ def _adjustment_risk(
         risk += 1
     if activity and _safe_float(activity.get("training_effect")) >= 3.5:
         risk += 1
+    if activity and activity.get("sport") == "running" and _safe_float(activity.get("running_load")) >= 120:
+        risk += 2
     risk += _objective_recovery_risk(wellness or {})
     if not _has_objective_recovery(wellness or {}) and _safe_float(checkin.get("sleep")) and _safe_float(checkin.get("sleep")) <= 3:
         risk += 1
@@ -1929,6 +2064,8 @@ def _adjustment_reason(
         reasons.append(f"fatiga {fatigue.get('level')}")
     if activity:
         reasons.append(f"ultima actividad {activity.get('sport', 'n/a')}")
+        if activity.get("sport") == "running" and _safe_float(activity.get("running_load")) >= 120:
+            reasons.append("carga cardiovascular alta en la ultima carrera")
     if checkin.get("pain"):
         reasons.append("dolor reportado")
     elif checkin.get("soreness") and checkin.get("soreness") != "no":

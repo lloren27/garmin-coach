@@ -31,6 +31,7 @@ from .coach import (
     format_profile,
     format_profile_help,
     format_profile_saved,
+    format_running,
     format_sync_requested,
     format_syncinfo,
     format_status,
@@ -303,6 +304,8 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
         return format_health(sync)
     if command == "/carga":
         return format_load(sync, profile, wattwise)
+    if command in {"/running", "/correr", "/carga_running"}:
+        return format_running(sync)
     if command == "/tendencia":
         return format_trend(sync, load_sync_history())
     if command == "/feedback":

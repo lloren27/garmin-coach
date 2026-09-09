@@ -447,6 +447,7 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 "Cuando pregunte por Malaga, evalua running/maraton aunque la ultima actividad sea bici. "
                 "Si hay contexto Wattwise, usalo sobre todo para ciclismo, potencia, IF, TSS, VI y carga; "
                 "para running prioriza Garmin Coach si Wattwise no trae distancia, ritmo o FC. "
+                "Para carga de running usa running_load, distingue Garmin de TRIMP estimado y no presentes ACWR como riesgo medico. "
                 "No muestres razonamiento interno. "
                 "Responde en 4-7 lineas y menos de 90 palabras."
             ),
@@ -620,6 +621,7 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
             "week": summary.get("week"),
             "sports": summary.get("sports"),
             "fatigue": summary.get("fatigue"),
+            "running_load": summary.get("running_load"),
             "next_workout": summary.get("next_workout"),
         },
         "recent_activities": activities[-8:],

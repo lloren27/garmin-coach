@@ -277,6 +277,7 @@ The local bridge renews Wattwise's short-lived access token automatically using
 - `/fatiga`
 - `/salud`
 - `/carga`
+- `/running` (aliases `/correr`, `/carga_running`)
 - `/tendencia`
 - `/feedback`
 - `/coach`
@@ -343,6 +344,32 @@ on the Mac. Commands stay deterministic and do not need AI.
 Common natural-language training questions are answered immediately with
 deterministic coach readings before falling back to Ollama. This keeps answers
 short, Spanish, and grounded in the computed Garmin data.
+
+## Running load analytics
+
+The running analytics model adapts the normalization, weekly aggregation, ACWR,
+readiness-context, and compact AI-context ideas from the MIT-licensed
+[`garmin-running-analytics`](https://github.com/mgilangjanuar/garmin-running-analytics)
+project to the existing Python sync. The upstream project is a standalone
+Next.js dashboard rather than a Python package, so Garmin Coach does not run or
+deploy that second application.
+
+For each run, the Mac estimates Banister TRIMP from duration and average heart
+rate when the athlete profile has sex, maximum HR, and resting HR. This keeps a
+single comparable scale across the history. If TRIMP cannot be calculated, the
+sync uses Garmin's `activityTrainingLoad` only and never mixes both scales.
+The sync stores running acute load (7 days), weekly chronic load (28 days),
+ACWR, monotony, strain, source provenance, and per-activity load. `/running`,
+`/carga`, `/fatiga`, and `/feedback` make those values visible. ACWR is treated
+as a description of load change, not as a standalone injury predictor.
+
+Method references: [Banister TRIMP](https://journals.physiology.org/doi/abs/10.1152/japplphysiol.00482.2003),
+[training monotony and strain](https://pmc.ncbi.nlm.nih.gov/articles/PMC5673663/),
+and [ACWR limitations](https://pubmed.ncbi.nlm.nih.gov/32502973/).
+
+No Anthropic or Claude call is used. Deterministic calculations run in Python;
+free-text explanation and planning continue through the existing local Ollama
+worker and its configured `OLLAMA_MODEL`.
 
 Useful `/perfil` fields:
 

@@ -13,6 +13,8 @@ import httpx
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
+from .running_analytics import enrich_running_load
+
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
@@ -135,6 +137,7 @@ def compact_activity(
         "max_hr": activity.get("maxHR"),
         "training_effect": activity.get("aerobicTrainingEffect") or activity.get("trainingEffect"),
         "anaerobic_training_effect": activity.get("anaerobicTrainingEffect"),
+        "training_load": activity.get("activityTrainingLoad") or activity.get("trainingLoad"),
         "calories": activity.get("calories"),
         "elevation_gain_m": activity.get("elevationGain"),
         "avg_power": activity.get("averagePower") or activity.get("avgPower"),
@@ -146,8 +149,9 @@ def compact_activity(
     return item
 
 
-def summarize(activities: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize(activities: list[dict[str, Any]], profile: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized = normalize_activities(activities)
+    normalized, running_load = enrich_running_load(normalized, profile, TODAY)
     runs = [activity for activity in normalized if activity["sport"] == "running" and activity["km"] >= 1]
 
     by_week: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -186,7 +190,8 @@ def summarize(activities: list[dict[str, Any]]) -> dict[str, Any]:
             "strength": summarize_sport(normalized, "strength"),
         },
         "fatigue": summarize_fatigue(normalized),
-        "next_workout": recommend_next_workout(normalized),
+        "running_load": running_load,
+        "next_workout": recommend_next_workout(normalized, running_load),
     }
 
 
@@ -272,8 +277,28 @@ def summarize_fatigue(activities: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def recommend_next_workout(activities: list[dict[str, Any]]) -> dict[str, str]:
+def recommend_next_workout(
+    activities: list[dict[str, Any]],
+    running_load: dict[str, Any] | None = None,
+) -> dict[str, str]:
     fatigue = summarize_fatigue(activities)
+    running_load = running_load or {}
+    latest_running = running_load.get("latest") or {}
+    latest_load = number(latest_running.get("load")) or 0
+    if running_load.get("acwr_status") == "pico_alto" or (
+        latest_running.get("date") == TODAY.isoformat() and latest_load >= 120
+    ):
+        return {
+            "title": "Descanso o rodaje regenerativo",
+            "details": "Descanso o 30-45 min muy facil, sin series ni tempo.",
+            "reason": "La carga cardiovascular reciente de running pide asimilacion.",
+        }
+    if running_load.get("acwr_status") == "elevada":
+        return {
+            "title": "Rodaje facil",
+            "details": "40-55 min muy comodos, sin convertirlo en tempo.",
+            "reason": "La carga running de 7 dias ha subido frente a la base de 28 dias.",
+        }
     weekday = TODAY.weekday()
     if fatigue["level"] == "alta":
         return {
@@ -696,11 +721,22 @@ def choose_plan_level(summary: dict[str, Any]) -> dict[str, str | int]:
     return {"level": "base primero", "goal": "sub-3:40 solo si construyes tirada larga sin molestias", "peak_km": 42}
 
 
+def load_remote_profile() -> dict[str, Any]:
+    try:
+        headers = {"X-Sync-Secret": SYNC_SECRET} if SYNC_SECRET else {}
+        response = httpx.get(f"{API_URL}/profile", headers=headers, timeout=20)
+        response.raise_for_status()
+        profile = response.json().get("profile") or {}
+        return profile if isinstance(profile, dict) else {}
+    except Exception:
+        return {}
+
+
 def build_payload() -> dict[str, Any]:
     client = Garmin()
     client.login(str(TOKENSTORE))
     activities = get_activities(client)
-    summary = summarize(activities)
+    summary = summarize(activities, load_remote_profile())
     return {
         "generated_at": datetime.now(MADRID_TZ).isoformat(timespec="seconds"),
         "summary": summary,

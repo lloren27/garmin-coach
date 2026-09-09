@@ -85,9 +85,9 @@ WATTWISE = {
 class WattwiseCoachTests(unittest.TestCase):
     def test_feedback_adds_wattwise_to_matching_cycling_activity(self) -> None:
         answer = format_feedback(SYNC, profile={"profile": {"ftp": 329}}, wattwise=WATTWISE)
-        self.assertIn("TSS 102.2 (carga significativa)", answer)
-        self.assertIn("IF 0.69 (resistencia aerobica)", answer)
-        self.assertIn("VI 1.31 (esfuerzo variable)", answer)
+        self.assertIn("Conclusion: Dia exigente", answer)
+        self.assertIn("Wattwise confirma una carga ciclista significativa", answer)
+        self.assertNotIn("TSS 102.2", answer)
 
     def test_running_feedback_does_not_attach_cycling_metric(self) -> None:
         running = {"date": "2026-09-06", "sport": "running", "km": 7.0, "duration_s": 2200, "pace": "5:14/km"}

@@ -272,6 +272,7 @@ The local bridge renews Wattwise's short-lived access token automatically using
 
 - `/hoy`
 - `/semana`
+- `/plan_semana` (alias `/plan`)
 - `/ultima`
 - `/proximo`
 - `/fatiga`
@@ -321,14 +322,21 @@ Adjunta un PDF o DOCX con /prueba_esfuerzo en el comentario del archivo
 /checkin sin molestias nota piernas normales
 /checkin molestia gemelo derecho nota aparece al subir ritmo
 /ajustar
-/ajustar hoy estoy cansado y dormi mal
+/plan_semana
+/fuerza
 ```
 
-Check-ins are stored in Postgres and used by `/feedback` and `/ajustar`.
-Recovery decisions prioritize objective Garmin wellness data when available:
-sleep, HRV, readiness, body battery, stress, resting heart rate, and recent load.
-Check-ins are treated as subjective context, with pain and injury signals getting
-strong priority because Garmin cannot reliably detect them.
+Check-ins are stored in Postgres and used by `/feedback` and `/ajustar`, but only
+for pain, soreness, and relevant notes. Sleep, energy, stress, and recovery come
+from objective Garmin wellness data: sleep, HRV, readiness, body battery, stress,
+resting heart rate, and recent load. Historical subjective RPE, sleep, or energy
+scores are ignored by coaching decisions.
+`/feedback` aggregates every activity from the latest training day and produces a
+combined conclusion using running load, cycling/Wattwise, strength, weekly load,
+and Garmin recovery. `/semana` combines the completed-week balance with an
+adaptive seven-day plan; `/plan_semana` shows the plan directly. `/fuerza`
+provides full-body A/B sessions and progression rules that complement running and
+cycling without training to failure.
 The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
 `/carga`, `/ajustar`, and `/malaga`.
 Lab test PDF/DOCX files can be uploaded from Telegram. Add `/prueba_esfuerzo`

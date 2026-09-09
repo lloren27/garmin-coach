@@ -445,6 +445,8 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 "Empieza por la decision o lectura principal. "
                 "Cuando la pregunta sea sobre que hacer manana, responde con una recomendacion concreta primero. "
                 "Cuando pregunte por Malaga, evalua running/maraton aunque la ultima actividad sea bici. "
+                "Para feedback agrega todas las actividades de la misma fecha y cruza la carga total con la recuperacion Garmin. "
+                "Sueno, energia y recuperacion salen de Garmin; de los check-ins usa solo dolor o molestias. "
                 "Si hay contexto Wattwise, usalo sobre todo para ciclismo, potencia, IF, TSS, VI y carga; "
                 "para running prioriza Garmin Coach si Wattwise no trae distancia, ritmo o FC. "
                 "Para carga de running usa running_load, distingue Garmin de TRIMP estimado y no presentes ACWR como riesgo medico. "
@@ -627,7 +629,7 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
         "recent_activities": activities[-8:],
         "wellness": wellness,
         "physiology": physiology,
-        "checkins": context.get("checkins") or [],
+        "checkins": _compact_injury_checkins(context.get("checkins")),
         "history": compact_history(context.get("history") or []),
     }
     if wattwise:
@@ -637,6 +639,31 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
         "coach_brief": context.get("coach_brief") or {},
         "extra_context": extra_context,
     }
+
+
+def _compact_injury_checkins(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    compact = []
+    for document in value:
+        if not isinstance(document, dict):
+            continue
+        checkin = document.get("checkin", document)
+        if not isinstance(checkin, dict):
+            continue
+        soreness = checkin.get("soreness")
+        pain = checkin.get("pain")
+        if not pain and (not soreness or str(soreness).lower() == "no"):
+            continue
+        compact.append(
+            {
+                "created_at": document.get("created_at"),
+                "pain": pain,
+                "soreness": soreness,
+                "note": checkin.get("note"),
+            }
+        )
+    return compact[-3:]
 
 
 def compact_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:

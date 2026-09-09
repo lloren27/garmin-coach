@@ -52,9 +52,10 @@ SYNC = {
 class RunningCoachTests(unittest.TestCase):
     def test_feedback_surfaces_estimated_load(self) -> None:
         answer = format_feedback(SYNC)
-        self.assertIn("Carga running: 135.6 (TRIMP estimado)", answer)
-        self.assertIn("cuenta como dia duro", answer)
-        self.assertIn("siguiente dia facil o descanso", answer)
+        self.assertIn("Conclusion: Dia exigente", answer)
+        self.assertIn("carrera exigente por carga cardiovascular", answer)
+        self.assertIn("no conviene anadir otra sesion dura", answer)
+        self.assertIn("Decision: manana descanso o 30-45 min muy faciles", answer)
 
     def test_latest_surfaces_load_without_error(self) -> None:
         answer = format_latest(SYNC)

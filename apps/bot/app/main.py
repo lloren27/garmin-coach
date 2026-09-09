@@ -42,6 +42,7 @@ from .coach import (
     format_zones,
     merge_profile,
     format_week,
+    format_week_plan,
     format_wattwise,
     parse_lab_test_correction,
     parse_checkin,
@@ -293,11 +294,13 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
     if command == "/hoy":
         return format_today(sync)
     if command == "/semana":
-        return format_week(sync)
+        return format_week(sync, profile, load_checkins())
+    if command in {"/plan_semana", "/plan"}:
+        return format_week_plan(sync, profile, load_checkins())
     if command == "/ultima":
         return format_latest(sync)
     if command == "/proximo":
-        return format_next(sync)
+        return format_next(sync, load_checkins())
     if command == "/fatiga":
         return format_fatigue(sync, wattwise)
     if command == "/salud":

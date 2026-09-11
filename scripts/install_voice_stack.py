@@ -16,9 +16,9 @@ SYNC_DIR = ROOT / "apps" / "sync-local"
 VENV = SYNC_DIR / ".venv"
 ENV_FILE = ROOT / ".env"
 VOICE_DIR = Path.home() / "Library" / "Application Support" / "Garmin Coach" / "piper"
-PIPER_MODEL = VOICE_DIR / "es_ES-mls_10246-low.onnx"
-PIPER_CONFIG = VOICE_DIR / "es_ES-mls_10246-low.onnx.json"
-HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/mls_10246/low"
+PIPER_MODEL = VOICE_DIR / "es_ES-carlfm-x_low.onnx"
+PIPER_CONFIG = VOICE_DIR / "es_ES-carlfm-x_low.onnx.json"
+HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low"
 
 
 def run(command: list[str], cwd: Path | None = None) -> None:

@@ -50,6 +50,52 @@ VOICE_DIR = Path(os.getenv("GARMIN_COACH_VOICE_DIR", "~/Library/Application Supp
 ANSWER_MAX_CHARS = int(os.getenv("GARMIN_COACH_ANSWER_MAX_CHARS", "1100"))
 VOICE_ANSWER_MAX_CHARS = int(os.getenv("GARMIN_COACH_VOICE_ANSWER_MAX_CHARS", "850"))
 
+TTS_TERM_REPLACEMENTS = (
+    (r"\bWattwise\b", "guat guais"),
+    (r"\bGarmin\b", "garmin"),
+    (r"\bpace\b", "ritmo"),
+    (r"\beasy run\b", "rodaje facil"),
+    (r"\blong run\b", "tirada larga"),
+    (r"\btempo run\b", "rodaje tempo"),
+    (r"\bthreshold\b", "umbral"),
+    (r"\btraining load\b", "carga de entrenamiento"),
+    (r"\bload\b", "carga"),
+    (r"\breadiness\b", "preparacion"),
+    (r"\brecovery\b", "recuperacion"),
+    (r"\bworkout\b", "entrenamiento"),
+    (r"\bsession\b", "sesion"),
+    (r"\bnormalized power\b", "potencia normalizada"),
+    (r"\baverage power\b", "potencia media"),
+    (r"\bpower\b", "potencia"),
+    (r"\bcadence\b", "cadencia"),
+    (r"\bcore\b", "zona media"),
+    (r"\bfull body\b", "cuerpo completo"),
+    (r"\bhip thrust\b", "hip trust"),
+    (r"\bsplit squat\b", "split escuat"),
+    (r"\bsplits?\b(?!\s+(?:squat|escuat))", "parciales"),
+    (r"\bsquat\b", "sentadilla"),
+    (r"\brunning\b", "carrera"),
+    (r"\bcycling\b", "ciclismo"),
+    (r"\bbike\b", "bici"),
+)
+
+TTS_ACRONYM_REPLACEMENTS = (
+    (r"\bACWR\b", "a ce doble uve erre"),
+    (r"\bFTP\b", "efe te pe"),
+    (r"\bHRV\b", "variabilidad de pulso"),
+    (r"\bTSS\b", "te ese ese"),
+    (r"\bIF\b", "factor de intensidad"),
+    (r"\bVI\b", "indice de variabilidad"),
+    (r"\bNP\b", "potencia normalizada"),
+    (r"\bRPE\b", "erre pe e"),
+    (r"\bRIR\b", "repeticiones en reserva"),
+    (r"\bVO2\s*max\b", "uve o dos maximo"),
+    (r"\bSpO2\b", "saturacion de oxigeno"),
+    (r"\bBMR\b", "metabolismo basal"),
+    (r"\bIMC\b", "indice de masa corporal"),
+    (r"\bREM\b", "fase REM"),
+)
+
 
 def headers() -> dict[str, str]:
     return {"X-Sync-Secret": SYNC_SECRET} if SYNC_SECRET else {}
@@ -146,6 +192,8 @@ def enrich_context_for_question(question: str, context: dict[str, Any]) -> dict[
         enriched.get("checkins"),
         enriched.get("history"),
         enriched.get("wattwise"),
+        enriched.get("strength_state"),
+        enriched.get("strength_owner_id"),
     )
     return enriched
 
@@ -183,6 +231,9 @@ def synthesize_voice(text: str, output_dir: Path) -> Path | None:
 
 def prepare_text_for_tts(text: str) -> str:
     value = clean_answer(text)
+    value = _apply_tts_replacements(value, TTS_TERM_REPLACEMENTS)
+    value = _apply_tts_replacements(value, TTS_ACRONYM_REPLACEMENTS)
+    value = re.sub(r"\b(\d+)\s*d\b", lambda match: f"{_number_text(match.group(1))} dias", value, flags=re.IGNORECASE)
     value = re.sub(r"\b(\d{1,2}):(\d{2})\s*/\s*(?:km|kilometros?)\b", _pace_to_tts, value, flags=re.IGNORECASE)
     value = re.sub(r"\b(\d{1,2}):(\d{2})\b", _time_to_tts, value)
     value = re.sub(r"\b(\d+(?:[.,]\d+)?)\s*h\s+(\d{1,2})\s*min\b", _duration_to_tts, value, flags=re.IGNORECASE)
@@ -207,13 +258,10 @@ def prepare_text_for_tts(text: str) -> str:
         (r"\bBody battery\b", "energia corporal Garmin"),
         (r"\bTraining readiness\b", "preparacion Garmin"),
         (r"\bTraining effect\b", "efecto de entrenamiento"),
-        (r"\bHRV\b", "variabilidad de pulso"),
-        (r"\bVO2\s*max\b", "uve o dos maximo"),
         (r"\bFCmax\b", "frecuencia cardiaca maxima"),
         (r"\bFC reposo\b", "frecuencia cardiaca en reposo"),
         (r"\bFC umbral\b", "frecuencia cardiaca de umbral"),
         (r"\bFC\b", "frecuencia cardiaca"),
-        (r"\bFTP\b", "efe te pe"),
         (r"\bVT1\b", "umbral ventilatorio uno"),
         (r"\bVT2\b", "umbral ventilatorio dos"),
         (r"\bZ\s*1\b", "zona uno"),
@@ -230,10 +278,6 @@ def prepare_text_for_tts(text: str) -> str:
         (r"\bkcal\b", "kilocalorias"),
         (r"\bmin\b", "minutos"),
         (r"\bh\b", "horas"),
-        (r"\bREM\b", "fase REM"),
-        (r"\bBMR\b", "metabolismo basal"),
-        (r"\bIMC\b", "indice de masa corporal"),
-        (r"\bSpO2\b", "saturacion de oxigeno"),
         (r"\b10K\b", "diez kilometros"),
     )
     for pattern, replacement in replacements:
@@ -246,6 +290,12 @@ def prepare_text_for_tts(text: str) -> str:
     value = re.sub(r"\(([^)]*)\)", r", \1,", value)
     value = re.sub(r"\s+", " ", value)
     return value.strip()
+
+
+def _apply_tts_replacements(value: str, replacements: tuple[tuple[str, str], ...]) -> str:
+    for pattern, replacement in replacements:
+        value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+    return value
 
 
 def _append_piper_option(command: list[str], option: str, value: str) -> None:
@@ -446,6 +496,7 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 "Cuando la pregunta sea sobre que hacer manana, responde con una recomendacion concreta primero. "
                 "Cuando pregunte por Malaga, evalua running/maraton aunque la ultima actividad sea bici. "
                 "Para feedback agrega todas las actividades de la misma fecha y cruza la carga total con la recuperacion Garmin. "
+                "Nunca descartes una carrera, bici o fuerza del mismo dia si aparece en las lecturas calculadas. "
                 "Sueno, energia y recuperacion salen de Garmin; de los check-ins usa solo dolor o molestias. "
                 "Si hay contexto Wattwise, usalo sobre todo para ciclismo, potencia, IF, TSS, VI y carga; "
                 "para running prioriza Garmin Coach si Wattwise no trae distancia, ritmo o FC. "
@@ -498,6 +549,8 @@ def deterministic_answer(question: str, context: dict[str, Any]) -> str | None:
         context.get("checkins"),
         context.get("history"),
         context.get("wattwise"),
+        context.get("strength_state"),
+        context.get("strength_owner_id"),
     )
     return polish_coach_answer(answer) if answer else None
 
@@ -632,11 +685,20 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
         "checkins": _compact_injury_checkins(context.get("checkins")),
         "history": compact_history(context.get("history") or []),
     }
+    coach_brief = context.get("coach_brief") or {}
+    strength_sections = [
+        section
+        for section in coach_brief.get("sections", [])
+        if str(section.get("content") or "").startswith(("Fuerza registrada", "Carga semanal"))
+        or "Fuerza registrada" in str(section.get("content") or "")
+    ]
+    if strength_sections:
+        extra_context["strength_manual"] = strength_sections
     if wattwise:
         extra_context["wattwise"] = wattwise
 
     return {
-        "coach_brief": context.get("coach_brief") or {},
+        "coach_brief": coach_brief,
         "extra_context": extra_context,
     }
 

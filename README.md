@@ -170,7 +170,7 @@ WHISPER_MODEL=small
 WHISPER_DEVICE=auto
 WHISPER_COMPUTE_TYPE=int8
 PIPER_BIN=/Users/lloren27/Projects/garmin-coach/apps/sync-local/.venv/bin/piper
-PIPER_VOICE_MODEL=~/Library/Application Support/Garmin Coach/piper/es_ES-mls_10246-low.onnx
+PIPER_VOICE_MODEL=~/Library/Application Support/Garmin Coach/piper/es_ES-carlfm-x_low.onnx
 FFMPEG_BIN=ffmpeg
 ```
 
@@ -324,6 +324,9 @@ Adjunta un PDF o DOCX con /prueba_esfuerzo en el comentario del archivo
 /ajustar
 /plan_semana
 /fuerza
+/fuerza A
+/fuerza add sentadilla 60kg 8/8 rir2
+/fuerza fin
 ```
 
 Check-ins are stored in Postgres and used by `/feedback` and `/ajustar`, but only
@@ -335,8 +338,12 @@ scores are ignored by coaching decisions.
 combined conclusion using running load, cycling/Wattwise, strength, weekly load,
 and Garmin recovery. `/semana` combines the completed-week balance with an
 adaptive seven-day plan; `/plan_semana` shows the plan directly. `/fuerza`
-provides full-body A/B sessions and progression rules that complement running and
-cycling without training to failure.
+provides full-body A/B sessions and can register the active circuit, weights,
+repetitions and RIR so strength work is saved separately from Garmin's compact
+activity summary. Manual strength logs are converted into a simple muscular-load
+score by volume, series, muscle group and effort; `/feedback`, `/carga` and
+`/ajustar` use that score when deciding whether to protect the next running
+session.
 The athlete profile is stored in Postgres and used by `/feedback`, `/bici`,
 `/carga`, `/ajustar`, and `/malaga`.
 Lab test PDF/DOCX files can be uploaded from Telegram. Add `/prueba_esfuerzo`

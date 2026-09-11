@@ -18,6 +18,7 @@ AI_JOBS_FILE = DATA_DIR / "ai_jobs.json"
 LAB_TESTS_FILE = DATA_DIR / "lab_tests.json"
 WATTWISE_FILE = DATA_DIR / "wattwise_snapshot.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
+STRENGTH_STATE_KEY = "strength_sessions"
 
 
 def save_sync(payload: dict[str, Any]) -> dict[str, Any]:
@@ -79,6 +80,15 @@ def load_wattwise() -> dict[str, Any] | None:
         return None
     document = json.loads(WATTWISE_FILE.read_text(encoding="utf-8"))
     return document if isinstance(document, dict) else None
+
+
+def save_strength_state(document: dict[str, Any]) -> dict[str, Any]:
+    save_state(STRENGTH_STATE_KEY, document)
+    return document
+
+
+def load_strength_state() -> dict[str, Any] | None:
+    return load_state(STRENGTH_STATE_KEY)
 
 
 def save_checkin(checkin: dict[str, Any]) -> dict[str, Any]:

@@ -6,6 +6,13 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .strength import (
+    strength_context_for_date,
+    strength_load_reading,
+    strength_recovery_risk,
+    summarize_strength_load,
+)
+
 
 MADRID_TZ = ZoneInfo("Europe/Madrid")
 _DATE_ONE_DAY = timedelta(days=1)
@@ -53,7 +60,7 @@ def format_help() -> str:
         "/ajustar - adapta el proximo entreno con Garmin + molestias\n"
         "/bici - resumen de ciclismo\n"
         "/potencia - analisis Wattwise de potencia y carga ciclista\n"
-        "/fuerza - plan full body para running y ciclismo\n"
+        "/fuerza - circuitos A/B y registro de pesos, reps y RIR\n"
         "/malaga - foco Maraton de Malaga\n"
         "/syncinfo - ultima sincronizacion\n"
         "Tambien puedes mandar una nota de voz: el Mac la transcribe y el coach local responde."
@@ -356,15 +363,20 @@ def build_ai_brief(
     checkins: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
     wattwise: dict[str, Any] | None = None,
+    strength_state: dict[str, Any] | None = None,
+    strength_owner_id: str | None = None,
 ) -> dict[str, Any]:
     text = _normalize_text(question)
     intents = _ai_intents(text)
     dated_activity = _activity_from_question(question, sync)
+    owner_id = strength_owner_id or "telegram"
+    strength_reference = _reference_date(sync) if sync else datetime.now(MADRID_TZ).date()
+    strength_load = summarize_strength_load(strength_state, owner_id, strength_reference) if strength_state else None
     sections = []
 
     if "tomorrow" in intents or "adjust" in intents:
         adjustment_note = question if "adjust" in intents else ""
-        sections.append(("decision_entreno", format_adjust(sync, checkins, adjustment_note, profile)))
+        sections.append(("decision_entreno", format_adjust(sync, checkins, adjustment_note, profile, strength_load)))
         sections.append(("proximo_entreno", format_next(sync, checkins)))
         sections.append(("salud", format_health(sync)))
     if "week_plan" in intents:
@@ -381,19 +393,34 @@ def build_ai_brief(
                         dated_activity,
                         "Feedback actividad solicitada",
                         wattwise,
+                        strength_context_for_date(strength_state, owner_id, _activity_date(dated_activity) or strength_reference) if strength_state else None,
+                        strength_load,
                     ),
                 )
             )
         else:
             sections.append(("actividad_fecha", "No encuentro una actividad en Garmin para esa fecha dentro de la ultima sincronizacion."))
     elif "latest" in intents:
-        sections.append(("ultima_actividad", format_feedback(sync, checkins, profile, wattwise=wattwise)))
+        latest = _latest_activity(sync)
+        sections.append(
+            (
+                "ultima_actividad",
+                format_feedback(
+                    sync,
+                    checkins,
+                    profile,
+                    wattwise=wattwise,
+                    strength_context=strength_context_for_date(strength_state, owner_id, _activity_date(latest) or strength_reference) if strength_state else None,
+                    strength_load=strength_load,
+                ),
+            )
+        )
     if "malaga" in intents:
         sections.append(("malaga", format_malaga(sync, profile)))
     if "health" in intents:
         sections.append(("salud", format_health(sync)))
     if "load" in intents:
-        sections.append(("carga", format_load(sync, profile, wattwise)))
+        sections.append(("carga", format_load(sync, profile, wattwise, strength_load)))
         sections.append(("fatiga", format_fatigue(sync, wattwise)))
         sections.append(("tendencia", format_trend(sync, history)))
     if "bike" in intents:
@@ -406,7 +433,17 @@ def build_ai_brief(
             ("hoy", format_today(sync)),
             ("proximo_entreno", format_next(sync, checkins)),
             ("salud", format_health(sync)),
-            ("ultima_actividad", format_feedback(sync, checkins, profile, wattwise=wattwise)),
+            (
+                "ultima_actividad",
+                format_feedback(
+                    sync,
+                    checkins,
+                    profile,
+                    wattwise=wattwise,
+                    strength_context=strength_context_for_date(strength_state, owner_id, _activity_date(_latest_activity(sync)) or strength_reference) if strength_state else None,
+                    strength_load=strength_load,
+                ),
+            ),
         ]
 
     deduped = []
@@ -424,6 +461,7 @@ def build_ai_brief(
         "instructions": (
             "Responde solo en espanol, sin Markdown, sin titulares ### y sin inventar datos. "
             "Usa estas lecturas calculadas como fuente principal. "
+            "Si el usuario pide feedback de un dia, usa todas las actividades de esa fecha y no descartes running, bici ni fuerza. "
             "Se breve y accionable. Distancias en km, running en min/km, ciclismo en km/h y W."
         ),
     }
@@ -436,8 +474,10 @@ def format_natural_coach(
     checkins: list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
     wattwise: dict[str, Any] | None = None,
+    strength_state: dict[str, Any] | None = None,
+    strength_owner_id: str | None = None,
 ) -> str | None:
-    brief = build_ai_brief(question, sync, profile, checkins, history, wattwise)
+    brief = build_ai_brief(question, sync, profile, checkins, history, wattwise, strength_state, strength_owner_id)
     intents = brief.get("intents") or []
     if not intents:
         return None
@@ -853,6 +893,8 @@ def format_feedback(
     activity: dict[str, Any] | None = None,
     title: str = "Feedback ultima actividad",
     wattwise: dict[str, Any] | None = None,
+    strength_context: dict[str, Any] | None = None,
+    strength_load: dict[str, Any] | None = None,
 ) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
@@ -875,24 +917,27 @@ def format_feedback(
     is_current_day = target_date == reference.isoformat()
     wellness = payload.get("wellness", {}) if is_current_day else {}
     injury = _injury_context(_latest_checkin(checkins))
-    load_level = _daily_load_level(day_activities, wattwise)
+    load_level = _daily_load_level(day_activities, wattwise, strength_context)
     total_seconds = sum(_safe_float(item.get("duration_s")) for item in day_activities)
     session_label = "sesion" if len(day_activities) == 1 else "sesiones"
     lines = [
         title.replace("ultima actividad", "del dia"),
         f"{_format_date_es(target_date)}: {len(day_activities)} {session_label}, {_format_duration(total_seconds)} en total.",
         "Sesiones: " + " + ".join(_daily_activity_line(item) for item in day_activities),
-        f"Conclusion: {_daily_training_conclusion(day_activities, load_level, wattwise)}",
+        f"Conclusion: {_daily_training_conclusion(day_activities, load_level, wattwise, strength_context)}",
     ]
+    strength_line = _manual_strength_day_line(strength_context)
+    if strength_line:
+        lines.append(strength_line)
     recovery = _objective_recovery_conclusion(wellness)
     if recovery:
         lines.append(f"Recuperacion Garmin: {recovery}")
-    lines.append(f"Impacto semanal: {_daily_week_impact(summary, load_level, is_current_day)}")
+    lines.append(f"Impacto semanal: {_daily_week_impact(summary, load_level, is_current_day, strength_load)}")
     if injury:
         lines.append(f"Molestias reportadas: {_checkin_reading(injury)}")
     lines.append(
         "Decision: "
-        + _daily_training_decision(summary, wellness, injury, load_level, is_current_day)
+        + _daily_training_decision(summary, wellness, injury, load_level, is_current_day, strength_load)
     )
     return "\n".join(lines)
 
@@ -1106,6 +1151,7 @@ def format_adjust(
     checkins: list[dict[str, Any]] | None = None,
     note: str = "",
     profile: dict[str, Any] | None = None,
+    strength_load: dict[str, Any] | None = None,
 ) -> str:
     if not sync:
         return "Necesito una sincronizacion Garmin antes de ajustar el plan."
@@ -1116,7 +1162,7 @@ def format_adjust(
     activity = _latest_activity(sync)
     transient = parse_checkin(note) if note.strip() else {}
     latest = _injury_context(transient or _latest_checkin(checkins))
-    risk = _adjustment_risk(fatigue, activity, latest, wellness)
+    risk = _adjustment_risk(fatigue, activity, latest, wellness, strength_load)
 
     if risk >= 5:
         recommendation = "cambia el proximo entreno por descanso o 30-40 min muy facil."
@@ -1134,7 +1180,7 @@ def format_adjust(
         f"Riesgo estimado: {_risk_label(risk)} ({risk}/7)",
         f"Decision: {recommendation}",
         f"Detalle: {details}",
-        f"Por que: {_adjustment_reason(fatigue, activity, latest, wellness)}",
+        f"Por que: {_adjustment_reason(fatigue, activity, latest, wellness, strength_load)}",
     ]
     recovery = _recovery_reading(wellness)
     if recovery:
@@ -1143,6 +1189,8 @@ def format_adjust(
         lines.append(f"Molestias reportadas: {_checkin_reading(latest)}")
     else:
         lines.append("Tip: anade /checkin sobre todo si hay molestias, dolor o algo raro que Garmin no vea.")
+    if strength_load and strength_load.get("sessions_7d"):
+        lines.append(f"Fuerza manual: {strength_load_reading(strength_load)}")
     context = _profile_context_line(_profile_payload(profile))
     if context:
         lines.append(f"Perfil usado: {context}")
@@ -1192,6 +1240,7 @@ def format_load(
     sync: dict[str, Any] | None,
     profile: dict[str, Any] | None = None,
     wattwise: dict[str, Any] | None = None,
+    strength_load: dict[str, Any] | None = None,
 ) -> str:
     if not sync:
         return "Todavia no tengo datos sincronizados desde Garmin."
@@ -1218,6 +1267,15 @@ def format_load(
         f"Carga equivalente aprox: {equivalent_hours} h running",
         f"Ratio volumen multideporte (horas): {fatigue.get('acute_chronic_ratio', 'n/a')}",
     ]
+    if strength_load and strength_load.get("sessions_7d"):
+        lines.append(
+            "Fuerza registrada 7d: "
+            f"{strength_load.get('sessions_7d', 0)} sesiones, "
+            f"{strength_load.get('sets_7d', 0)} series, "
+            f"{_format_compact_number(strength_load.get('volume_kg_7d'), 0)} kg, "
+            f"score {_format_compact_number(strength_load.get('load_score_7d'), 1)}"
+        )
+        lines.append(f"Lectura fuerza: {strength_load_reading(strength_load)}")
     athlete = _profile_payload(profile)
     if athlete.get("weight_kg") or athlete.get("ftp"):
         lines.append(f"Contexto perfil: peso {athlete.get('weight_kg', 'n/a')} kg, FTP {athlete.get('ftp', 'n/a')} W")
@@ -1972,9 +2030,28 @@ def _daily_activity_line(activity: dict[str, Any]) -> str:
     return f"{_sport_label(sport)} durante {duration}"
 
 
+def _manual_strength_day_line(strength_context: dict[str, Any] | None) -> str:
+    if not strength_context:
+        return ""
+    sessions = strength_context.get("sessions") or []
+    day = strength_context.get("day") or {}
+    if not sessions or not _safe_float(day.get("sets")):
+        return ""
+    session_word = "sesion" if len(sessions) == 1 else "sesiones"
+    volume = _format_compact_number(day.get("volume_kg"), 0)
+    score = _format_compact_number(day.get("load_score"), 1)
+    lower = _format_compact_number(day.get("lower_sets"), 0)
+    posterior = _format_compact_number(day.get("posterior_sets"), 0)
+    return (
+        f"Fuerza registrada: {len(sessions)} {session_word}, {day.get('sets', 0)} series, "
+        f"{volume} kg de volumen, score {score}; pierna {lower} series, cadena posterior {posterior}."
+    )
+
+
 def _daily_load_level(
     activities: list[dict[str, Any]],
     wattwise: dict[str, Any] | None = None,
+    strength_context: dict[str, Any] | None = None,
 ) -> str:
     total_minutes = sum(_safe_float(item.get("duration_s")) for item in activities) / 60
     max_running_load = max(
@@ -1990,10 +2067,15 @@ def _daily_load_level(
         ),
         default=0,
     )
+    manual_strength = (strength_context or {}).get("day") or {}
+    manual_strength_score = _safe_float(manual_strength.get("load_score"))
+    manual_lower_sets = _safe_float(manual_strength.get("lower_sets"))
     if (
         max_running_load >= 120
         or max_training_effect >= 3.5
         or wattwise_tss >= 100
+        or manual_strength_score >= 18
+        or manual_lower_sets >= 10
         or total_minutes >= 150
         or (len(activities) >= 2 and total_minutes >= 100)
     ):
@@ -2002,6 +2084,8 @@ def _daily_load_level(
         max_running_load >= 80
         or max_training_effect >= 3
         or wattwise_tss >= 60
+        or manual_strength_score >= 8
+        or manual_lower_sets >= 5
         or total_minutes >= 90
         or len(activities) >= 2
         or any(item.get("sport") == "strength" for item in activities)
@@ -2014,17 +2098,30 @@ def _daily_training_conclusion(
     activities: list[dict[str, Any]],
     load_level: str,
     wattwise: dict[str, Any] | None = None,
+    strength_context: dict[str, Any] | None = None,
 ) -> str:
     running = [item for item in activities if item.get("sport") == "running"]
     cycling = [item for item in activities if item.get("sport") == "cycling"]
     strength = [item for item in activities if item.get("sport") == "strength"]
+    manual_strength = (strength_context or {}).get("day") or {}
+    manual_strength_done = _safe_float(manual_strength.get("sets")) > 0
+    manual_lower_sets = _safe_float(manual_strength.get("lower_sets"))
     prefix = {
         "alta": "Dia exigente",
         "moderada": "Dia de carga moderada",
         "suave": "Dia suave",
     }[load_level]
 
-    if running and cycling:
+    if running and manual_strength_done:
+        if manual_lower_sets >= 8:
+            detail = "running y fuerza de pierna concentraron carga muscular; manana conviene proteger la tecnica de carrera."
+        else:
+            detail = "running y fuerza sumaron estimulo util; mantenlo lejos de la tirada larga si hay agujetas."
+    elif cycling and manual_strength_done:
+        detail = "bici y fuerza sumaron carga muscular y aerobica; conviene proteger la siguiente sesion clave de running."
+    elif manual_strength_done:
+        detail = "la fuerza registrada suma carga muscular que Garmin no detalla; cuenta para decidir intensidad."
+    elif running and cycling:
         run_hard = any(_safe_float(item.get("running_load")) >= 120 for item in running)
         bike_hard = any(
             _safe_float((_wattwise_metric_for_activity(item, wattwise) or {}).get("tss")) >= 100
@@ -2051,9 +2148,16 @@ def _daily_training_conclusion(
     return f"{prefix}: {detail}"
 
 
-def _daily_week_impact(summary: dict[str, Any], load_level: str, is_current_day: bool) -> str:
+def _daily_week_impact(
+    summary: dict[str, Any],
+    load_level: str,
+    is_current_day: bool,
+    strength_load: dict[str, Any] | None = None,
+) -> str:
     if not is_current_day:
         return f"fue un dia de carga {load_level}; la decision actual debe basarse en la sincronizacion de hoy."
+    if strength_recovery_risk(strength_load) >= 2:
+        return "la fuerza registrada anade carga muscular relevante; evita sumar calidad de carrera encima."
     running_load = summary.get("running_load") or {}
     status = running_load.get("acwr_status")
     fatigue = summary.get("fatigue") or {}
@@ -2072,16 +2176,22 @@ def _daily_training_decision(
     injury: dict[str, Any],
     load_level: str,
     is_current_day: bool,
+    strength_load: dict[str, Any] | None = None,
 ) -> str:
     if not is_current_day:
         return "no traslado automaticamente esta carga al presente; usa /proximo con los datos actuales."
     if injury:
         return "descanso o trabajo muy suave hasta comprobar que dolor y molestias no progresan."
     recovery_risk = _objective_recovery_risk(wellness)
+    strength_risk = strength_recovery_risk(strength_load)
     if load_level == "alta" and recovery_risk >= 2:
         return "descanso manana; como alternativa, 30-40 min regenerativos sin fuerza ni calidad."
+    if load_level == "alta" and strength_risk >= 2:
+        return "manana descanso o rodaje muy facil; sin fuerza de pierna, cuestas ni series."
     if load_level == "alta":
         return "manana descanso o 30-45 min muy faciles; evita encadenar intensidad."
+    if strength_risk >= 2:
+        return "siguiente sesion facil; evita fuerza pesada y calidad hasta que las piernas esten frescas."
     if load_level == "moderada" and recovery_risk:
         return "siguiente sesion facil y corta; pospone calidad hasta que Garmin muestre mejor recuperacion."
     next_workout = summary.get("next_workout") or {}
@@ -2288,6 +2398,7 @@ def _adjustment_risk(
     activity: dict[str, Any] | None,
     checkin: dict[str, Any],
     wellness: dict[str, Any] | None = None,
+    strength_load: dict[str, Any] | None = None,
 ) -> int:
     risk = 0
     if fatigue.get("level") == "alta":
@@ -2301,6 +2412,7 @@ def _adjustment_risk(
     if activity and activity.get("sport") == "running" and _safe_float(activity.get("running_load")) >= 120:
         risk += 2
     risk += _objective_recovery_risk(wellness or {})
+    risk += strength_recovery_risk(strength_load)
     if checkin.get("pain") or (checkin.get("soreness") and checkin.get("soreness") != "no"):
         risk += 5 if checkin.get("pain") else 3
     return min(risk, 7)
@@ -2319,6 +2431,7 @@ def _adjustment_reason(
     activity: dict[str, Any] | None,
     checkin: dict[str, Any],
     wellness: dict[str, Any] | None = None,
+    strength_load: dict[str, Any] | None = None,
 ) -> str:
     reasons = []
     if fatigue.get("level"):
@@ -2332,6 +2445,11 @@ def _adjustment_reason(
     elif checkin.get("soreness") and checkin.get("soreness") != "no":
         reasons.append("molestias reportadas")
     reasons.extend(_objective_recovery_reasons(wellness or {}))
+    strength_risk = strength_recovery_risk(strength_load)
+    if strength_risk >= 2:
+        reasons.append("carga muscular alta por fuerza registrada")
+    elif strength_risk:
+        reasons.append("carga muscular moderada por fuerza registrada")
     return ", ".join(reasons) if reasons else "no hay senales de alarma fuertes."
 
 
@@ -2495,7 +2613,7 @@ def _ai_intents(text: str) -> list[str]:
     intents = []
     if _looks_like_activity_date(text):
         intents.append("dated_activity")
-    if any(token in text for token in ("manana", "proximo", "que hago", "entreno", "series", "correr", "rodaje")):
+    if any(token in text for token in ("manana", "proximo", "que hago", "series", "rodaje")):
         intents.append("tomorrow")
     if any(token in text for token in ("cansado", "cansancio", "molestia", "dolor", "dormi", "sueno", "fatiga", "ajusta")):
         intents.append("adjust")

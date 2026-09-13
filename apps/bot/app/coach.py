@@ -861,7 +861,7 @@ def format_week_plan(
     injury = _injury_context(_latest_checkin(checkins))
     mode = _weekly_plan_mode(summary, wellness, injury)
     reference = _reference_date(sync)
-    start = reference + _DATE_ONE_DAY
+    start = max(reference + _DATE_ONE_DAY, datetime.now(MADRID_TZ).date())
     long_run_km = _recommended_long_run_km(summary, payload.get("race") or {}, mode)
     target_pace = _marathon_pace_from_time(str(_profile_payload(profile).get("marathon_goal") or ""))
     target_pace = target_pace or str((payload.get("race") or {}).get("target_pace") or "ritmo maraton")

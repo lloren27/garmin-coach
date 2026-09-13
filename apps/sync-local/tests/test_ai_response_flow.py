@@ -57,21 +57,31 @@ class ResponseFlowTests(unittest.TestCase):
                 self.assertEqual(payload["response_mode"], "text")
                 self.assertTrue(payload.get("notify_telegram", True))
 
-    def test_model_analyses_then_writes_with_same_context_and_hides_internal_reasoning(self) -> None:
+    def test_simple_question_uses_one_concise_generation_and_hides_internal_reasoning(self) -> None:
         response = Mock()
         response.json.return_value = {"message": {"thinking": "private reasoning", "content": "Hoy conviene reducir la carga para recuperar."}, "done_reason": "stop"}
-        with patch.object(worker.httpx, "post", return_value=response) as post, patch.object(worker, "OLLAMA_THINK", True):
+        with patch.object(worker.httpx, "post", return_value=response) as post:
             result = worker.call_ollama("¿Qué hago?", {})
-            self.assertEqual(post.call_count, 2)
-            analysis_request = post.call_args_list[0].kwargs["json"]
-            final_request = post.call_args_list[1].kwargs["json"]
-            self.assertTrue(analysis_request["think"])
-            self.assertFalse(final_request["think"])
-            self.assertEqual(analysis_request["messages"][1], final_request["messages"][1])
-            self.assertIn("Informe previo", final_request["messages"][2]["content"])
-            self.assertGreaterEqual(final_request["options"]["num_predict"], 3072)
-            self.assertNotIn("/no_think", str(final_request))
+            self.assertEqual(post.call_count, 1)
+            request = post.call_args.kwargs["json"]
+            self.assertFalse(request["think"])
+            self.assertLessEqual(request["options"]["num_predict"], 1024)
+            self.assertLessEqual(request["options"]["temperature"], 0.3)
+            self.assertIn("100 y 180 palabras", str(request["messages"]))
+            self.assertNotIn("/no_think", str(request))
             self.assertNotIn("private reasoning", result)
+
+    def test_weekly_plan_uses_one_generation_with_more_room_than_a_simple_answer(self) -> None:
+        response = Mock()
+        response.json.return_value = {"message": {"content": "Lunes, descanso. Martes, rodaje suave."}, "done_reason": "stop"}
+        with patch.object(worker.httpx, "post", return_value=response) as post:
+            worker.call_ollama("Prepárame el plan de esta semana, día por día", {})
+            request = post.call_args.kwargs["json"]
+            self.assertEqual(post.call_count, 1)
+            self.assertGreater(request["options"]["num_predict"], 1024)
+            self.assertLessEqual(request["options"]["num_predict"], 1600)
+            self.assertIn("todos los días", str(request["messages"]))
+            self.assertIn("día y fecha exacta", str(request["messages"]))
 
     def test_truncated_or_empty_model_response_is_not_presented_as_complete(self) -> None:
         for content, reason in (("Hoy reduce la carga si", "length"), ("", "stop")):
@@ -82,13 +92,11 @@ class ResponseFlowTests(unittest.TestCase):
                 self.assertIn("lectura básica", result)
                 self.assertNotIn("secret", result)
 
-    def test_incomplete_final_draft_is_not_sent_after_successful_analysis(self) -> None:
-        report = {"message": {"content": "Hoy la carga es alta y conviene recuperar."}, "done_reason": "stop"}
+    def test_incomplete_single_draft_is_not_sent(self) -> None:
         draft = {"message": {"content": "Hoy corre si", "thinking": "private"}, "done_reason": "length"}
-        with patch.object(worker, "ollama_generate", side_effect=[report, draft]) as generate:
+        with patch.object(worker, "ollama_generate", return_value=draft) as generate:
             result = worker.call_ollama("¿Qué hago mañana?", worker.enrich_context_for_question("¿Qué hago mañana?", {}))
-            self.assertEqual(generate.call_count, 2)
-            self.assertLessEqual(generate.call_args_list[1].kwargs["timeout_seconds"], generate.call_args_list[0].kwargs["timeout_seconds"])
+            self.assertEqual(generate.call_count, 1)
             self.assertIn("lectura básica", result)
             self.assertNotIn("Hoy corre si", result)
             self.assertNotIn("private", result)

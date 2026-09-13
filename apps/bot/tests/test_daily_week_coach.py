@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime
+from unittest.mock import patch
 
 from app.coach import (
     format_checkin_saved,
@@ -118,13 +120,19 @@ class DailyFeedbackTests(unittest.TestCase):
 
 class WeeklyPlanTests(unittest.TestCase):
     def test_week_plan_covers_seven_days_and_prescribes_strength(self) -> None:
-        answer = format_week_plan(DAILY_SYNC, {"profile": {"marathon_goal": "3:35"}})
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 9, 13, 12, tzinfo=tz)
 
-        self.assertIn("Plan 7 dias (10/09/2026-16/09/2026)", answer)
+        with patch("app.coach.datetime", FixedDatetime):
+            answer = format_week_plan(DAILY_SYNC, {"profile": {"marathon_goal": "3:35"}})
+
+        self.assertIn("Plan 7 dias (13/09/2026-19/09/2026)", answer)
         self.assertIn("Enfoque: asimilar carga", answer)
-        self.assertIn("Jue 10/09/2026: Descanso o rodaje regenerativo", answer)
-        self.assertIn("Dom 13/09/2026: tirada de 14 km facil", answer)
-        self.assertIn("Mie 16/09/2026: running 35-45 min facil + fuerza full body A", answer)
+        self.assertIn("Dom 13/09/2026: Descanso o rodaje regenerativo", answer)
+        self.assertIn("Sab 19/09/2026: running 30-40 min facil", answer)
+        self.assertNotIn("10/09/2026", answer)
 
     def test_week_command_combines_completed_balance_and_future_plan(self) -> None:
         answer = format_week(DAILY_SYNC)

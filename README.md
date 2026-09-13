@@ -147,11 +147,11 @@ Defaults:
 
 ```text
 OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3.5:2b
+OLLAMA_MODEL=garmin-coach:9b
 GARMIN_COACH_AI_MAX_JOBS=3
-OLLAMA_THINK=false
 OLLAMA_NUM_CTX=32768
-OLLAMA_NUM_PREDICT=3072
+OLLAMA_NUM_PREDICT=900
+OLLAMA_PLAN_NUM_PREDICT=1400
 OLLAMA_TIMEOUT_SECONDS=600
 GARMIN_COACH_ANSWER_MAX_CHARS=3200
 ```
@@ -377,32 +377,25 @@ adds an explicit date notice when the sync is from a previous day, missing or
 future-dated; this does not depend on the model remembering to mention it. Only applied lab
 tests may inform confirmed profile values; pending proposals remain in review.
 
-Every coaching request uses two passes of the same model with the same source context:
-an evidence report followed by a checked, naturally written answer. The first
-pass crosses sports, recovery, profile, dates and limitations; the second
-verifies the report against the original data and writes the advice.
-Native thinking is disabled by default because the installed Qwen3.5 2B can
-loop without producing an answer, a limitation documented in its
-[model card](https://huggingface.co/Qwen/Qwen3.5-2B#thinking-mode). Set
-`OLLAMA_THINK=true` to enable native thinking in the evidence pass with a suitable
-model, and increase the generation budget if needed. Both passes use the larger
-context window and `OLLAMA_NUM_PREDICT` is the token budget for each pass.
-`OLLAMA_TIMEOUT_SECONDS` is shared by both passes.
+Every coaching request uses one generation with the complete compact context.
+The backend supplies calculated evidence and the model crosses sports, recovery,
+profile, dates and limitations before returning only the useful conclusion.
+Native thinking is disabled to keep latency predictable. Normal questions use
+`OLLAMA_NUM_PREDICT`; weekly plans use the larger
+`OLLAMA_PLAN_NUM_PREDICT` budget. Both use the configured context window.
 The response uses natural Spanish paragraphs with punctuation and normally
-180–350 words, scaled to the question. Text and voice share the same final
+100–180 words. Weekly plans have more room to cover every day. Text and voice share the same final
 answer: TTS expands units and adds pauses without imposing a shorter answer
 limit. Long voice answers also include the full text because Telegram captions
 are limited. If Ollama fails or returns an incomplete/invalid answer, a clearly
 labelled basic calculated reading is returned. If voice synthesis fails, the
 full answer is sent as text.
 
-Review the [current validation results](docs/coach-validation.md) before rollout:
-the 2B model still made factual interpretation errors in the live evaluation.
-After validating model quality, deploy the bot backend to Railway and run the
-updated local worker. Existing `.env` values override the defaults; update previous
+Review the [current validation results](docs/coach-validation.md). Run the
+updated local worker after deploying compatible backend changes. Existing `.env` values override the defaults; update previous
 short answer limits or timeouts if present. `GARMIN_COACH_VOICE_ANSWER_MAX_CHARS`
-is no longer used. Larger context and two generation passes increase local memory use and
-latency. These parameters can be adjusted with the environment variables above.
+is no longer used. A larger context increases local memory use and latency.
+These parameters can be adjusted with the environment variables above.
 Ollama documents [thinking](https://docs.ollama.com/capabilities/thinking) and
 [context/generation limits](https://docs.ollama.com/modelfile).
 

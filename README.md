@@ -6,7 +6,7 @@ Private Garmin-to-Telegram coaching assistant for marathon training.
 
 - `apps/sync-local`: runs on the Mac, reads Garmin Connect with local tokens, and sends summarized data to the backend.
 - `apps/bot`: FastAPI app for Railway. It stores the latest sync and serves Telegram bot commands.
-- Railway stays online 24/7 and answers with the latest data it has.
+- Railway stays online 24/7, serves operational commands, and queues coaching requests for the Mac using the latest stored data.
 - Garmin credentials and Garmin tokens stay on the Mac.
 
 ```text
@@ -149,6 +149,11 @@ Defaults:
 OLLAMA_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3.5:2b
 GARMIN_COACH_AI_MAX_JOBS=3
+OLLAMA_THINK=false
+OLLAMA_NUM_CTX=32768
+OLLAMA_NUM_PREDICT=3072
+OLLAMA_TIMEOUT_SECONDS=600
+GARMIN_COACH_ANSWER_MAX_CHARS=3200
 ```
 
 Voice messages are also processed locally on the Mac. Railway only queues the
@@ -354,11 +359,52 @@ with `/descartar_prueba`, and apply it to the athlete profile with
 `/aplicar_prueba`.
 `/sync` requests a Garmin sync from Telegram. The Railway bot stores the request,
 and the local Mac watcher executes it while the Mac is awake.
-`/coach` and natural-language messages create a local AI job processed by Ollama
-on the Mac. Commands stay deterministic and do not need AI.
-Common natural-language training questions are answered immediately with
-deterministic coach readings before falling back to Ollama. This keeps answers
-short, Spanish, and grounded in the computed Garmin data.
+All coaching questions now follow one flow: text, `/coach`, coaching commands
+(such as `/feedback`, `/semana`, `/ajustar`, and `/fuerza` without arguments),
+and transcribed voice enter the same local Ollama analysis. The Mac must be
+awake; answers can take several minutes. Operational commands such as `/sync`,
+profile/check-in updates, strength logging (`/fuerza A`, `add`, `fin`), and lab
+review/application remain immediate and deterministic.
+
+The model receives calculated readings plus every activity in the latest sync
+(currently up to 25), weekly aggregates, up to 28 history snapshots including
+recovery (keeping the latest snapshot per day to avoid repetition), the athlete profile, applied lab tests, injury check-ins, manual
+strength load, and cached and live Wattwise data with source dates. These are
+the available summaries, not the full Garmin archive. It is instructed to cross
+check evidence, distinguish stale or missing data, and explain a concrete
+training recommendation without inventing medical diagnoses. The worker also
+adds an explicit date notice when the sync is from a previous day, missing or
+future-dated; this does not depend on the model remembering to mention it. Only applied lab
+tests may inform confirmed profile values; pending proposals remain in review.
+
+Every coaching request uses two passes of the same model with the same source context:
+an evidence report followed by a checked, naturally written answer. The first
+pass crosses sports, recovery, profile, dates and limitations; the second
+verifies the report against the original data and writes the advice.
+Native thinking is disabled by default because the installed Qwen3.5 2B can
+loop without producing an answer, a limitation documented in its
+[model card](https://huggingface.co/Qwen/Qwen3.5-2B#thinking-mode). Set
+`OLLAMA_THINK=true` to enable native thinking in the evidence pass with a suitable
+model, and increase the generation budget if needed. Both passes use the larger
+context window and `OLLAMA_NUM_PREDICT` is the token budget for each pass.
+`OLLAMA_TIMEOUT_SECONDS` is shared by both passes.
+The response uses natural Spanish paragraphs with punctuation and normally
+180–350 words, scaled to the question. Text and voice share the same final
+answer: TTS expands units and adds pauses without imposing a shorter answer
+limit. Long voice answers also include the full text because Telegram captions
+are limited. If Ollama fails or returns an incomplete/invalid answer, a clearly
+labelled basic calculated reading is returned. If voice synthesis fails, the
+full answer is sent as text.
+
+Review the [current validation results](docs/coach-validation.md) before rollout:
+the 2B model still made factual interpretation errors in the live evaluation.
+After validating model quality, deploy the bot backend to Railway and run the
+updated local worker. Existing `.env` values override the defaults; update previous
+short answer limits or timeouts if present. `GARMIN_COACH_VOICE_ANSWER_MAX_CHARS`
+is no longer used. Larger context and two generation passes increase local memory use and
+latency. These parameters can be adjusted with the environment variables above.
+Ollama documents [thinking](https://docs.ollama.com/capabilities/thinking) and
+[context/generation limits](https://docs.ollama.com/modelfile).
 
 ## Running load analytics
 

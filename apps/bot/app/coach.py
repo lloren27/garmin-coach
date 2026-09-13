@@ -33,6 +33,30 @@ _SPANISH_MONTHS = {
 }
 
 
+# Commands are translated into questions before entering the shared AI queue.
+COACH_QUESTIONS = {
+    "/hoy": "Valora mi entrenamiento de hoy y mi recuperación, y dime qué hacer el resto del día.",
+    "/semana": "Evalúa el balance de esta semana y propón un plan semanal para los próximos siete días.",
+    "/plan_semana": "Propón un plan semanal para los próximos siete días según mi carga y recuperación.",
+    "/plan": "Propón un plan semanal para los próximos siete días según mi carga y recuperación.",
+    "/ultima": "Analiza mi última actividad y el conjunto de sesiones de ese día.",
+    "/proximo": "Recomienda mi próximo entrenamiento con duración e intensidad justificadas.",
+    "/fatiga": "Evalúa mi fatiga y recuperación cruzando la carga de todos los deportes.",
+    "/salud": "Evalúa mi estado general y recuperación Garmin para orientar el entrenamiento.",
+    "/carga": "Evalúa mi carga de running, bici y fuerza, y cómo ajustar el entrenamiento.",
+    "/running": "Evalúa la carga de running y su evolución con las métricas disponibles.",
+    "/correr": "Evalúa la carga de running y su evolución con las métricas disponibles.",
+    "/carga_running": "Evalúa la carga de running y su evolución con las métricas disponibles.",
+    "/tendencia": "Evalúa la tendencia de mi entrenamiento y recuperación con el histórico disponible.",
+    "/feedback": "Dame feedback de todas las actividades del último día de entrenamiento.",
+    "/ajustar": "Ajusta mi próximo entrenamiento según la carga, recuperación y molestias indicadas.",
+    "/bici": "Evalúa mi ciclismo y su impacto en la carga total y la preparación de carrera.",
+    "/potencia": "Evalúa mi potencia en bici con Wattwise, FTP, TSS, IF y VI disponibles.",
+    "/wattwise": "Evalúa mi potencia en bici con Wattwise, FTP, TSS, IF y VI disponibles.",
+    "/malaga": "Evalúa mi preparación para la maratón de Málaga y las prioridades de entrenamiento.",
+}
+
+
 def format_help() -> str:
     return (
         "Comandos Garmin Coach\n"
@@ -127,7 +151,7 @@ def format_ai_help() -> str:
 def format_ai_queued(document: dict[str, Any]) -> str:
     return (
         "Lo miro con el coach local.\n"
-        "Te respondo en unos segundos si el Mac esta despierto."
+        "Te responderé cuando termine el análisis. El Mac debe estar despierto."
     )
 
 
@@ -136,7 +160,7 @@ def format_voice_queued(document: dict[str, Any]) -> str:
     duration_text = f" ({duration} s)" if duration else ""
     return (
         f"Audio recibido{duration_text}.\n"
-        "Lo transcribe el Mac con faster-whisper y te contesto con el coach local."
+        "Voy a escuchar tu consulta y revisar tus datos. Te responderé cuando termine el análisis."
     )
 
 
@@ -446,6 +470,14 @@ def build_ai_brief(
             ),
         ]
 
+    # Every question receives the same cross-sport evidence, after its specific reading.
+    sections.extend([
+        ("salud", format_health(sync)),
+        ("carga", format_load(sync, profile, wattwise, strength_load)),
+        ("running", format_running(sync)),
+        ("tendencia", format_trend(sync, history)),
+    ])
+
     deduped = []
     seen = set()
     for title, content in sections:
@@ -458,11 +490,17 @@ def build_ai_brief(
         "intents": intents,
         "primary_intent": intents[0] if intents else "general",
         "sections": deduped,
+        "strength_load": strength_load,
+        "strength_load_current": summarize_strength_load(
+            strength_state, owner_id, datetime.now(MADRID_TZ).date()
+        ) if strength_state else None,
         "instructions": (
             "Responde solo en espanol, sin Markdown, sin titulares ### y sin inventar datos. "
             "Usa estas lecturas calculadas como fuente principal. "
             "Si el usuario pide feedback de un dia, usa todas las actividades de esa fecha y no descartes running, bici ni fuerza. "
-            "Se breve y accionable. Distancias en km, running en min/km, ciclismo en km/h y W."
+            "Cruza las lecturas con el contexto completo y explica los datos que sustentan el consejo. "
+            "Redacta frases completas en español con tildes, comas y puntos, aptas para lectura en voz alta. "
+            "Distancias en km, running en min/km, ciclismo en km/h y W."
         ),
     }
 
@@ -1524,7 +1562,9 @@ def _longest_run(summary: dict[str, Any]) -> str:
     return f"{prefix}{run.get('km', 'n/a')} km a {run.get('pace', 'n/a')}"
 
 
-def _latest_activity(sync: dict[str, Any]) -> dict[str, Any] | None:
+def _latest_activity(sync: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not sync:
+        return None
     activities = sync.get("payload", {}).get("summary", {}).get("activities") or []
     return activities[-1] if activities else None
 
@@ -1556,7 +1596,9 @@ def _activity_from_question(question: str, sync: dict[str, Any] | None) -> dict[
     return same_day[-1]
 
 
-def _activity_date(activity: dict[str, Any]) -> date | None:
+def _activity_date(activity: dict[str, Any] | None) -> date | None:
+    if not activity:
+        return None
     parsed = _parse_datetime(activity.get("date"))
     return parsed.date() if parsed else None
 
@@ -2617,7 +2659,7 @@ def _ai_intents(text: str) -> list[str]:
         intents.append("tomorrow")
     if any(token in text for token in ("cansado", "cansancio", "molestia", "dolor", "dormi", "sueno", "fatiga", "ajusta")):
         intents.append("adjust")
-    if any(token in text for token in ("ultima", "actividad", "analiza", "feedback", "entreno de hoy", "salida")):
+    if any(token in text for token in ("ultima", "ultimo dia", "ultimo entrenamiento", "actividad", "analiza", "feedback", "entreno de hoy", "salida")):
         intents.append("latest")
     if any(token in text for token in ("malaga", "maraton", "sub 3:40", "3:40", "preparacion")):
         intents.append("malaga")

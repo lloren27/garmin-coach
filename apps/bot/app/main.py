@@ -1,22 +1,16 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
     build_ai_brief,
+    COACH_QUESTIONS,
     format_ai_help,
     format_ai_queued,
-    format_adjust,
-    format_bike,
     format_checkin_help,
     format_checkin_saved,
-    format_fatigue,
-    format_feedback,
     format_help,
-    format_health,
     format_lab_test,
     format_lab_test_applied,
     format_lab_test_corrected,
@@ -25,26 +19,15 @@ from .coach import (
     format_lab_test_help,
     format_lab_test_queued,
     format_lab_tests,
-    format_latest,
-    format_load,
-    format_malaga,
-    format_natural_coach,
-    format_next,
     format_profile,
     format_profile_help,
     format_profile_saved,
-    format_running,
     format_sync_requested,
     format_syncinfo,
     format_status,
-    format_today,
-    format_trend,
     format_voice_queued,
     format_zones,
     merge_profile,
-    format_week,
-    format_week_plan,
-    format_wattwise,
     parse_lab_test_correction,
     parse_checkin,
     parse_profile,
@@ -75,7 +58,7 @@ from .store import (
     mark_lab_test_applied,
     update_lab_test,
 )
-from .strength import handle_strength_command, strength_context_for_date, summarize_strength_load
+from .strength import handle_strength_command
 
 
 app = FastAPI(title="Garmin Coach")
@@ -176,7 +159,7 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
     sync = load_sync()
     profile = load_profile()
     checkins = load_checkins(5)
-    history = load_sync_history(4)
+    history = load_sync_history(28)
     wattwise = load_wattwise()
     strength_state = load_strength_state()
     owner_id = str(job.get("chat_id") or job.get("user_id") or "telegram")
@@ -197,6 +180,11 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
             "profile": profile,
             "checkins": checkins,
             "history": history,
+            "lab_tests": [
+                {key: item.get(key) for key in ("id", "created_at", "status", "extracted")}
+                for item in load_lab_tests(100)
+                if item.get("status") == "applied"
+            ][-5:],
             "wattwise": wattwise,
             "strength_state": strength_state,
             "strength_owner_id": owner_id,
@@ -302,58 +290,21 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
 def route_message(text: str, user_id: str | None = None, chat_id: str | None = None) -> str:
     sync = load_sync()
     profile = load_profile()
-    wattwise = load_wattwise()
     ai_chat_id = chat_id or user_id or "telegram"
     owner_id = chat_id or user_id or "telegram"
     command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
     args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
     if command in {"/start", "/help"}:
         return format_help()
-    if command == "/hoy":
-        return format_today(sync)
-    if command == "/semana":
-        return format_week(sync, profile, load_checkins())
-    if command in {"/plan_semana", "/plan"}:
-        return format_week_plan(sync, profile, load_checkins())
-    if command == "/ultima":
-        return format_latest(sync)
-    if command == "/proximo":
-        return format_next(sync, load_checkins())
-    if command == "/fatiga":
-        return format_fatigue(sync, wattwise)
-    if command == "/salud":
-        return format_health(sync)
-    if command == "/carga":
-        return format_load(sync, profile, wattwise, _strength_load_for_owner(owner_id, sync))
-    if command in {"/running", "/correr", "/carga_running"}:
-        return format_running(sync)
-    if command == "/tendencia":
-        return format_trend(sync, load_sync_history())
-    if command == "/feedback":
-        strength_state = load_strength_state()
-        return format_feedback(
-            sync,
-            load_checkins(),
-            profile,
-            wattwise=wattwise,
-            strength_context=strength_context_for_date(strength_state, owner_id, _feedback_strength_date(sync)),
-            strength_load=summarize_strength_load(strength_state, owner_id, _sync_reference_date(sync)),
-        )
+    if command in COACH_QUESTIONS or (command == "/fuerza" and not args):
+        question = COACH_QUESTIONS.get(command, "Recomiéndame una sesión de fuerza según mi carga y recuperación.")
+        if args:
+            question += f"\nDetalles del deportista: {args}"
+        document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=question)
+        return format_ai_queued(document)
     if command == "/coach":
         if not args:
             return format_ai_help()
-        direct = format_natural_coach(
-            args,
-            sync,
-            profile,
-            load_checkins(),
-            load_sync_history(),
-            wattwise,
-            load_strength_state(),
-            owner_id,
-        )
-        if direct:
-            return direct
         document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=args)
         return format_ai_queued(document)
     if command == "/sync":
@@ -406,12 +357,6 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
             return format_checkin_help()
         document = save_checkin(parse_checkin(args, user_id))
         return format_checkin_saved(document)
-    if command == "/ajustar":
-        return format_adjust(sync, load_checkins(), args, profile, _strength_load_for_owner(owner_id, sync))
-    if command == "/bici":
-        return format_bike(sync, profile, wattwise)
-    if command in {"/potencia", "/wattwise"}:
-        return format_wattwise(wattwise, sync, profile)
     if command == "/fuerza":
         strength_state = load_strength_state()
         response, updated_state, changed = handle_strength_command(
@@ -423,60 +368,14 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
         if changed:
             save_strength_state(updated_state)
         return response
-    if command == "/malaga":
-        return format_malaga(sync, profile)
     if command == "/status":
         return format_status(sync)
     if command == "/syncinfo":
         return format_syncinfo(sync, load_sync_request())
     if text and not command.startswith("/"):
-        direct = format_natural_coach(
-            text,
-            sync,
-            profile,
-            load_checkins(),
-            load_sync_history(),
-            wattwise,
-            load_strength_state(),
-            owner_id,
-        )
-        if direct:
-            return direct
         document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=text)
         return format_ai_queued(document)
     return "Te leo. Usa /help para ver los comandos disponibles."
-
-
-def _strength_load_for_owner(owner_id: str, sync: dict | None) -> dict:
-    return summarize_strength_load(load_strength_state(), owner_id, _sync_reference_date(sync))
-
-
-def _sync_reference_date(sync: dict | None) -> date:
-    if sync:
-        value = sync.get("payload", {}).get("generated_at") or sync.get("received_at")
-        parsed = _parse_iso_date(value)
-        if parsed:
-            return parsed
-    return date.today()
-
-
-def _feedback_strength_date(sync: dict | None) -> date:
-    if sync:
-        activities = sync.get("payload", {}).get("summary", {}).get("activities") or []
-        if activities:
-            parsed = _parse_iso_date(activities[-1].get("date"))
-            if parsed:
-                return parsed
-    return _sync_reference_date(sync)
-
-
-def _parse_iso_date(value: object) -> date | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value)[:10]).date()
-    except ValueError:
-        return None
 
 
 async def send_telegram_message(chat_id: int | str, text: str) -> None:

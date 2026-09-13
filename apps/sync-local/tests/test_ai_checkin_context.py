@@ -42,7 +42,7 @@ class AiCheckinContextTests(unittest.TestCase):
         self.assertIn("efe te pe doscientos treinta y cinco vatios", result)
         self.assertIn("variabilidad de pulso estable", result)
         self.assertIn("te ese ese ochenta", result)
-        self.assertIn("umbral ritmo cuatro cincuenta por kilometro", result)
+        self.assertIn("umbral ritmo cuatro minutos y cincuenta segundos por kilómetro", result)
 
     def test_prepare_text_for_tts_expands_strength_terms(self) -> None:
         result = prepare_text_for_tts("Full body con hip thrust, split squat y RIR 2.")

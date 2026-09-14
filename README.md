@@ -154,6 +154,7 @@ OLLAMA_NUM_PREDICT=900
 OLLAMA_PLAN_NUM_PREDICT=1400
 OLLAMA_TIMEOUT_SECONDS=600
 GARMIN_COACH_ANSWER_MAX_CHARS=3200
+TELEGRAM_ACTION_INTERVAL_SECONDS=4
 ```
 
 Voice messages are also processed locally on the Mac. Railway only queues the
@@ -390,6 +391,11 @@ limit. Long voice answers also include the full text because Telegram captions
 are limited. If Ollama fails or returns an incomplete/invalid answer, a clearly
 labelled basic calculated reading is returned. If voice synthesis fails, the
 full answer is sent as text.
+
+Telegram confirms the queued request immediately with the expected wait. Once
+the Mac claims the job, the worker refreshes Telegram's native `typing` action
+every four seconds until processing completes or fails. This interval can be
+changed with `TELEGRAM_ACTION_INTERVAL_SECONDS`.
 
 Review the [current validation results](docs/coach-validation.md). Run the
 updated local worker after deploying compatible backend changes. Existing `.env` values override the defaults; update previous

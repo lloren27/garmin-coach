@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import tempfile
@@ -56,6 +57,26 @@ class ResponseFlowTests(unittest.TestCase):
                 self.assertEqual(payload["answer"], answer)
                 self.assertEqual(payload["response_mode"], "text")
                 self.assertTrue(payload.get("notify_telegram", True))
+
+    def test_processing_indicator_repeats_typing_until_stopped(self) -> None:
+        calls = []
+
+        def fake_telegram(method, payload):
+            calls.append((method, payload))
+            return {"ok": True}
+
+        def slow_answer(_question, _context):
+            time.sleep(0.04)
+            return "Hoy descansa."
+
+        with patch.object(worker, "TELEGRAM_BOT_TOKEN", "token"), patch.object(worker, "TELEGRAM_ACTION_INTERVAL_SECONDS", 0.01, create=True), patch.object(worker, "telegram_api", side_effect=fake_telegram), patch.object(worker, "call_ollama", side_effect=slow_answer):
+            worker.process_job({"id": "text", "chat_id": "chat", "text": "¿Qué hago?"}, {})
+            count_after_stop = len(calls)
+            time.sleep(0.03)
+
+        self.assertGreaterEqual(count_after_stop, 2)
+        self.assertEqual(len(calls), count_after_stop)
+        self.assertTrue(all(call == ("sendChatAction", {"chat_id": "chat", "action": "typing"}) for call in calls))
 
     def test_simple_question_uses_one_concise_generation_and_hides_internal_reasoning(self) -> None:
         response = Mock()

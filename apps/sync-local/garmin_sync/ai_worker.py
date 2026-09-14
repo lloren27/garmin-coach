@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -39,6 +40,7 @@ OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "900"))
 OLLAMA_PLAN_NUM_PREDICT = int(os.getenv("OLLAMA_PLAN_NUM_PREDICT", "1400"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_ACTION_INTERVAL_SECONDS = float(os.getenv("TELEGRAM_ACTION_INTERVAL_SECONDS", "4"))
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto")
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
@@ -130,6 +132,32 @@ def telegram_api(method: str, payload: dict[str, Any] | None = None) -> dict[str
     if not data.get("ok"):
         raise RuntimeError(f"Telegram {method} failed: {data}")
     return data
+
+
+def start_telegram_processing_indicator(chat_id: str | None) -> tuple[threading.Event, threading.Thread] | None:
+    if not chat_id or not TELEGRAM_BOT_TOKEN:
+        return None
+    stop = threading.Event()
+
+    def show_typing() -> None:
+        while not stop.is_set():
+            try:
+                telegram_api("sendChatAction", {"chat_id": str(chat_id), "action": "typing"})
+            except Exception:
+                pass
+            stop.wait(TELEGRAM_ACTION_INTERVAL_SECONDS)
+
+    thread = threading.Thread(target=show_typing, name="telegram-coach-typing", daemon=True)
+    thread.start()
+    return stop, thread
+
+
+def stop_telegram_processing_indicator(indicator: tuple[threading.Event, threading.Thread] | None) -> None:
+    if not indicator:
+        return
+    stop, thread = indicator
+    stop.set()
+    thread.join(timeout=1)
 
 
 def check_ollama() -> None:
@@ -896,6 +924,7 @@ def _normalize(value: str) -> str:
 def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
     job_id = job["id"]
     transcript = None
+    indicator = start_telegram_processing_indicator(str(job.get("chat_id") or "") or None)
     try:
         question = str(job.get("text") or "").strip()
         if job.get("document_file_id"):
@@ -958,6 +987,8 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
             error_payload["transcript"] = transcript
         post_json(f"/ai/jobs/{job_id}/complete", error_payload)
         raise
+    finally:
+        stop_telegram_processing_indicator(indicator)
 
 
 def main() -> int:

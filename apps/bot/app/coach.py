@@ -150,8 +150,8 @@ def format_ai_help() -> str:
 
 def format_ai_queued(document: dict[str, Any]) -> str:
     return (
-        "Lo miro con el coach local.\n"
-        "Te responderé cuando termine el análisis. El Mac debe estar despierto."
+        "Consulta recibida. Estoy haciendo el análisis de tus datos; normalmente tarda entre 40 y 70 segundos. "
+        "Un plan semanal puede tardar algo más. Verás «escribiendo…» cuando el Mac empiece a procesarla."
     )
 
 
@@ -160,7 +160,8 @@ def format_voice_queued(document: dict[str, Any]) -> str:
     duration_text = f" ({duration} s)" if duration else ""
     return (
         f"Audio recibido{duration_text}.\n"
-        "Voy a escuchar tu consulta y revisar tus datos. Te responderé cuando termine el análisis."
+        "Voy a escuchar tu consulta y revisar tus datos; normalmente tarda entre 40 y 70 segundos. "
+        "Verás «escribiendo…» mientras el Mac la procesa."
     )
 
 

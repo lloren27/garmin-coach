@@ -24,6 +24,7 @@ class CoachRoutingTests(unittest.TestCase):
                 self.queue.assert_called_once()
                 self.assertEqual(self.queue.call_args.kwargs["chat_id"], "chat")
                 self.assertIn("análisis", response)
+                self.assertIn("40 y 70 segundos", response)
 
     def test_command_arguments_survive_and_bot_suffix_is_supported(self) -> None:
         main.route_message("/ajustar@MyBot dolor gemelo derecho", "user", "chat")

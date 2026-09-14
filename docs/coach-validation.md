@@ -4,7 +4,7 @@ Estado: modelo local `garmin-coach:9b` validado con el flujo de respuesta rápid
 
 ## Comprobaciones completadas
 
-- 55 pruebas automatizadas: enrutamiento, contexto, operaciones de registro, respuestas de texto y voz, fallos de Ollama/Piper, fechas, puntuación y lectura de unidades.
+- 56 pruebas automatizadas: enrutamiento, contexto, operaciones de registro, respuestas de texto y voz, indicador de procesamiento, fallos de Ollama/Piper, fechas, puntuación y lectura de unidades.
 - Prueba real de Ollama con datos ficticios y `garmin-coach:9b`: el flujo anterior de dos pasadas tardó 128,9 segundos. La generación única optimizada tardó 38,7 segundos con el mismo caso, una reducción aproximada del 70 %.
 - Piper generó correctamente un archivo de audio de 14 segundos. Esto verifica la síntesis, no una evaluación perceptiva de la calidad de la voz.
 - Comprobación de solo lectura del contexto del backend: 25 actividades y 28 sincronizaciones que abarcan dos días, además de perfil, recuperación y Wattwise. Los resúmenes semanales aportan la evolución más larga. El contexto compacto medido ocupó unos 35.500 caracteres.

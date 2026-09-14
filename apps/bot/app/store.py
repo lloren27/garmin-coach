@@ -17,6 +17,8 @@ SYNC_REQUEST_FILE = DATA_DIR / "sync_request.json"
 AI_JOBS_FILE = DATA_DIR / "ai_jobs.json"
 LAB_TESTS_FILE = DATA_DIR / "lab_tests.json"
 WATTWISE_FILE = DATA_DIR / "wattwise_snapshot.json"
+TRAINING_PLAN_STATE_FILE = DATA_DIR / "training_plan_state.json"
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 STRENGTH_STATE_KEY = "strength_sessions"
 
@@ -440,6 +442,411 @@ def _stale_running_job(job: dict[str, Any]) -> bool:
     age = datetime.now(timezone.utc) - claimed.astimezone(timezone.utc)
     return age.total_seconds() > 15 * 60
 
+def save_training_plan(
+    plan: dict[str, Any],
+    owner_id: str,
+) -> dict[str, Any]:
+    plan_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    sessions = []
+    for sequence, session in enumerate(plan.get("sessions") or []):
+        session_document = dict(session)
+        session_document.update(
+            {
+                "id": str(uuid.uuid4()),
+                "training_plan_id": plan_id,
+                "owner_id": str(owner_id),
+                "sequence": int(session.get("sequence", sequence)),
+                "status": str(session.get("status") or "planned"),
+                "optional": bool(session.get("optional", False)),
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        sessions.append(session_document)
+
+    plan_document = {
+        "id": plan_id,
+        "owner_id": str(owner_id),
+        "status": "active",
+        "start_date": str(plan["start_date"]),
+        "end_date": str(plan["end_date"]),
+        "objective": plan.get("objective"),
+        "mode": plan.get("mode"),
+        "source_sync_at": plan.get("source_sync_at"),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    if DATABASE_URL:
+        save_training_plan_postgres(plan_document, sessions)
+    else:
+        save_training_plan_file(plan_document, sessions)
+
+    return {
+        **plan_document,
+        "sessions": sessions,
+    }
+
+def _training_plan_metadata(
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_fields = {
+        "id",
+        "owner_id",
+        "status",
+        "start_date",
+        "end_date",
+        "objective",
+        "mode",
+        "source_sync_at",
+        "created_at",
+        "updated_at",
+        "sessions",
+    }
+
+    return {
+        key: value
+        for key, value in plan.items()
+        if key not in normalized_fields
+    }
+
+def _planned_session_metadata(
+    session: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_fields = {
+        "id",
+        "training_plan_id",
+        "owner_id",
+        "date",
+        "sequence",
+        "sport",
+        "session_type",
+        "status",
+        "optional",
+        "completed_activity_id",
+        "created_at",
+        "updated_at",
+    }
+
+    return {
+        key: value
+        for key, value in session.items()
+        if key not in normalized_fields
+    }
+
+def save_training_plan_postgres(
+    plan: dict[str, Any],
+    sessions: list[dict[str, Any]],
+) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+
+        with conn.transaction():
+            # Solo puede haber un plan activo por usuario.
+            conn.execute(
+                """
+                update training_plans
+                set status = 'superseded',
+                    updated_at = now()
+                where owner_id = %s
+                  and status = 'active'
+                """,
+                (plan["owner_id"],),
+            )
+
+            conn.execute(
+                """
+                insert into training_plans (
+                    id,
+                    owner_id,
+                    status,
+                    start_date,
+                    end_date,
+                    objective,
+                    mode,
+                    source_sync_at,
+                    document,
+                    created_at,
+                    updated_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    plan["id"],
+                    plan["owner_id"],
+                    plan["status"],
+                    plan["start_date"],
+                    plan["end_date"],
+                    plan.get("objective"),
+                    plan.get("mode"),
+                    plan.get("source_sync_at"),
+                    Jsonb(_training_plan_metadata(plan)),
+                    plan["created_at"],
+                    plan["updated_at"],
+                ),
+            )
+
+            for session in sessions:
+                conn.execute(
+                    """
+                    insert into planned_sessions (
+                        id,
+                        training_plan_id,
+                        owner_id,
+                        session_date,
+                        sequence,
+                        sport,
+                        session_type,
+                        status,
+                        optional,
+                        completed_activity_id,
+                        document,
+                        created_at,
+                        updated_at
+                    )
+                    values (
+                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s
+                    )
+                    """,
+                    (
+                        session["id"],
+                        session["training_plan_id"],
+                        session["owner_id"],
+                        session["date"],
+                        session["sequence"],
+                        session["sport"],
+                        session["session_type"],
+                        session["status"],
+                        session["optional"],
+                        session.get("completed_activity_id"),
+                        Jsonb(_planned_session_metadata(session)),
+                        session["created_at"],
+                        session["updated_at"],
+                    ),
+                )
+
+def save_training_plan_file(
+    plan: dict[str, Any],
+    sessions: list[dict[str, Any]],
+) -> None:
+    state = load_training_plan_state_file()
+
+    plans = state.get("plans") or []
+    stored_sessions = state.get("sessions") or []
+
+    for existing in plans:
+        if (
+            existing.get("owner_id") == plan["owner_id"]
+            and existing.get("status") == "active"
+        ):
+            existing["status"] = "superseded"
+            existing["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    plans.append(plan)
+    stored_sessions.extend(sessions)
+
+    plans = plans[-50:]
+
+    retained_plan_ids = {
+        str(plan.get("id"))
+        for plan in plans
+        if plan.get("id")
+    }
+
+    stored_sessions = [
+        session
+        for session in stored_sessions
+        if str(session.get("training_plan_id"))
+        in retained_plan_ids
+    ]
+
+    state = {
+        "plans": plans,
+        "sessions": stored_sessions,
+    }
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    TRAINING_PLAN_STATE_FILE.write_text(
+        json.dumps(state, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+
+def load_training_plan_state_file() -> dict[str, Any]:
+    if not TRAINING_PLAN_STATE_FILE.exists():
+        return {
+            "plans": [],
+            "sessions": [],
+        }
+
+    state = json.loads(
+        TRAINING_PLAN_STATE_FILE.read_text(encoding="utf-8")
+    )
+
+    if not isinstance(state, dict):
+        return {
+            "plans": [],
+            "sessions": [],
+        }
+
+    return state
+
+def load_active_training_plan(
+    owner_id: str,
+) -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return load_active_training_plan_postgres(owner_id)
+
+    state = load_training_plan_state_file()
+
+    plans = [
+        plan
+        for plan in state.get("plans") or []
+        if plan.get("owner_id") == str(owner_id)
+        and plan.get("status") == "active"
+    ]
+
+    if not plans:
+        return None
+
+    plan = dict(plans[-1])
+
+    sessions = [
+        session
+        for session in state.get("sessions") or []
+        if session.get("training_plan_id") == plan["id"]
+    ]
+
+    sessions.sort(
+        key=lambda session: (
+            str(session.get("date") or ""),
+            int(session.get("sequence", 0)),
+        )
+    )
+
+    plan["sessions"] = sessions
+    return plan
+
+def load_active_training_plan_postgres(
+    owner_id: str,
+) -> dict[str, Any] | None:
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        ensure_schema(conn)
+
+        row = conn.execute(
+            """
+            select
+                id,
+                owner_id,
+                status,
+                start_date,
+                end_date,
+                objective,
+                mode,
+                source_sync_at,
+                document,
+                created_at,
+                updated_at
+            from training_plans
+            where owner_id = %s
+              and status = 'active'
+            order by created_at desc
+            limit 1
+            """,
+            (str(owner_id),),
+        ).fetchone()
+
+        if not row:
+            return None
+
+        metadata = row[8] or {}
+
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+
+        session_rows = conn.execute(
+            """
+            select
+                id,
+                training_plan_id,
+                owner_id,
+                session_date,
+                sequence,
+                sport,
+                session_type,
+                status,
+                optional,
+                completed_activity_id,
+                document,
+                created_at,
+                updated_at
+            from planned_sessions
+            where training_plan_id = %s
+            order by session_date asc, sequence asc
+            """,
+            (row[0],),
+        ).fetchall()
+
+    result = dict(metadata)
+
+    result.update(
+        {
+            "id": row[0],
+            "owner_id": row[1],
+            "status": row[2],
+            "start_date": row[3].isoformat(),
+            "end_date": row[4].isoformat(),
+            "objective": row[5],
+            "mode": row[6],
+            "source_sync_at": (
+                row[7].isoformat()
+                if row[7] is not None
+                else None
+            ),
+            "created_at": row[9].isoformat(),
+            "updated_at": row[10].isoformat(),
+        }
+    )
+
+    sessions: list[dict[str, Any]] = []
+
+    for session_row in session_rows:
+        session_metadata = session_row[10] or {}
+
+        if isinstance(session_metadata, str):
+            session_metadata = json.loads(session_metadata)
+
+        session = dict(session_metadata)
+
+        session.update(
+            {
+                "id": session_row[0],
+                "training_plan_id": session_row[1],
+                "owner_id": session_row[2],
+                "date": session_row[3].isoformat(),
+                "sequence": session_row[4],
+                "sport": session_row[5],
+                "session_type": session_row[6],
+                "status": session_row[7],
+                "optional": session_row[8],
+                "completed_activity_id": session_row[9],
+                "created_at": session_row[11].isoformat(),
+                "updated_at": session_row[12].isoformat(),
+            }
+        )
+
+        sessions.append(session)
+
+    result["sessions"] = sessions
+
+    return result
 
 def save_sync_postgres(document: dict[str, Any]) -> None:
     import psycopg
@@ -461,7 +868,6 @@ def save_sync_postgres(document: dict[str, Any]) -> None:
             (Jsonb(document), document["received_at"]),
         )
 
-
 def load_sync_postgres() -> dict[str, Any] | None:
     import psycopg
 
@@ -478,7 +884,6 @@ def load_sync_postgres() -> dict[str, Any] | None:
     if isinstance(document, str):
         return json.loads(document)
     return document
-
 
 def load_sync_history_postgres(limit: int) -> list[dict[str, Any]]:
     import psycopg
@@ -743,5 +1148,74 @@ def ensure_schema(conn: Any) -> None:
         """
         create index if not exists coach_ai_jobs_status_created_idx
         on coach_ai_jobs (status, created_at)
+        """
+    )
+    conn.execute(
+        """
+        create table if not exists training_plans (
+            id text primary key,
+            owner_id text not null,
+            status text not null,
+            start_date date not null,
+            end_date date not null,
+            objective text,
+            mode text,
+            source_sync_at timestamptz,
+            document jsonb not null,
+            created_at timestamptz not null default now(),
+            updated_at timestamptz not null default now()
+        )
+        """
+    )
+    conn.execute(
+        """
+        create table if not exists planned_sessions (
+            id text primary key,
+            training_plan_id text not null
+                references training_plans(id)
+                on delete cascade,
+            owner_id text not null,
+            session_date date not null,
+            sequence integer not null default 0,
+            sport text not null,
+            session_type text not null,
+            status text not null default 'planned',
+            optional boolean not null default false,
+            completed_activity_id text,
+            document jsonb not null,
+            created_at timestamptz not null default now(),
+            updated_at timestamptz not null default now()
+        )
+        """
+    )
+    conn.execute(
+        """
+        create index if not exists training_plans_owner_status_idx
+        on training_plans (owner_id, status)
+        """
+    )
+    conn.execute(
+        """
+        create index if not exists planned_sessions_owner_date_idx
+        on planned_sessions (owner_id, session_date)
+        """
+    )
+    conn.execute(
+        """
+        create index if not exists planned_sessions_plan_date_idx
+        on planned_sessions (training_plan_id, session_date)
+        """
+    )
+    conn.execute(
+        """
+        create unique index if not exists training_plans_one_active_per_owner_idx
+        on training_plans (owner_id)
+        where status = 'active'
+        """
+    )
+    conn.execute(
+        """
+        create unique index if not exists planned_sessions_plan_date_sequence_idx
+        on planned_sessions (training_plan_id, session_date, sequence)
         """
     )

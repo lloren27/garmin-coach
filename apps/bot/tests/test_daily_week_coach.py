@@ -130,8 +130,10 @@ class WeeklyPlanTests(unittest.TestCase):
 
         self.assertIn("Plan 7 dias (13/09/2026-19/09/2026)", answer)
         self.assertIn("Enfoque: asimilar carga", answer)
-        self.assertIn("Dom 13/09/2026: Descanso o rodaje regenerativo", answer)
-        self.assertIn("Sab 19/09/2026: running 30-40 min facil", answer)
+        self.assertIn("Dom 13/09/2026: Tirada larga", answer)
+        self.assertIn("Lun 14/09/2026: Descanso y movilidad", answer)
+        self.assertIn("Sab 19/09/2026: Rodaje fácil con progresivos", answer)
+        self.assertIn("Fuerza: 1 sesion planificadas", answer)
         self.assertNotIn("10/09/2026", answer)
 
     def test_week_command_combines_completed_balance_and_future_plan(self) -> None:

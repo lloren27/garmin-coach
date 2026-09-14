@@ -226,6 +226,7 @@ def enrich_context_for_question(question: str, context: dict[str, Any]) -> dict[
         enriched.get("wattwise"),
         enriched.get("strength_state"),
         enriched.get("strength_owner_id"),
+        enriched.get("training_plan"), 
     )
     return enriched
 
@@ -559,6 +560,11 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 "carga aguda y crónica, evolución semanal, recuperación Garmin, perfil, objetivo, "
                 "pruebas de esfuerzo aplicadas, fuerza manual y dolor o molestias comunicadas. "
                 "Usa coach_brief como cálculos de referencia y contrástalo con el contexto adicional. "
+                "Si extra_context contiene training_plan, ese es el plan vigente y persistente del deportista. "
+                "No inventes una planificación distinta ni afirmes que sus sesiones han cambiado. "
+                "Para hoy, mañana, próximo entrenamiento o semana, parte siempre de training_plan. "
+                "Si la recuperación, el dolor o datos recientes aconsejan otra cosa, diferencia claramente entre la sesión planificada y una recomendación puntual más segura; no afirmes que el plan persistido ha cambiado."
+                "Si se solicita regenerar el plan, explica el training_plan recibido: la regeneración la realiza el backend antes de llegar a ti."
                 "Si las lecturas se contradicen, explica la discrepancia y condiciona la recomendación; "
                 "no repitas automáticamente una sesión calculada que contradiga el dolor o la recuperación. "
                 "Comprueba fecha actual, antigüedad de sincronización y fechas de cada fuente. "
@@ -666,6 +672,7 @@ def deterministic_answer(question: str, context: dict[str, Any]) -> str | None:
         context.get("wattwise"),
         context.get("strength_state"),
         context.get("strength_owner_id"),
+        context.get("training_plan"),
     )
     return polish_coach_answer(answer) if answer else None
 
@@ -785,6 +792,7 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
         "generated_at": payload.get("generated_at"),
         "race": payload.get("race"),
         "profile": _profile_payload(context.get("profile")),
+        "training_plan": context.get("training_plan"),
         "summary": {
             "weekly": summary.get("weekly"),
             "runs_count_28d": summary.get("runs_count_28d"),

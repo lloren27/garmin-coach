@@ -5,6 +5,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
     build_ai_brief,
+    build_week_plan,
     COACH_QUESTIONS,
     format_ai_help,
     format_ai_queued,
@@ -48,6 +49,7 @@ from .store import (
     load_sync_request,
     load_strength_state,
     load_wattwise,
+    load_active_training_plan,
     save_checkin,
     save_lab_test,
     save_profile,
@@ -55,6 +57,7 @@ from .store import (
     save_sync,
     save_strength_state,
     save_wattwise,
+    save_training_plan,
     mark_lab_test_applied,
     update_lab_test,
 )
@@ -163,6 +166,8 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
     wattwise = load_wattwise()
     strength_state = load_strength_state()
     owner_id = str(job.get("chat_id") or job.get("user_id") or "telegram")
+    training_plan = load_active_training_plan(owner_id)
+
     return {
         "job": job,
         "context": {
@@ -175,6 +180,7 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
                 wattwise,
                 strength_state,
                 owner_id,
+                training_plan=training_plan,
             ),
             "sync": sync,
             "profile": profile,
@@ -188,6 +194,7 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
             "wattwise": wattwise,
             "strength_state": strength_state,
             "strength_owner_id": owner_id,
+            "training_plan": training_plan,
         },
     }
 
@@ -296,6 +303,48 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
     args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
     if command in {"/start", "/help"}:
         return format_help()
+    
+    if command in {"/plan_semana", "/plan"}:
+        if not sync:
+            return (
+                "Necesito una sincronizacion Garmin antes de crear "
+                "un plan semanal. Ejecuta /sync."
+            )
+
+        checkins = load_checkins(5)
+
+        plan = build_week_plan(
+            sync=sync,
+            profile=profile,
+            checkins=checkins,
+            owner_id=owner_id,
+        )
+
+        save_training_plan(
+            plan,
+            owner_id,
+        )
+
+        question = COACH_QUESTIONS[command]
+
+        if args:
+            question += f"\nDetalles del deportista: {args}"
+
+        question += (
+            "\nYa existe un training_plan persistente calculado para esta "
+            "semana. Usa ese plan como planificación vigente. "
+            "No inventes una planificación diferente ni cambies sus sesiones; "
+            "explica y justifica el plan guardado."
+        )
+
+        document = create_ai_job(
+            chat_id=ai_chat_id,
+            user_id=user_id,
+            text=question,
+        )
+
+        return format_ai_queued(document)
+
     if command in COACH_QUESTIONS or (command == "/fuerza" and not args):
         question = COACH_QUESTIONS.get(command, "Recomiéndame una sesión de fuerza según mi carga y recuperación.")
         if args:

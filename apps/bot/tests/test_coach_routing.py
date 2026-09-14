@@ -5,7 +5,7 @@ from contextlib import ExitStack
 from unittest.mock import patch
 
 from app import main
-from app.coach import COACH_QUESTIONS, build_ai_brief
+from app.coach import COACH_QUESTIONS, build_ai_brief, format_week_plan
 
 
 class CoachRoutingTests(unittest.TestCase):
@@ -17,7 +17,13 @@ class CoachRoutingTests(unittest.TestCase):
         self.queue = stack.enter_context(patch.object(main, "create_ai_job", return_value={"id": "job"}))
 
     def test_coaching_commands_and_free_text_all_enter_queue(self) -> None:
-        for text in [*COACH_QUESTIONS, "/fuerza", "/coach ¿Qué hago mañana?", "¿Qué hago mañana?"]:
+        plan_commands = {"/plan_semana", "/plan"}
+        for text in [
+            *(command for command in COACH_QUESTIONS if command not in plan_commands),
+            "/fuerza",
+            "/coach ¿Qué hago mañana?",
+            "¿Qué hago mañana?",
+        ]:
             with self.subTest(text=text):
                 self.queue.reset_mock()
                 response = main.route_message(text, "user", "chat")
@@ -25,6 +31,37 @@ class CoachRoutingTests(unittest.TestCase):
                 self.assertEqual(self.queue.call_args.kwargs["chat_id"], "chat")
                 self.assertIn("análisis", response)
                 self.assertIn("40 y 70 segundos", response)
+
+    def test_week_plan_commands_persist_then_enqueue_the_plan_explanation(self) -> None:
+        plan = {
+            "start_date": "2026-09-14",
+            "end_date": "2026-09-20",
+            "sessions": [],
+        }
+        with (
+            patch.object(main, "load_sync", return_value={"payload": {}}),
+            patch.object(main, "load_checkins", return_value=[]),
+            patch.object(main, "build_week_plan", return_value=plan) as build,
+            patch.object(main, "save_training_plan") as save,
+        ):
+            for command in ("/plan_semana", "/plan"):
+                with self.subTest(command=command):
+                    self.queue.reset_mock()
+                    build.reset_mock()
+                    save.reset_mock()
+
+                    response = main.route_message(command, "user", "chat")
+
+                    build.assert_called_once_with(
+                        sync={"payload": {}},
+                        profile={},
+                        checkins=[],
+                        owner_id="chat",
+                    )
+                    save.assert_called_once_with(plan, "chat")
+                    self.queue.assert_called_once()
+                    self.assertIn("planificación vigente", self.queue.call_args.kwargs["text"])
+                    self.assertIn("análisis", response)
 
     def test_command_arguments_survive_and_bot_suffix_is_supported(self) -> None:
         main.route_message("/ajustar@MyBot dolor gemelo derecho", "user", "chat")
@@ -65,6 +102,65 @@ class CoachRoutingTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in tests], ["a"])
             self.assertNotIn("source", tests[0])
 
+    def test_format_week_plan_uses_persisted_training_plan(self) -> None:
+        training_plan = {
+            "id": "plan-1",
+            "owner_id": "123",
+            "status": "active",
+            "start_date": "2026-09-15",
+            "end_date": "2026-09-21",
+            "objective": "Maraton objetivo 3:40",
+            "mode": "normal",
+            "sessions": [
+                {
+                    "date": "2026-09-15",
+                    "sequence": 0,
+                    "sport": "running",
+                    "session_type": "quality",
+                    "title": "Calidad a ritmo maratón",
+                    "description": "3 x 2 km a ritmo maratón.",
+                    "intensity": "marathon_pace",
+                    "target_pace": "5:13/km",
+                    "optional": False,
+                    "status": "planned",
+                },
+                {
+                    "date": "2026-09-16",
+                    "sequence": 0,
+                    "sport": "running",
+                    "session_type": "easy",
+                    "title": "Rodaje fácil",
+                    "description": "Running fácil.",
+                    "duration_min": 40,
+                    "duration_max": 50,
+                    "intensity": "easy",
+                    "optional": False,
+                    "status": "planned",
+                },
+                {
+                    "date": "2026-09-16",
+                    "sequence": 1,
+                    "sport": "strength",
+                    "session_type": "full_body_a",
+                    "title": "Fuerza full body A",
+                    "description": "Sesión de fuerza full body A.",
+                    "duration_min": 35,
+                    "duration_max": 40,
+                    "intensity": "moderate",
+                    "optional": False,
+                    "status": "planned",
+                },
+            ],
+        }
+
+        text = format_week_plan(None, training_plan=training_plan)
+
+        assert "15/09/2026" in text
+        assert "21/09/2026" in text
+        assert "Calidad a ritmo maratón" in text
+        assert "Rodaje fácil" in text
+        assert "Fuerza full body A" in text
+        assert "40-50 min" in text
 
 if __name__ == "__main__":
     unittest.main()

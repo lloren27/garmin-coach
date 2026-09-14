@@ -36,7 +36,7 @@ _SPANISH_MONTHS = {
 # Commands are translated into questions before entering the shared AI queue.
 COACH_QUESTIONS = {
     "/hoy": "Valora mi entrenamiento de hoy y mi recuperación, y dime qué hacer el resto del día.",
-    "/semana": "Evalúa el balance de esta semana y propón un plan semanal para los próximos siete días.",
+    "/semana": "Evalúa el balance de esta semana y revisa mi plan semanal vigente para los próximos días",
     "/plan_semana": "Propón un plan semanal para los próximos siete días según mi carga y recuperación.",
     "/plan": "Propón un plan semanal para los próximos siete días según mi carga y recuperación.",
     "/ultima": "Analiza mi última actividad y el conjunto de sesiones de ese día.",
@@ -390,6 +390,7 @@ def build_ai_brief(
     wattwise: dict[str, Any] | None = None,
     strength_state: dict[str, Any] | None = None,
     strength_owner_id: str | None = None,
+    training_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     text = _normalize_text(question)
     intents = _ai_intents(text)
@@ -405,7 +406,7 @@ def build_ai_brief(
         sections.append(("proximo_entreno", format_next(sync, checkins)))
         sections.append(("salud", format_health(sync)))
     if "week_plan" in intents:
-        sections.append(("plan_semana", format_week_plan(sync, profile, checkins)))
+        sections.append(("plan_semana", format_week_plan(sync, profile, checkins, training_plan)))
     if "dated_activity" in intents:
         if dated_activity:
             sections.append(
@@ -515,8 +516,9 @@ def format_natural_coach(
     wattwise: dict[str, Any] | None = None,
     strength_state: dict[str, Any] | None = None,
     strength_owner_id: str | None = None,
+    training_plan: dict[str, Any] | None = None,
 ) -> str | None:
-    brief = build_ai_brief(question, sync, profile, checkins, history, wattwise, strength_state, strength_owner_id)
+    brief = build_ai_brief(question, sync, profile, checkins, history, wattwise, strength_state, strength_owner_id, training_plan)
     intents = brief.get("intents") or []
     if not intents:
         return None
@@ -852,43 +854,243 @@ def format_week_plan(
     sync: dict[str, Any] | None,
     profile: dict[str, Any] | None = None,
     checkins: list[dict[str, Any]] | None = None,
+    training_plan: dict[str, Any] | None = None,
 ) -> str:
+    if training_plan:
+        return format_training_plan(training_plan)
+
     if not sync:
         return "Necesito una sincronizacion Garmin antes de preparar la semana."
 
-    payload = sync.get("payload", {})
-    summary = payload.get("summary", {})
-    wellness = payload.get("wellness", {})
-    injury = _injury_context(_latest_checkin(checkins))
-    mode = _weekly_plan_mode(summary, wellness, injury)
-    reference = _reference_date(sync)
-    start = max(reference + _DATE_ONE_DAY, datetime.now(MADRID_TZ).date())
-    long_run_km = _recommended_long_run_km(summary, payload.get("race") or {}, mode)
-    target_pace = _marathon_pace_from_time(str(_profile_payload(profile).get("marathon_goal") or ""))
-    target_pace = target_pace or str((payload.get("race") or {}).get("target_pace") or "ritmo maraton")
-    next_title, next_details, _ = _next_workout_choice(payload, injury)
+    plan = build_week_plan(
+        sync=sync,
+        profile=profile,
+        checkins=checkins,
+    )
+
+    return format_training_plan(plan)
+
+def format_training_plan(
+    training_plan: dict[str, Any] | None,
+) -> str:
+    if not training_plan:
+        return "No hay un plan de entrenamiento activo."
+
+    start_date = training_plan.get("start_date")
+    end_date = training_plan.get("end_date")
+    mode = str(training_plan.get("mode") or "normal")
+    objective = training_plan.get("objective")
+
+    sessions = [
+        session
+        for session in (training_plan.get("sessions") or [])
+        if isinstance(session, dict)
+    ]
 
     lines = [
-        f"Plan 7 dias ({_format_date_es(start)}-{_format_date_es(start + timedelta(days=6))})",
+        (
+            f"Plan 7 dias "
+            f"({_format_date_es(start_date)}-"
+            f"{_format_date_es(end_date)})"
+        ),
         f"Enfoque: {_weekly_plan_label(mode)}",
     ]
-    for offset in range(7):
-        day = start + timedelta(days=offset)
-        session = _planned_week_session(day, mode, long_run_km, target_pace)
-        if offset == 0:
-            session = f"{next_title}: {next_details}"
-        lines.append(f"{_weekday_es(day)} {_format_date_es(day)}: {session}")
 
-    strength_sessions = "una sesion A" if mode != "normal" else "sesiones A y B"
-    lines.extend(
-        [
-            f"Fuerza: esta semana {strength_sessions}, siempre con 2-3 repeticiones en reserva y sin llegar al fallo.",
-            "Consulta /fuerza para ejercicios, series y progresion.",
-            "Regla: si Garmin empeora claramente o aparecen molestias, sustituye calidad o fuerza por descanso.",
-        ]
+    if objective:
+        lines.append(f"Objetivo: {objective}")
+
+    sessions_by_date: dict[str, list[dict[str, Any]]] = {}
+
+    for session in sessions:
+        session_date = str(
+            session.get("date")
+            or session.get("session_date")
+            or ""
+        )[:10]
+
+        if not session_date:
+            continue
+
+        sessions_by_date.setdefault(
+            session_date,
+            [],
+        ).append(session)
+
+    for day_sessions in sessions_by_date.values():
+        day_sessions.sort(
+            key=lambda session: int(
+                session.get("sequence", 0)
+            )
+        )
+
+    parsed_start = _plan_date(start_date)
+    parsed_end = _plan_date(end_date)
+
+    if parsed_start and parsed_end:
+        day = parsed_start
+
+        while day <= parsed_end:
+            day_sessions = sessions_by_date.get(
+                day.isoformat(),
+                [],
+            )
+
+            if day_sessions:
+                session_text = " + ".join(
+                    _format_planned_session(session)
+                    for session in day_sessions
+                )
+            else:
+                session_text = "Sin sesion planificada"
+
+            lines.append(
+                f"{_weekday_es(day)} "
+                f"{_format_date_es(day)}: "
+                f"{session_text}"
+            )
+
+            day += _DATE_ONE_DAY
+
+    else:
+        for session_date in sorted(sessions_by_date):
+            day_sessions = sessions_by_date[session_date]
+
+            session_text = " + ".join(
+                _format_planned_session(session)
+                for session in day_sessions
+            )
+
+            lines.append(
+                f"{_format_date_es(session_date)}: "
+                f"{session_text}"
+            )
+
+    strength_sessions = [
+        session
+        for session in sessions
+        if session.get("sport") == "strength"
+        and session.get("status") == "planned"
+    ]
+
+    if strength_sessions:
+        lines.append(
+            "Fuerza: "
+            f"{len(strength_sessions)} "
+            f"{'sesion' if len(strength_sessions) == 1 else 'sesiones'} "
+            "planificadas, con 2-3 repeticiones en reserva "
+            "y sin llegar al fallo."
+        )
+
+    lines.append(
+        "Regla: el plan es la referencia vigente; "
+        "si la recuperacion Garmin empeora claramente "
+        "o aparecen molestias, debe ajustarse."
     )
+
     return "\n".join(lines)
 
+def _plan_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+
+    return None
+
+def _format_planned_session(
+    session: dict[str, Any],
+) -> str:
+    title = str(
+        session.get("title")
+        or session.get("session_type")
+        or "Sesion"
+    )
+
+    details: list[str] = []
+
+    distance_km = session.get("distance_km")
+    if isinstance(distance_km, (int, float)):
+        details.append(
+            f"{_format_compact_number(distance_km, 1)} km"
+        )
+
+    duration_min = session.get("duration_min")
+    duration_max = session.get("duration_max")
+
+    if (
+        isinstance(duration_min, (int, float))
+        and isinstance(duration_max, (int, float))
+    ):
+        if duration_min == duration_max:
+            details.append(
+                f"{_format_compact_number(duration_min)} min"
+            )
+        else:
+            details.append(
+                f"{_format_compact_number(duration_min)}-"
+                f"{_format_compact_number(duration_max)} min"
+            )
+
+    elif isinstance(duration_min, (int, float)):
+        details.append(
+            f"{_format_compact_number(duration_min)} min"
+        )
+
+    intensity = _planned_intensity_label(
+        session.get("intensity")
+    )
+
+    if intensity:
+        details.append(intensity)
+
+    target_pace = session.get("target_pace")
+    if target_pace:
+        details.append(
+            f"ritmo objetivo {target_pace}"
+        )
+
+    if session.get("optional"):
+        details.append("opcional")
+
+    description = str(
+        session.get("description") or ""
+    ).strip().rstrip(".")
+
+    if description:
+        details.append(description)
+
+    if not details:
+        return title
+
+    return f"{title}: " + ", ".join(details)
+
+def _planned_intensity_label(
+    value: Any,
+) -> str:
+    labels = {
+        "very_easy": "muy facil",
+        "easy": "facil",
+        "moderate": "moderada",
+        "marathon_pace": "ritmo maraton",
+        "Z1": "Z1",
+        "Z2": "Z2",
+        "Z1-Z2": "Z1-Z2",
+    }
+
+    if value in (None, ""):
+        return ""
+
+    return labels.get(
+        str(value),
+        str(value),
+    )
 
 def format_latest(sync: dict[str, Any] | None) -> str:
     if not sync:
@@ -2314,45 +2516,476 @@ def _recommended_long_run_km(summary: dict[str, Any], race: dict[str, Any], mode
     return max(6, round(target))
 
 
-def _planned_week_session(day: date, mode: str, long_run_km: int, target_pace: str) -> str:
+def _planned_week_sessions(
+    day: date,
+    mode: str,
+    long_run_km: int,
+    target_pace: str,
+) -> list[dict[str, Any]]:
     weekday = day.weekday()
+
+    def session(
+        sequence: int,
+        sport: str,
+        session_type: str,
+        title: str,
+        description: str,
+        *,
+        duration_min: int | None = None,
+        duration_max: int | None = None,
+        distance_km: float | None = None,
+        intensity: str | None = None,
+        target_pace_value: str | None = None,
+        optional: bool = False,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "date": day.isoformat(),
+            "sequence": sequence,
+            "sport": sport,
+            "session_type": session_type,
+            "title": title,
+            "description": description,
+            "optional": optional,
+            "status": "planned",
+        }
+
+        if duration_min is not None:
+            result["duration_min"] = duration_min
+
+        if duration_max is not None:
+            result["duration_max"] = duration_max
+
+        if distance_km is not None:
+            result["distance_km"] = distance_km
+
+        if intensity is not None:
+            result["intensity"] = intensity
+
+        if target_pace_value is not None:
+            result["target_pace"] = target_pace_value
+
+        return result
+
     if mode == "descarga":
         sessions = {
-            0: "descanso y movilidad 15-20 min",
-            1: "running 35-45 min muy facil",
-            2: "descanso o paseo; sin fuerza si quedan molestias",
-            3: "running 40-50 min facil",
-            4: "descanso o bici Z1 40-50 min",
-            5: "running 30-40 min facil",
-            6: f"tirada de {long_run_km} km facil, sin final rapido",
+            0: [
+                session(
+                    0,
+                    "recovery",
+                    "rest_mobility",
+                    "Descanso y movilidad",
+                    "Descanso y movilidad suave.",
+                    duration_min=15,
+                    duration_max=20,
+                    intensity="very_easy",
+                )
+            ],
+            1: [
+                session(
+                    0,
+                    "running",
+                    "easy",
+                    "Rodaje muy fácil",
+                    "Running muy fácil.",
+                    duration_min=35,
+                    duration_max=45,
+                    intensity="easy",
+                )
+            ],
+            2: [
+                session(
+                    0,
+                    "recovery",
+                    "rest",
+                    "Descanso o paseo",
+                    "Descanso o paseo suave. Sin fuerza si quedan molestias.",
+                    intensity="very_easy",
+                )
+            ],
+            3: [
+                session(
+                    0,
+                    "running",
+                    "easy",
+                    "Rodaje fácil",
+                    "Running fácil.",
+                    duration_min=40,
+                    duration_max=50,
+                    intensity="easy",
+                )
+            ],
+            4: [
+                session(
+                    0,
+                    "cycling",
+                    "recovery",
+                    "Bici Z1 opcional",
+                    "Descanso o bici muy suave en Z1.",
+                    duration_min=40,
+                    duration_max=50,
+                    intensity="Z1",
+                    optional=True,
+                )
+            ],
+            5: [
+                session(
+                    0,
+                    "running",
+                    "easy",
+                    "Rodaje fácil",
+                    "Running fácil.",
+                    duration_min=30,
+                    duration_max=40,
+                    intensity="easy",
+                )
+            ],
+            6: [
+                session(
+                    0,
+                    "running",
+                    "long_run",
+                    "Tirada larga",
+                    f"Tirada de {long_run_km} km fácil, sin final rápido.",
+                    distance_km=long_run_km,
+                    intensity="easy",
+                )
+            ],
         }
+
         return sessions[weekday]
+
     if mode == "controlada":
         sessions = {
-            0: "descanso y movilidad 15-20 min",
-            1: "running 45-55 min facil; 4 progresivos solo si Garmin mejora",
-            2: "running 35-45 min facil + fuerza full body A 35 min",
-            3: "running 45-60 min en Z2, sin convertirlo en tempo",
-            4: "descanso o bici Z1-Z2 45-60 min",
-            5: "running 30-40 min facil y 4 progresivos controlados",
-            6: f"tirada de {long_run_km} km facil, sin buscar ritmo objetivo",
+            0: [
+                session(
+                    0,
+                    "recovery",
+                    "rest_mobility",
+                    "Descanso y movilidad",
+                    "Descanso y movilidad suave.",
+                    duration_min=15,
+                    duration_max=20,
+                    intensity="very_easy",
+                )
+            ],
+            1: [
+                session(
+                    0,
+                    "running",
+                    "easy_progressions",
+                    "Rodaje fácil",
+                    "Rodaje fácil con 4 progresivos solo si Garmin muestra mejor recuperación.",
+                    duration_min=45,
+                    duration_max=55,
+                    intensity="easy",
+                )
+            ],
+            2: [
+                session(
+                    0,
+                    "running",
+                    "easy",
+                    "Rodaje fácil",
+                    "Running fácil.",
+                    duration_min=35,
+                    duration_max=45,
+                    intensity="easy",
+                ),
+                session(
+                    1,
+                    "strength",
+                    "full_body_a",
+                    "Fuerza full body A",
+                    "Sesión de fuerza full body A.",
+                    duration_min=35,
+                    duration_max=35,
+                    intensity="moderate",
+                ),
+            ],
+            3: [
+                session(
+                    0,
+                    "running",
+                    "aerobic",
+                    "Rodaje aeróbico Z2",
+                    "Running en Z2 sin convertirlo en tempo.",
+                    duration_min=45,
+                    duration_max=60,
+                    intensity="Z2",
+                )
+            ],
+            4: [
+                session(
+                    0,
+                    "cycling",
+                    "easy",
+                    "Bici Z1-Z2 opcional",
+                    "Descanso o bici suave en Z1-Z2.",
+                    duration_min=45,
+                    duration_max=60,
+                    intensity="Z1-Z2",
+                    optional=True,
+                )
+            ],
+            5: [
+                session(
+                    0,
+                    "running",
+                    "easy_progressions",
+                    "Rodaje fácil con progresivos",
+                    "Running fácil con 4 progresivos controlados.",
+                    duration_min=30,
+                    duration_max=40,
+                    intensity="easy",
+                )
+            ],
+            6: [
+                session(
+                    0,
+                    "running",
+                    "long_run",
+                    "Tirada larga",
+                    f"Tirada de {long_run_km} km fácil, sin buscar ritmo objetivo.",
+                    distance_km=long_run_km,
+                    intensity="easy",
+                )
+            ],
         }
-        return sessions[weekday]
-    sessions = {
-        0: "descanso y movilidad 15-20 min",
-        1: f"calidad: 2 km faciles + 3 x 2 km a {target_pace}, recuperando 3 min + vuelta a la calma",
-        2: "running 40-50 min facil + fuerza full body A 35-40 min",
-        3: "running aerobico 60-75 min en Z2",
-        4: "fuerza full body B 30-35 min + bici Z1 opcional 30 min",
-        5: "running 35-45 min facil y 4-6 progresivos",
-        6: f"tirada de {long_run_km} km facil; ultimos 3 km a ritmo maraton solo con buena recuperacion",
-    }
-    return sessions[weekday]
 
+        return sessions[weekday]
+
+    sessions = {
+        0: [
+            session(
+                0,
+                "recovery",
+                "rest_mobility",
+                "Descanso y movilidad",
+                "Descanso y movilidad suave.",
+                duration_min=15,
+                duration_max=20,
+                intensity="very_easy",
+            )
+        ],
+        1: [
+            session(
+                0,
+                "running",
+                "quality",
+                "Calidad a ritmo maratón",
+                (
+                    f"2 km fáciles + 3 x 2 km a {target_pace}, "
+                    "recuperando 3 min + vuelta a la calma."
+                ),
+                intensity="marathon_pace",
+                target_pace_value=target_pace,
+            )
+        ],
+        2: [
+            session(
+                0,
+                "running",
+                "easy",
+                "Rodaje fácil",
+                "Running fácil.",
+                duration_min=40,
+                duration_max=50,
+                intensity="easy",
+            ),
+            session(
+                1,
+                "strength",
+                "full_body_a",
+                "Fuerza full body A",
+                "Sesión de fuerza full body A.",
+                duration_min=35,
+                duration_max=40,
+                intensity="moderate",
+            ),
+        ],
+        3: [
+            session(
+                0,
+                "running",
+                "aerobic",
+                "Rodaje aeróbico",
+                "Running aeróbico en Z2.",
+                duration_min=60,
+                duration_max=75,
+                intensity="Z2",
+            )
+        ],
+        4: [
+            session(
+                0,
+                "strength",
+                "full_body_b",
+                "Fuerza full body B",
+                "Sesión de fuerza full body B.",
+                duration_min=30,
+                duration_max=35,
+                intensity="moderate",
+            ),
+            session(
+                1,
+                "cycling",
+                "recovery",
+                "Bici Z1 opcional",
+                "Bici muy suave en Z1.",
+                duration_min=30,
+                duration_max=30,
+                intensity="Z1",
+                optional=True,
+            ),
+        ],
+        5: [
+            session(
+                0,
+                "running",
+                "easy_progressions",
+                "Rodaje fácil con progresivos",
+                "Running fácil con 4-6 progresivos.",
+                duration_min=35,
+                duration_max=45,
+                intensity="easy",
+            )
+        ],
+        6: [
+            session(
+                0,
+                "running",
+                "long_run",
+                "Tirada larga",
+                (
+                    f"Tirada de {long_run_km} km fácil. "
+                    "Últimos 3 km a ritmo maratón solo con buena recuperación."
+                ),
+                distance_km=long_run_km,
+                intensity="easy",
+                target_pace_value=target_pace,
+            )
+        ],
+    }
+
+    return sessions[weekday]
 
 def _weekday_es(value: date) -> str:
     return ("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom")[value.weekday()]
 
+def _planned_week_session(
+    day: date,
+    mode: str,
+    long_run_km: int,
+    target_pace: str,
+) -> str:
+    sessions = _planned_week_sessions(
+        day,
+        mode,
+        long_run_km,
+        target_pace,
+    )
+
+    return " + ".join(
+        str(session.get("description") or session.get("title") or "")
+        for session in sessions
+    )
+
+def build_week_plan(
+    sync: dict[str, Any] | None,
+    profile: dict[str, Any] | None = None,
+    checkins: list[dict[str, Any]] | None = None,
+    owner_id: str = "telegram",
+) -> dict[str, Any]:
+    if not sync:
+        raise ValueError(
+            "Necesito una sincronizacion Garmin antes de construir el plan semanal."
+        )
+
+    payload = sync.get("payload", {})
+    summary = payload.get("summary", {})
+    wellness = payload.get("wellness", {})
+    race = payload.get("race") or {}
+
+    athlete = _profile_payload(profile)
+    injury = _injury_context(_latest_checkin(checkins))
+
+    mode = _weekly_plan_mode(
+        summary,
+        wellness,
+        injury,
+    )
+
+    reference = _reference_date(sync)
+
+    start = max(
+        reference + _DATE_ONE_DAY,
+        datetime.now(MADRID_TZ).date(),
+    )
+
+    end = start + timedelta(days=6)
+
+    long_run_km = _recommended_long_run_km(
+        summary,
+        race,
+        mode,
+    )
+
+    target_pace = _marathon_pace_from_time(
+        str(athlete.get("marathon_goal") or "")
+    )
+
+    target_pace = (
+        target_pace
+        or str(race.get("target_pace") or "ritmo maraton")
+    )
+
+    sessions: list[dict[str, Any]] = []
+
+    for offset in range(7):
+        day = start + timedelta(days=offset)
+
+        day_sessions = _planned_week_sessions(
+            day,
+            mode,
+            long_run_km,
+            target_pace,
+        )
+
+        for planned_session in day_sessions:
+            session_document = dict(planned_session)
+
+            session_document["plan_day"] = offset
+            sessions.append(session_document)
+
+    race_name = (
+        race.get("name")
+        or race.get("title")
+        or race.get("event")
+    )
+
+    if race_name:
+        objective = str(race_name)
+    elif athlete.get("marathon_goal"):
+        objective = (
+            f"Maraton objetivo {athlete.get('marathon_goal')}"
+        )
+    else:
+        objective = "Entrenamiento general"
+
+    source_sync_at = (
+        payload.get("generated_at")
+        or sync.get("received_at")
+    )
+
+    return {
+        "owner_id": str(owner_id),
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "objective": objective,
+        "mode": mode,
+        "source_sync_at": source_sync_at,
+        "sessions": sessions,
+    }
 
 def _week_reading(summary: dict[str, Any]) -> str:
     fatigue = summary.get("fatigue", {})
@@ -2367,7 +3000,6 @@ def _week_reading(summary: dict[str, Any]) -> str:
         return "todavia falta volumen especifico para Malaga."
     return "buena continuidad; conserva faciles los faciles."
 
-
 def _latest_feedback(activity: dict[str, Any]) -> str:
     sport = activity.get("sport")
     training_effect = activity.get("training_effect")
@@ -2380,7 +3012,6 @@ def _latest_feedback(activity: dict[str, Any]) -> str:
     if sport == "strength":
         return "buena transferencia si no deja agujetas antes de calidad o tirada larga."
     return "cuenta como carga general; ajusta el siguiente dia segun sensaciones."
-
 
 def _activity_coach_reading(activity: dict[str, Any], fatigue: dict[str, Any]) -> str:
     sport = activity.get("sport")
@@ -2400,7 +3031,6 @@ def _activity_coach_reading(activity: dict[str, Any], fatigue: dict[str, Any]) -
     if fatigue.get("level") == "alta":
         return "actividad dentro de una semana cargada; el valor ahora esta en asimilar."
     return "sesion compatible con seguir construyendo base."
-
 
 def _checkin_reading(checkin: dict[str, Any]) -> str:
     bits = []
@@ -2656,7 +3286,18 @@ def _ai_intents(text: str) -> list[str]:
     intents = []
     if _looks_like_activity_date(text):
         intents.append("dated_activity")
-    if any(token in text for token in ("manana", "proximo", "que hago", "series", "rodaje")):
+    if (
+        "manana" in text
+        or re.search(r"\bproximo\b", text)
+        or any(
+            token in text
+            for token in (
+                "que hago",
+                "series",
+                "rodaje",
+            )
+        )
+    ):
         intents.append("tomorrow")
     if any(token in text for token in ("cansado", "cansancio", "molestia", "dolor", "dormi", "sueno", "fatiga", "ajusta")):
         intents.append("adjust")

@@ -6,12 +6,16 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from .coach import (
     build_ai_brief,
     build_week_plan,
-    COACH_QUESTIONS,
     format_ai_help,
     format_ai_queued,
+    format_adjust,
+    format_bike,
     format_checkin_help,
     format_checkin_saved,
+    format_fatigue,
+    format_feedback,
     format_help,
+    format_health,
     format_lab_test,
     format_lab_test_applied,
     format_lab_test_corrected,
@@ -23,10 +27,20 @@ from .coach import (
     format_profile,
     format_profile_help,
     format_profile_saved,
+    format_latest,
+    format_load,
+    format_malaga,
+    format_next,
+    format_running,
     format_sync_requested,
     format_syncinfo,
     format_status,
+    format_today,
+    format_trend,
     format_voice_queued,
+    format_wattwise,
+    format_week,
+    format_training_plan,
     format_zones,
     merge_profile,
     parse_lab_test_correction,
@@ -325,32 +339,36 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
             owner_id,
         )
 
-        question = COACH_QUESTIONS[command]
+        return format_training_plan(plan)
 
-        if args:
-            question += f"\nDetalles del deportista: {args}"
-
-        question += (
-            "\nYa existe un training_plan persistente calculado para esta "
-            "semana. Usa ese plan como planificación vigente. "
-            "No inventes una planificación diferente ni cambies sus sesiones; "
-            "explica y justifica el plan guardado."
-        )
-
-        document = create_ai_job(
-            chat_id=ai_chat_id,
-            user_id=user_id,
-            text=question,
-        )
-
-        return format_ai_queued(document)
-
-    if command in COACH_QUESTIONS or (command == "/fuerza" and not args):
-        question = COACH_QUESTIONS.get(command, "Recomiéndame una sesión de fuerza según mi carga y recuperación.")
-        if args:
-            question += f"\nDetalles del deportista: {args}"
-        document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=question)
-        return format_ai_queued(document)
+    if command == "/hoy":
+        return format_today(sync)
+    if command == "/semana":
+        return format_week(sync, profile, load_checkins(5))
+    if command == "/ultima":
+        return format_latest(sync)
+    if command == "/proximo":
+        return format_next(sync, load_checkins(5))
+    if command == "/fatiga":
+        return format_fatigue(sync, load_wattwise())
+    if command == "/salud":
+        return format_health(sync)
+    if command == "/carga":
+        return format_load(sync, profile, load_wattwise())
+    if command in {"/running", "/correr", "/carga_running"}:
+        return format_running(sync)
+    if command == "/tendencia":
+        return format_trend(sync, load_sync_history(28))
+    if command == "/feedback":
+        return format_feedback(sync, load_checkins(5), profile, wattwise=load_wattwise())
+    if command == "/ajustar":
+        return format_adjust(sync, load_checkins(5), args, profile)
+    if command == "/bici":
+        return format_bike(sync, profile, load_wattwise())
+    if command in {"/potencia", "/wattwise"}:
+        return format_wattwise(load_wattwise(), sync, profile)
+    if command == "/malaga":
+        return format_malaga(sync, profile)
     if command == "/coach":
         if not args:
             return format_ai_help()

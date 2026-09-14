@@ -5,7 +5,7 @@ from contextlib import ExitStack
 from unittest.mock import patch
 
 from app import main
-from app.coach import COACH_QUESTIONS, build_ai_brief, format_week_plan
+from app.coach import build_ai_brief, format_week_plan
 
 
 class CoachRoutingTests(unittest.TestCase):
@@ -16,14 +16,8 @@ class CoachRoutingTests(unittest.TestCase):
             stack.enter_context(patch.object(main, name, return_value={}))
         self.queue = stack.enter_context(patch.object(main, "create_ai_job", return_value={"id": "job"}))
 
-    def test_coaching_commands_and_free_text_all_enter_queue(self) -> None:
-        plan_commands = {"/plan_semana", "/plan"}
-        for text in [
-            *(command for command in COACH_QUESTIONS if command not in plan_commands),
-            "/fuerza",
-            "/coach ¿Qué hago mañana?",
-            "¿Qué hago mañana?",
-        ]:
+    def test_free_text_and_coach_questions_enter_the_queue(self) -> None:
+        for text in ("/coach ¿Qué hago mañana?", "¿Qué hago mañana?"):
             with self.subTest(text=text):
                 self.queue.reset_mock()
                 response = main.route_message(text, "user", "chat")
@@ -32,7 +26,26 @@ class CoachRoutingTests(unittest.TestCase):
                 self.assertIn("análisis", response)
                 self.assertIn("40 y 70 segundos", response)
 
-    def test_week_plan_commands_persist_then_enqueue_the_plan_explanation(self) -> None:
+    def test_help_reading_commands_respond_without_waiting_for_the_local_coach(self) -> None:
+        """A command advertised by /help must not collapse into a generic AI reply."""
+        sync = {"payload": {"summary": {}, "wellness": {}}}
+        direct_commands = (
+            "/hoy", "/semana", "/ultima", "/proximo", "/fatiga", "/salud",
+            "/carga", "/running", "/correr", "/carga_running", "/tendencia",
+            "/feedback", "/ajustar", "/bici", "/potencia", "/wattwise", "/malaga",
+            "/fuerza",
+        )
+        with patch.object(main, "load_sync", return_value=sync), patch.object(main, "load_checkins", return_value=[]), patch.object(main, "load_sync_history", return_value=[]):
+            for command in direct_commands:
+                with self.subTest(command=command):
+                    self.queue.reset_mock()
+
+                    response = main.route_message(command, "user", "chat")
+
+                    self.assertNotIn("Consulta recibida", response)
+                    self.queue.assert_not_called()
+
+    def test_week_plan_commands_persist_and_return_the_saved_plan(self) -> None:
         plan = {
             "start_date": "2026-09-14",
             "end_date": "2026-09-20",
@@ -59,12 +72,11 @@ class CoachRoutingTests(unittest.TestCase):
                         owner_id="chat",
                     )
                     save.assert_called_once_with(plan, "chat")
-                    self.queue.assert_called_once()
-                    self.assertIn("planificación vigente", self.queue.call_args.kwargs["text"])
-                    self.assertIn("análisis", response)
+                    self.queue.assert_not_called()
+                    self.assertIn("Plan 7 dias", response)
 
     def test_command_arguments_survive_and_bot_suffix_is_supported(self) -> None:
-        main.route_message("/ajustar@MyBot dolor gemelo derecho", "user", "chat")
+        main.route_message("/coach@MyBot dolor gemelo derecho", "user", "chat")
         self.assertIn("dolor gemelo derecho", self.queue.call_args.kwargs["text"])
 
     def test_strength_logging_stays_transactional(self) -> None:

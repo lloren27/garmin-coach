@@ -10,7 +10,8 @@ import tempfile
 import threading
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date as Date
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -546,6 +547,9 @@ def send_telegram_voice(chat_id: str, audio_path: Path, caption: str) -> None:
 
 def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
     compact = compact_context(context)
+    question_target = _question_target(question, compact)
+    if question_target:
+        compact["extra_context"]["question_target"] = question_target
     freshness = compact["extra_context"]["data_freshness"]
     is_plan = _is_plan_question(question)
     response_scope = (
@@ -602,6 +606,9 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
                 "El campo decisions contiene únicamente propuestas estructuradas derivadas de los datos disponibles. "
                 "Los campos evidence, warnings y missing_data deben reflejar únicamente información respaldada por el contexto. "
                 "No inventes fechas, métricas, sesiones ni valores. "
+                "Si question_target indica mañana y contiene una sesión planificada, decisions debe incluir esa fecha exacta "
+                "y copiar deporte, tipo, intensidad y rango de duración de la sesión. "
+                "En ese caso answer debe decir explícitamente el mismo rango numérico de minutos, sin sustituirlo por una cifra distinta. "
                 f"{response_scope} "
                 "Revisa puntuación, coherencia y cifras antes de finalizar. No muestres razonamiento interno."
             ),
@@ -721,6 +728,8 @@ def validate_coach_decisions(
                 f"Evidence references unavailable source: {evidence.source}"
             )
 
+    _validate_question_target(result, compact)
+
     # Una respuesta de una única sesión no debería
     # contener varias decisiones independientes.
     if result.response_type == "single_session":
@@ -765,6 +774,98 @@ def validate_coach_decisions(
                 raise ValueError(
                     "Rest decision cannot contain distance"
                 )
+
+
+def _question_target(
+    question: str,
+    compact: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not re.search(r"\bmanana\b", _normalize(question)):
+        return None
+
+    target_date = (
+        datetime.now(ZoneInfo("Europe/Madrid")).date()
+        + timedelta(days=1)
+    )
+    training_plan = (compact.get("extra_context") or {}).get("training_plan")
+    sessions = []
+    for session in (training_plan or {}).get("sessions") or []:
+        if str(session.get("date") or "")[:10] != target_date.isoformat():
+            continue
+        if session.get("status") not in (None, "planned"):
+            continue
+        sessions.append(
+            {
+                key: session.get(key)
+                for key in (
+                    "date",
+                    "sport",
+                    "session_type",
+                    "duration_min",
+                    "duration_max",
+                    "distance_km",
+                    "intensity",
+                    "target_pace",
+                )
+                if session.get(key) is not None
+            }
+        )
+
+    return {
+        "kind": "tomorrow",
+        "date": target_date.isoformat(),
+        "sessions": sessions,
+    }
+
+
+def _validate_question_target(
+    result: CoachStructuredResponse,
+    compact: dict[str, Any],
+) -> None:
+    target = ((compact.get("extra_context") or {}).get("question_target") or {})
+    sessions = target.get("sessions") or []
+    if target.get("kind") != "tomorrow":
+        return
+
+    target_date = Date.fromisoformat(str(target["date"]))
+    if len(result.decisions) != 1:
+        raise ValueError("Tomorrow question requires exactly one decision")
+
+    decision = result.decisions[0]
+    if decision.date != target_date:
+        raise ValueError("Decision does not match target date")
+
+    if len(sessions) != 1:
+        return
+
+    planned = sessions[0]
+
+    for decision_key, plan_key in (
+        ("sport", "sport"),
+        ("session_type", "session_type"),
+        ("intensity", "intensity"),
+        ("duration_min", "duration_min"),
+        ("duration_max_min", "duration_max"),
+        ("distance_km", "distance_km"),
+        ("target_pace", "target_pace"),
+    ):
+        planned_value = planned.get(plan_key)
+        if planned_value is None:
+            continue
+        if getattr(decision, decision_key) != planned_value:
+            raise ValueError(
+                f"Decision {decision_key} does not match training plan"
+            )
+
+    duration_min = planned.get("duration_min")
+    duration_max = planned.get("duration_max")
+    if duration_min is not None and duration_max is not None:
+        range_pattern = re.compile(
+            rf"\b{duration_min}\s*(?:a|[-–])\s*{duration_max}\s*(?:min|minutos)\b",
+            re.IGNORECASE,
+        )
+        if not range_pattern.search(result.answer):
+            raise ValueError("Answer does not state the validated duration range")
 
 
 def _available_evidence_sources(compact: dict[str, Any]) -> set[str]:

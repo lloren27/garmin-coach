@@ -56,6 +56,7 @@ class CoachDecision(BaseModel):
     session_type: str | None = Field(default=None, max_length=80)
 
     duration_min: int | None = Field(default=None, ge=0, le=600)
+    duration_max_min: int | None = Field(default=None, ge=0, le=600)
     distance_km: float | None = Field(default=None, ge=0, le=350)
 
     intensity: Intensity = "unknown"
@@ -67,6 +68,19 @@ class CoachDecision(BaseModel):
 
     @model_validator(mode="after")
     def validate_decision(self) -> "CoachDecision":
+        if (
+            self.duration_max_min is not None
+            and self.duration_min is None
+        ):
+            raise ValueError("Duration maximum requires a minimum")
+
+        if (
+            self.duration_min is not None
+            and self.duration_max_min is not None
+            and self.duration_max_min < self.duration_min
+        ):
+            raise ValueError("Duration maximum cannot be below minimum")
+
         if self.action == "rest":
             if self.distance_km not in (None, 0):
                 raise ValueError("Rest cannot contain distance")

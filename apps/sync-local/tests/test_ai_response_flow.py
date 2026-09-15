@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import tempfile
 import unittest
@@ -19,12 +19,13 @@ def structured_response(
     answer: str,
     *,
     response_type: str = "single_session",
+    decisions: list[dict] | None = None,
 ) -> str:
     return json.dumps(
         {
             "response_type": response_type,
             "answer": answer,
-            "decisions": [],
+            "decisions": decisions or [],
             "evidence": [],
             "warnings": [],
             "missing_data": [],
@@ -131,7 +132,7 @@ class ResponseFlowTests(unittest.TestCase):
         }
 
         with patch.object(worker, "ollama_generate", return_value=draft):
-            worker.process_job({"id": "job", "text": "¿Qué hago mañana?"}, {})
+            worker.process_job({"id": "job", "text": "¿Qué me recomiendas?"}, {})
 
         payload = self.post.call_args.args[1]
         self.assertEqual(payload["output_source"], "ollama")
@@ -152,6 +153,55 @@ class ResponseFlowTests(unittest.TestCase):
             self.assertLessEqual(request["options"]["num_predict"], 1600)
             self.assertIn("todos los días", str(request["messages"]))
             self.assertIn("día y fecha exacta", str(request["messages"]))
+
+    def test_tomorrow_target_is_explicitly_sent_to_ollama(self) -> None:
+        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
+        answer = (
+            "Mañana toca un rodaje fácil de 40 a 55 minutos, según el plan vigente. "
+            "Mantén una intensidad fácil porque la carga reciente aconseja un entrenamiento suave."
+        )
+        response = Mock()
+        response.json.return_value = {
+            "message": {
+                "content": structured_response(
+                    answer,
+                    decisions=[
+                        {
+                            "action": "keep_plan",
+                            "reason": "El plan vigente sigue siendo adecuado.",
+                            "date": tomorrow.isoformat(),
+                            "sport": "running",
+                            "session_type": "easy_run",
+                            "intensity": "easy",
+                            "duration_min": 40,
+                            "duration_max_min": 55,
+                        }
+                    ],
+                )
+            },
+            "done_reason": "stop",
+        }
+        context = {
+            "training_plan": {
+                "sessions": [
+                    {
+                        "date": tomorrow.isoformat(),
+                        "sport": "running",
+                        "session_type": "easy_run",
+                        "intensity": "easy",
+                        "duration_min": 40,
+                        "duration_max": 55,
+                    }
+                ]
+            }
+        }
+
+        with patch.object(worker.httpx, "post", return_value=response) as post:
+            worker.call_ollama("¿Qué entrenamiento debería hacer mañana?", context)
+
+        request = post.call_args.kwargs["json"]
+        self.assertIn("question_target", str(request["messages"]))
+        self.assertIn(tomorrow.isoformat(), str(request["messages"]))
 
     def test_truncated_or_empty_model_response_falls_back(self) -> None:
         for content, reason in (("Hoy reduce la carga si", "length"), ("", "stop")):

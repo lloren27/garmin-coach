@@ -59,6 +59,22 @@ PIPER_VOLUME = os.getenv("PIPER_VOLUME", "1.0")
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
 VOICE_DIR = Path(os.getenv("GARMIN_COACH_VOICE_DIR", "~/Library/Application Support/Garmin Coach/voice")).expanduser()
 ANSWER_MAX_CHARS = max(300, min(3500, int(os.getenv("GARMIN_COACH_ANSWER_MAX_CHARS", "3200"))))
+INTENSITY_LABELS = frozenset(
+    {
+        "easy",
+        "moderate",
+        "tempo",
+        "threshold",
+        "vo2max",
+        "hard",
+        "recovery",
+        "very_easy",
+        "z1",
+        "z2",
+        "z1-z2",
+        "marathon_pace",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -612,9 +628,9 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
                 "No inventes fechas, métricas, sesiones ni valores. "
                 "En evidence.source usa exclusivamente una fuente incluida en extra_context.allowed_evidence_sources. "
                 "Si una fuente no aparece en esa lista, no la cites aunque normalmente pudiera existir para este deportista. "
-                "Si question_target indica mañana y contiene una sesión planificada, decisions debe incluir esa fecha exacta "
-                "y copiar deporte, tipo, intensidad y rango de duración de la sesión. "
-                "En ese caso answer debe decir explícitamente el mismo rango numérico de minutos, sin sustituirlo por una cifra distinta. "
+                "Si question_target indica mañana y contiene sesiones planificadas, decisions debe incluir una decisión por cada sesión, "
+                "en el mismo orden y con esa fecha exacta. Copia deporte, tipo, intensidad y rango de duración de cada sesión. "
+                "En ese caso answer debe decir explícitamente los mismos rangos numéricos de minutos, sin sustituirlos por cifras distintas. "
                 f"{response_scope} "
                 "Revisa puntuación, coherencia y cifras antes de finalizar. No muestres razonamiento interno."
             ),
@@ -765,7 +781,11 @@ def validate_coach_decisions(
     # Una respuesta de una única sesión no debería
     # contener varias decisiones independientes.
     if result.response_type == "single_session":
-        if len(result.decisions) > 1:
+        question_target = ((compact.get("extra_context") or {}).get("question_target") or {})
+        if (
+            len(result.decisions) > 1
+            and question_target.get("kind") != "tomorrow"
+        ):
             raise ValueError(
                 "single_session cannot contain multiple decisions"
             )
@@ -859,49 +879,52 @@ def _validate_question_target(
     if target.get("kind") != "tomorrow":
         return
 
+    expected_count = len(sessions) if sessions else 1
+    if len(result.decisions) != expected_count:
+        raise ValueError(
+            "Tomorrow question requires one decision per planned session"
+        )
+
     target_date = Date.fromisoformat(str(target["date"]))
-    if len(result.decisions) != 1:
-        raise ValueError("Tomorrow question requires exactly one decision")
-
-    decision = result.decisions[0]
-    if decision.date != target_date:
-        raise ValueError("Decision does not match target date")
-
-    if len(sessions) != 1:
+    if not sessions:
+        if result.decisions[0].date != target_date:
+            raise ValueError("Decision does not match target date")
         return
 
-    planned = sessions[0]
-    if decision.action == "modify_session":
-        raise ValueError(
-            "modify_session cannot reproduce the training plan unchanged"
-        )
-
-    for decision_key, plan_key in (
-        ("sport", "sport"),
-        ("session_type", "session_type"),
-        ("intensity", "intensity"),
-        ("duration_min", "duration_min"),
-        ("duration_max_min", "duration_max"),
-        ("distance_km", "distance_km"),
-        ("target_pace", "target_pace"),
-    ):
-        planned_value = planned.get(plan_key)
-        if planned_value is None:
-            continue
-        if getattr(decision, decision_key) != planned_value:
+    for decision, planned in zip(result.decisions, sessions):
+        if decision.date != target_date:
+            raise ValueError("Decision does not match target date")
+        if decision.action == "modify_session":
             raise ValueError(
-                f"Decision {decision_key} does not match training plan"
+                "modify_session cannot reproduce the training plan unchanged"
             )
 
-    duration_min = planned.get("duration_min")
-    duration_max = planned.get("duration_max")
-    if duration_min is not None and duration_max is not None:
-        range_pattern = re.compile(
-            rf"\b{duration_min}\s*(?:a|[-–])\s*{duration_max}\s*(?:min|minutos)\b",
-            re.IGNORECASE,
-        )
-        if not range_pattern.search(result.answer):
-            raise ValueError("Answer does not state the validated duration range")
+        for decision_key, plan_key in (
+            ("sport", "sport"),
+            ("session_type", "session_type"),
+            ("intensity", "intensity"),
+            ("duration_min", "duration_min"),
+            ("duration_max_min", "duration_max"),
+            ("distance_km", "distance_km"),
+            ("target_pace", "target_pace"),
+        ):
+            planned_value = planned.get(plan_key)
+            if planned_value is None:
+                continue
+            if getattr(decision, decision_key) != planned_value:
+                raise ValueError(
+                    f"Decision {decision_key} does not match training plan"
+                )
+
+        duration_min = planned.get("duration_min")
+        duration_max = planned.get("duration_max")
+        if duration_min is not None and duration_max is not None:
+            range_pattern = re.compile(
+                rf"\b{duration_min}\s*(?:a|[-–])\s*{duration_max}\s*(?:min|minutos)\b",
+                re.IGNORECASE,
+            )
+            if not range_pattern.search(result.answer):
+                raise ValueError("Answer does not state the validated duration range")
 
 
 def _available_evidence_sources(compact: dict[str, Any]) -> set[str]:
@@ -1090,7 +1113,7 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
         "generated_at": payload.get("generated_at"),
         "race": payload.get("race"),
         "profile": _profile_payload(context.get("profile")),
-        "training_plan": context.get("training_plan"),
+        "training_plan": _normalize_training_plan(context.get("training_plan")),
         "summary": {
             "weekly": summary.get("weekly"),
             "runs_count_28d": summary.get("runs_count_28d"),
@@ -1125,6 +1148,27 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
         "coach_brief": coach_brief,
         "extra_context": extra_context,
     }
+
+
+def _normalize_training_plan(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    plan = dict(value)
+    sessions = []
+    for source_session in value.get("sessions") or []:
+        if not isinstance(source_session, dict):
+            continue
+        session = dict(source_session)
+        if _is_intensity_label(session.get("target_pace")):
+            session["target_pace"] = None
+        sessions.append(session)
+    plan["sessions"] = sessions
+    return plan
+
+
+def _is_intensity_label(value: Any) -> bool:
+    return _normalize(str(value or "")).strip() in INTENSITY_LABELS
 
 
 def sync_freshness(sync: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:

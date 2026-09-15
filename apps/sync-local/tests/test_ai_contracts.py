@@ -128,6 +128,26 @@ class CoachContractsTests(unittest.TestCase):
             compact_context({"wattwise": {"received_at": "2026-09-15"}}),
         )
 
+    def test_context_normalizes_an_intensity_label_as_no_target_pace(self) -> None:
+        compact = compact_context(
+            {
+                "training_plan": {
+                    "sessions": [
+                        {
+                            "date": "2026-09-16",
+                            "sport": "running",
+                            "intensity": "easy",
+                            "target_pace": "easy",
+                        }
+                    ]
+                }
+            }
+        )
+
+        session = compact["extra_context"]["training_plan"]["sessions"][0]
+        self.assertIsNone(session["target_pace"])
+        self.assertEqual(session["intensity"], "easy")
+
     def test_tomorrow_decision_must_match_the_planned_session(self) -> None:
         tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
         compact = compact_context({})
@@ -287,3 +307,59 @@ class CoachContractsTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "modify_session"):
             validate_coach_decisions(response, compact)
+
+    def test_tomorrow_validates_every_planned_session(self) -> None:
+        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
+        compact = compact_context({})
+        compact["extra_context"]["question_target"] = {
+            "kind": "tomorrow",
+            "date": tomorrow.isoformat(),
+            "sessions": [
+                {
+                    "date": tomorrow.isoformat(),
+                    "sport": "running",
+                    "session_type": "easy_run",
+                    "duration_min": 40,
+                    "duration_max": 55,
+                    "intensity": "easy",
+                },
+                {
+                    "date": tomorrow.isoformat(),
+                    "sport": "strength",
+                    "session_type": "full_body",
+                    "duration_min": 35,
+                    "duration_max": 40,
+                    "intensity": "moderate",
+                },
+            ],
+        }
+        response = response_with(
+            answer=(
+                "Mañana toca un rodaje fácil de 40 a 55 minutos y una sesión "
+                "full body de 35 a 40 minutos, según el plan vigente."
+            ),
+            decisions=[
+                {
+                    "action": "keep_plan",
+                    "reason": "El plan vigente sigue siendo adecuado.",
+                    "date": tomorrow.isoformat(),
+                    "sport": "running",
+                    "session_type": "easy_run",
+                    "intensity": "easy",
+                    "duration_min": 40,
+                    "duration_max_min": 55,
+                },
+                {
+                    "action": "keep_plan",
+                    "reason": "El plan vigente sigue siendo adecuado.",
+                    "date": tomorrow.isoformat(),
+                    "sport": "strength",
+                    "session_type": "full_body",
+                    "intensity": "moderate",
+                    "duration_min": 35,
+                    "duration_max_min": 40,
+                },
+            ],
+        )
+
+        validate_coach_decisions(response, compact)

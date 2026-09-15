@@ -164,21 +164,7 @@ class ResponseFlowTests(unittest.TestCase):
         response = Mock()
         response.json.return_value = {
             "message": {
-                "content": structured_response(
-                    answer,
-                    decisions=[
-                        {
-                            "action": "keep_plan",
-                            "reason": "El plan vigente sigue siendo adecuado.",
-                            "date": tomorrow.isoformat(),
-                            "sport": "running",
-                            "session_type": "easy_run",
-                            "intensity": "easy",
-                            "duration_min": 40,
-                            "duration_max_min": 55,
-                        }
-                    ],
-                )
+                "content": structured_response(answer)
             },
             "done_reason": "stop",
         }
@@ -204,7 +190,7 @@ class ResponseFlowTests(unittest.TestCase):
         self.assertIn("question_target", str(request["messages"]))
         self.assertIn(tomorrow.isoformat(), str(request["messages"]))
 
-    def test_tomorrow_schema_and_repair_require_the_plan_session_type(self) -> None:
+    def test_planned_tomorrow_retries_when_model_emits_decisions(self) -> None:
         tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
         answer = (
             "Mañana toca un rodaje fácil de 40 a 55 minutos, según el plan vigente. "
@@ -219,12 +205,6 @@ class ResponseFlowTests(unittest.TestCase):
                         {
                             "action": "keep_plan",
                             "reason": "El plan vigente sigue siendo adecuado.",
-                            "date": tomorrow.isoformat(),
-                            "sport": "running",
-                            "session_type": "running",
-                            "intensity": "easy",
-                            "duration_min": 40,
-                            "duration_max_min": 55,
                         }
                     ],
                 )
@@ -236,18 +216,6 @@ class ResponseFlowTests(unittest.TestCase):
             "message": {
                 "content": structured_response(
                     answer,
-                    decisions=[
-                        {
-                            "action": "keep_plan",
-                            "reason": "El plan vigente sigue siendo adecuado.",
-                            "date": tomorrow.isoformat(),
-                            "sport": "running",
-                            "session_type": "easy_run",
-                            "intensity": "easy",
-                            "duration_min": 40,
-                            "duration_max_min": 55,
-                        }
-                    ],
                 )
             },
             "done_reason": "stop",
@@ -272,15 +240,50 @@ class ResponseFlowTests(unittest.TestCase):
 
         self.assertEqual(result.source, "ollama")
         schema = post.call_args_list[0].kwargs["json"]["format"]
-        decision_schema = schema["$defs"]["CoachDecision"]
-        session_type = decision_schema["properties"]["session_type"]
-        self.assertEqual(session_type["enum"], ["easy_run"])
-        self.assertIn("session_type", decision_schema["required"])
-        date = decision_schema["properties"]["date"]
-        self.assertEqual(date["const"], tomorrow.isoformat())
-        self.assertIn("date", decision_schema["required"])
+        self.assertEqual(schema["properties"]["decisions"]["maxItems"], 0)
         repair_prompt = post.call_args_list[1].kwargs["json"]["messages"][-1]["content"]
-        self.assertIn("expected 'easy_run', got 'running'", repair_prompt)
+        self.assertIn("must not emit decisions", repair_prompt)
+
+    def test_planned_tomorrow_decisions_are_derived_by_python(self) -> None:
+        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
+        answer = (
+            "Para mañana mantén la sesión de movilidad de 15 a 20 minutos prevista "
+            "en el plan de entrenamiento y evita añadir intensidad."
+        )
+        response = Mock()
+        response.json.return_value = {
+            "message": {"content": structured_response(answer)},
+            "done_reason": "stop",
+        }
+        context = {
+            "training_plan": {
+                "sessions": [
+                    {
+                        "date": tomorrow.isoformat(),
+                        "sport": "recovery",
+                        "session_type": "rest_mobility",
+                        "intensity": "very_easy",
+                        "duration_min": 15,
+                        "duration_max": 20,
+                    }
+                ]
+            }
+        }
+
+        with patch.object(worker.httpx, "post", return_value=response) as post:
+            result = worker.call_ollama("¿Qué entrenamiento debería hacer mañana?", context)
+
+        decision = result.structured_output["decisions"][0]
+        self.assertEqual(decision["source"], "training_plan")
+        self.assertEqual(decision["action"], "keep_plan")
+        self.assertEqual(decision["date"], tomorrow.isoformat())
+        self.assertEqual(decision["sport"], "recovery")
+        self.assertEqual(decision["session_type"], "rest_mobility")
+        self.assertEqual(decision["intensity"], "very_easy")
+        self.assertEqual(decision["duration_min"], 15)
+        self.assertEqual(decision["duration_max_min"], 20)
+        schema = post.call_args.kwargs["json"]["format"]
+        self.assertEqual(schema["properties"]["decisions"]["maxItems"], 0)
 
     def test_prompt_exposes_only_available_evidence_sources(self) -> None:
         answer = "Hoy mantén la carga suave porque no hay datos adicionales para elevar la intensidad."

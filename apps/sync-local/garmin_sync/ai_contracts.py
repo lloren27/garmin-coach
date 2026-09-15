@@ -22,6 +22,7 @@ Sport = Literal[
     "cycling",
     "strength",
     "mobility",
+    "recovery",
     "none",
 ]
 
@@ -34,8 +35,15 @@ Intensity = Literal[
     "threshold",
     "vo2max",
     "hard",
+    "very_easy",
+    "Z1",
+    "Z1-Z2",
+    "Z2",
+    "marathon_pace",
     "unknown",
 ]
+
+DecisionSource = Literal["ollama", "training_plan"]
 
 ResponseType = Literal[
     "analysis",
@@ -50,6 +58,7 @@ class CoachDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: DecisionAction
+    source: DecisionSource = "ollama"
     sport: Sport = "none"
 
     date: Date | None = None

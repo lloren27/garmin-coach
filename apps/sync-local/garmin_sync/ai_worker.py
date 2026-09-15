@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from .lab_tests import parse_lab_test
 from .sync import API_URL, SYNC_SECRET
 from .wattwise_context import fetch_wattwise_context
-from .ai_contracts import CoachStructuredResponse
+from .ai_contracts import CoachDecision, CoachStructuredResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -628,9 +628,8 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
                 "No inventes fechas, métricas, sesiones ni valores. "
                 "En evidence.source usa exclusivamente una fuente incluida en extra_context.allowed_evidence_sources. "
                 "Si una fuente no aparece en esa lista, no la cites aunque normalmente pudiera existir para este deportista. "
-                "Si question_target indica mañana y contiene sesiones planificadas, decisions debe incluir una decisión por cada sesión, "
-                "en el mismo orden y con esa fecha exacta. Copia deporte, tipo, intensidad y rango de duración de cada sesión. "
-                "session_type es un identificador técnico: cópialo literalmente desde question_target.sessions; no uses sinónimos ni descripciones. "
+                "Si question_target indica mañana y contiene sesiones planificadas, decisions debe ser una lista vacía. "
+                "Python añadirá las decisiones auditables desde el plan persistido; no las copies ni las reconstruyas. "
                 "En ese caso answer debe decir explícitamente los mismos rangos numéricos de minutos, sin sustituirlos por cifras distintas. "
                 f"{response_scope} "
                 "Revisa puntuación, coherencia y cifras antes de finalizar. No muestres razonamiento interno."
@@ -713,6 +712,16 @@ def _validate_ollama_response(
         raise ValueError(
             f"Invalid Ollama structured response: {exc}"
         ) from exc
+
+    planned_decisions = _planned_decisions(compact)
+    if planned_decisions:
+        if structured.decisions:
+            raise ValueError(
+                "Model must not emit decisions for planned tomorrow sessions"
+            )
+        structured = structured.model_copy(
+            update={"decisions": planned_decisions}
+        )
 
     validate_coach_decisions(structured, compact)
 
@@ -877,6 +886,10 @@ def _response_schema(compact: dict[str, Any]) -> dict[str, Any]:
     if target.get("kind") != "tomorrow" or not target.get("date"):
         return schema
 
+    if target.get("sessions"):
+        schema["properties"]["decisions"]["maxItems"] = 0
+        return schema
+
     decision_schema = schema["$defs"]["CoachDecision"]
     decision_schema["properties"]["date"]["const"] = target["date"]
     required = [*decision_schema.get("required", []), "date"]
@@ -897,6 +910,37 @@ def _response_schema(compact: dict[str, Any]) -> dict[str, Any]:
         "session_type",
     ]
     return schema
+
+
+def _planned_decisions(compact: dict[str, Any]) -> list[CoachDecision]:
+    target = ((compact.get("extra_context") or {}).get("question_target") or {})
+    sessions = target.get("sessions") or []
+    if target.get("kind") != "tomorrow" or not sessions:
+        return []
+
+    decisions: list[CoachDecision] = []
+    for session in sessions:
+        payload = {
+            "action": "keep_plan",
+            "source": "training_plan",
+            "reason": "Sesión vigente del plan de entrenamiento.",
+            "date": target["date"],
+        }
+        for decision_key, plan_key in (
+            ("sport", "sport"),
+            ("session_type", "session_type"),
+            ("intensity", "intensity"),
+            ("duration_min", "duration_min"),
+            ("duration_max_min", "duration_max"),
+            ("distance_km", "distance_km"),
+            ("target_pace", "target_pace"),
+        ):
+            value = session.get(plan_key)
+            if value is not None:
+                payload[decision_key] = value
+        decisions.append(CoachDecision.model_validate(payload))
+
+    return decisions
 
 
 def _validate_question_target(

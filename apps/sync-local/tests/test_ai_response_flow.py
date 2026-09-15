@@ -276,6 +276,9 @@ class ResponseFlowTests(unittest.TestCase):
         session_type = decision_schema["properties"]["session_type"]
         self.assertEqual(session_type["enum"], ["easy_run"])
         self.assertIn("session_type", decision_schema["required"])
+        date = decision_schema["properties"]["date"]
+        self.assertEqual(date["const"], tomorrow.isoformat())
+        self.assertIn("date", decision_schema["required"])
         repair_prompt = post.call_args_list[1].kwargs["json"]["messages"][-1]["content"]
         self.assertIn("expected 'easy_run', got 'running'", repair_prompt)
 

@@ -874,20 +874,26 @@ def _question_target(
 def _response_schema(compact: dict[str, Any]) -> dict[str, Any]:
     schema = CoachStructuredResponse.model_json_schema()
     target = ((compact.get("extra_context") or {}).get("question_target") or {})
+    if target.get("kind") != "tomorrow" or not target.get("date"):
+        return schema
+
+    decision_schema = schema["$defs"]["CoachDecision"]
+    decision_schema["properties"]["date"]["const"] = target["date"]
+    required = [*decision_schema.get("required", []), "date"]
     session_types = [
         session["session_type"]
         for session in target.get("sessions") or []
         if session.get("session_type")
     ]
     if not session_types:
+        decision_schema["required"] = list(dict.fromkeys(required))
         return schema
 
-    decision_schema = schema["$defs"]["CoachDecision"]
     decision_schema["properties"]["session_type"]["enum"] = list(
         dict.fromkeys(session_types)
     )
     decision_schema["required"] = [
-        *decision_schema.get("required", []),
+        *required,
         "session_type",
     ]
     return schema

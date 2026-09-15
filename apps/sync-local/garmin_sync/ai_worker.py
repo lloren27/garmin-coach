@@ -994,12 +994,33 @@ def _validate_question_target(
         duration_min = planned.get("duration_min")
         duration_max = planned.get("duration_max")
         if duration_min is not None and duration_max is not None:
-            range_pattern = re.compile(
-                rf"\b{duration_min}\s*(?:a|[-–])\s*{duration_max}\s*(?:min|minutos)\b",
-                re.IGNORECASE,
-            )
-            if not range_pattern.search(result.answer):
-                raise ValueError("Answer does not state the validated duration range")
+            if not _answer_states_duration(result.answer, duration_min, duration_max):
+                expected = (
+                    f"{duration_min} minutos" if duration_min == duration_max
+                    else f"{duration_min} a {duration_max} minutos"
+                )
+                raise ValueError(
+                    "Answer does not state the validated duration range: "
+                    f"session_type={planned.get('session_type')!r}, "
+                    f"date={target['date']}, expected {expected!r}"
+                )
+
+
+def _answer_states_duration(answer: str, minimum: int, maximum: int) -> bool:
+    # Parse a whole numeric duration so the end of '25–35 min' cannot be
+    # mistaken for a fixed '35 min' session.
+    pattern = re.compile(
+        r"(?<![\w.,])(?P<low>\d+(?:[.,]\d+)?)\s*"
+        r"(?:(?:a|y|[-–—])\s*(?P<high>\d+(?:[.,]\d+)?)\s*)?"
+        r"(?:minutos|minuto|mins|min)\b",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(answer):
+        low = float(match['low'].replace(',', '.'))
+        high = float((match['high'] or match['low']).replace(',', '.'))
+        if low == minimum and high == maximum:
+            return True
+    return False
 
 
 def _available_evidence_sources(compact: dict[str, Any]) -> set[str]:

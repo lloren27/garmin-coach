@@ -24,6 +24,42 @@ def response_with(**overrides: object) -> CoachStructuredResponse:
 
 
 class CoachContractsTests(unittest.TestCase):
+    def test_duration_wording_preserves_exact_plan_values(self) -> None:
+        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
+        cases = [
+            (40, 55, "entre 40 y 55 minutos", True),
+            (40, 55, "de 40 a 55 minutos", True),
+            (40, 55, "40–55 min", True),
+            (35, 35, "35 minutos", True),
+            (35, 35, "35 a 35 minutos", True),
+            (40, 55, "40 minutos", False),
+            (40, 55, "entre 40 y 50 minutos", False),
+            (35, 35, "135 minutos", False),
+            (35, 35, "25–35 minutos", False),
+            (35, 35, "35 a 40 minutos", False),
+            (35, 35, "35,5 minutos", False),
+        ]
+        for low, high, wording, accepted in cases:
+            with self.subTest(wording=wording):
+                session = {"date": tomorrow.isoformat(), "duration_min": low,
+                           "duration_max": high, "session_type": "easy"}
+                compact = compact_context({})
+                compact["extra_context"]["question_target"] = {
+                    "kind": "tomorrow", "date": tomorrow.isoformat(),
+                    "sessions": [session],
+                }
+                response = response_with(
+                    answer=f"El plan de mañana incluye {wording} de rodaje fácil.",
+                    decisions=[{"action": "keep_plan", "reason": "Sesión del plan vigente.",
+                                "date": tomorrow.isoformat(), "session_type": "easy",
+                                "duration_min": low, "duration_max_min": high}],
+                )
+                if accepted:
+                    validate_coach_decisions(response, compact)
+                else:
+                    with self.assertRaisesRegex(ValueError, "duration range"):
+                        validate_coach_decisions(response, compact)
+
     def test_contract_rejects_unknown_fields_actions_and_negative_duration(self) -> None:
         for decision in (
             {"action": "invented", "reason": "No es una acción permitida."},

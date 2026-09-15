@@ -46,6 +46,18 @@ class CoachContractsTests(unittest.TestCase):
                 ]
             )
 
+    def test_contract_rejects_an_intensity_label_as_target_pace(self) -> None:
+        with self.assertRaises(ValidationError):
+            response_with(
+                decisions=[
+                    {
+                        "action": "keep_plan",
+                        "reason": "El plan vigente sigue siendo adecuado.",
+                        "target_pace": "easy",
+                    }
+                ]
+            )
+
     def test_contract_preserves_a_duration_range(self) -> None:
         response = response_with(
             decisions=[
@@ -176,7 +188,6 @@ class CoachContractsTests(unittest.TestCase):
                     "reason": "La recuperación no es completa y la carga ha subido.",
                     "sport": "running",
                     "session_type": "running",
-                    "target_pace": "easy",
                 }
             ],
         )
@@ -239,4 +250,40 @@ class CoachContractsTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "duration range"):
+            validate_coach_decisions(response, compact)
+
+    def test_tomorrow_decision_cannot_label_an_unchanged_plan_as_modified(self) -> None:
+        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
+        compact = compact_context({})
+        compact["extra_context"]["question_target"] = {
+            "kind": "tomorrow",
+            "date": tomorrow.isoformat(),
+            "sessions": [
+                {
+                    "date": tomorrow.isoformat(),
+                    "sport": "running",
+                    "session_type": "easy_run",
+                    "duration_min": 40,
+                    "duration_max": 55,
+                    "intensity": "easy",
+                }
+            ],
+        }
+        response = response_with(
+            answer="Mañana toca un rodaje fácil de 40 a 55 minutos, según el plan vigente.",
+            decisions=[
+                {
+                    "action": "modify_session",
+                    "reason": "El plan vigente sigue siendo adecuado.",
+                    "date": tomorrow.isoformat(),
+                    "sport": "running",
+                    "session_type": "easy_run",
+                    "intensity": "easy",
+                    "duration_min": 40,
+                    "duration_max_min": 55,
+                }
+            ],
+        )
+
+        with self.assertRaisesRegex(ValueError, "modify_session"):
             validate_coach_decisions(response, compact)

@@ -547,6 +547,10 @@ def send_telegram_voice(chat_id: str, audio_path: Path, caption: str) -> None:
 
 def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
     compact = compact_context(context)
+    allowed_evidence_sources = sorted(_available_evidence_sources(compact))
+    compact["extra_context"]["allowed_evidence_sources"] = (
+        allowed_evidence_sources
+    )
     question_target = _question_target(question, compact)
     if question_target:
         compact["extra_context"]["question_target"] = question_target
@@ -606,6 +610,8 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
                 "El campo decisions contiene únicamente propuestas estructuradas derivadas de los datos disponibles. "
                 "Los campos evidence, warnings y missing_data deben reflejar únicamente información respaldada por el contexto. "
                 "No inventes fechas, métricas, sesiones ni valores. "
+                "En evidence.source usa exclusivamente una fuente incluida en extra_context.allowed_evidence_sources. "
+                "Si una fuente no aparece en esa lista, no la cites aunque normalmente pudiera existir para este deportista. "
                 "Si question_target indica mañana y contiene una sesión planificada, decisions debe incluir esa fecha exacta "
                 "y copiar deporte, tipo, intensidad y rango de duración de la sesión. "
                 "En ese caso answer debe decir explícitamente el mismo rango numérico de minutos, sin sustituirlo por una cifra distinta. "
@@ -636,6 +642,43 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
         num_predict=OLLAMA_PLAN_NUM_PREDICT if is_plan else OLLAMA_NUM_PREDICT,
         response_schema=schema,
     )
+    try:
+        structured, final_answer = _validate_ollama_response(result, compact)
+    except ValueError as first_error:
+        repair_messages = [
+            *messages,
+            {
+                "role": "user",
+                "content": (
+                    "La respuesta anterior no ha superado la validación de Python.\n"
+                    f"Error: {str(first_error)[:500]}\n\n"
+                    "Genera de nuevo la respuesta completa. No relajes ni ignores ninguna regla. "
+                    "Respeta exactamente el esquema JSON. "
+                    "En evidence.source usa solamente estas fuentes: "
+                    f"{json.dumps(allowed_evidence_sources, ensure_ascii=False)}."
+                ),
+            },
+        ]
+        retry_result = ollama_generate(
+            repair_messages,
+            think=False,
+            timeout_seconds=OLLAMA_TIMEOUT_SECONDS,
+            num_predict=OLLAMA_PLAN_NUM_PREDICT if is_plan else OLLAMA_NUM_PREDICT,
+            response_schema=schema,
+        )
+        structured, final_answer = _validate_ollama_response(retry_result, compact)
+
+    return CoachRunResult(
+        answer=final_answer,
+        structured_output=structured.model_dump(mode="json"),
+        source="ollama",
+    )
+
+
+def _validate_ollama_response(
+    result: dict[str, Any],
+    compact: dict[str, Any],
+) -> tuple[CoachStructuredResponse, str]:
     if result.get("done_reason") == "length":
         raise ValueError("Ollama structured response was truncated")
 
@@ -644,7 +687,6 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
         or result.get("response")
         or ""
     )
-
     if not str(content).strip():
         raise ValueError("Ollama returned an empty structured response")
 
@@ -658,20 +700,10 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
     validate_coach_decisions(structured, compact)
 
     answer = clean_answer(structured.answer)
-
     if is_bad_answer(answer):
         raise ValueError("Invalid natural-language answer")
 
-    final_answer = finish_coach_answer(
-        answer,
-        compact,
-    )
-
-    return CoachRunResult(
-        answer=final_answer,
-        structured_output=structured.model_dump(mode="json"),
-        source="ollama",
-    )
+    return structured, finish_coach_answer(answer, compact)
 
 
 def _is_plan_question(question: str) -> bool:
@@ -839,6 +871,10 @@ def _validate_question_target(
         return
 
     planned = sessions[0]
+    if decision.action == "modify_session":
+        raise ValueError(
+            "modify_session cannot reproduce the training plan unchanged"
+        )
 
     for decision_key, plan_key in (
         ("sport", "sport"),

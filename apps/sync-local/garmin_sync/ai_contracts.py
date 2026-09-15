@@ -68,6 +68,17 @@ class CoachDecision(BaseModel):
 
     @model_validator(mode="after")
     def validate_decision(self) -> "CoachDecision":
+        if self.target_pace and self.target_pace.strip().lower() in {
+            "easy",
+            "moderate",
+            "tempo",
+            "threshold",
+            "vo2max",
+            "hard",
+            "recovery",
+        }:
+            raise ValueError("target_pace cannot contain an intensity label")
+
         if (
             self.duration_max_min is not None
             and self.duration_min is None

@@ -20,13 +20,14 @@ def structured_response(
     *,
     response_type: str = "single_session",
     decisions: list[dict] | None = None,
+    evidence: list[dict] | None = None,
 ) -> str:
     return json.dumps(
         {
             "response_type": response_type,
             "answer": answer,
             "decisions": decisions or [],
-            "evidence": [],
+            "evidence": evidence or [],
             "warnings": [],
             "missing_data": [],
         }
@@ -203,6 +204,66 @@ class ResponseFlowTests(unittest.TestCase):
         self.assertIn("question_target", str(request["messages"]))
         self.assertIn(tomorrow.isoformat(), str(request["messages"]))
 
+    def test_prompt_exposes_only_available_evidence_sources(self) -> None:
+        answer = "Hoy mantén la carga suave porque no hay datos adicionales para elevar la intensidad."
+        response = Mock()
+        response.json.return_value = {
+            "message": {
+                "content": structured_response(
+                    answer,
+                    evidence=[{"source": "backend", "fact": "No hay datos adicionales."}],
+                )
+            },
+            "done_reason": "stop",
+        }
+
+        with patch.object(worker.httpx, "post", return_value=response) as post:
+            worker.call_ollama("¿Qué hago?", {})
+
+        prompt = str(post.call_args.kwargs["json"]["messages"])
+        self.assertIn("allowed_evidence_sources", prompt)
+        self.assertIn("backend", prompt)
+        self.assertNotIn("'checkin'", prompt)
+
+    def test_validation_failure_is_repaired_once_with_allowed_sources(self) -> None:
+        answer = "Hoy mantén la carga suave porque los datos disponibles no justifican más intensidad."
+        invalid = Mock()
+        invalid.json.return_value = {
+            "message": {
+                "content": structured_response(
+                    answer,
+                    evidence=[{"source": "checkin", "fact": "No hay molestias registradas."}],
+                )
+            },
+            "done_reason": "stop",
+        }
+        repaired = Mock()
+        repaired.json.return_value = {
+            "message": {
+                "content": structured_response(
+                    answer,
+                    evidence=[{"source": "backend", "fact": "No hay datos adicionales."}],
+                )
+            },
+            "done_reason": "stop",
+        }
+
+        with patch.object(worker.httpx, "post", side_effect=[invalid, repaired]) as post:
+            result = worker.call_ollama("¿Qué hago?", {})
+
+        self.assertEqual(result.source, "ollama")
+        self.assertEqual(post.call_count, 2)
+        repair_prompt = post.call_args_list[1].kwargs["json"]["messages"][-1]["content"]
+        self.assertIn("Evidence references unavailable source: checkin", repair_prompt)
+        self.assertIn("backend", repair_prompt)
+
+    def test_http_failure_is_not_retried_as_a_validation_repair(self) -> None:
+        with patch.object(worker.httpx, "post", side_effect=httpx.ConnectError("offline")) as post:
+            with self.assertRaises(httpx.ConnectError):
+                worker.call_ollama("¿Qué hago?", {})
+
+        self.assertEqual(post.call_count, 1)
+
     def test_truncated_or_empty_model_response_falls_back(self) -> None:
         for content, reason in (("Hoy reduce la carga si", "length"), ("", "stop")):
             draft = {"message": {"content": content, "thinking": "secret"}, "done_reason": reason}
@@ -217,7 +278,7 @@ class ResponseFlowTests(unittest.TestCase):
         draft = {"message": {"content": "Hoy corre si", "thinking": "private"}, "done_reason": "length"}
         with patch.object(worker, "ollama_generate", return_value=draft) as generate:
             worker.process_job({"id": "job", "text": "¿Qué hago mañana?"}, {})
-            self.assertEqual(generate.call_count, 1)
+            self.assertEqual(generate.call_count, 2)
             payload = self.post.call_args.args[1]
             self.assertIn("lectura básica", payload["answer"])
             self.assertNotIn("Hoy corre si", payload["answer"])

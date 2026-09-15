@@ -630,6 +630,7 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
                 "Si una fuente no aparece en esa lista, no la cites aunque normalmente pudiera existir para este deportista. "
                 "Si question_target indica mañana y contiene sesiones planificadas, decisions debe incluir una decisión por cada sesión, "
                 "en el mismo orden y con esa fecha exacta. Copia deporte, tipo, intensidad y rango de duración de cada sesión. "
+                "session_type es un identificador técnico: cópialo literalmente desde question_target.sessions; no uses sinónimos ni descripciones. "
                 "En ese caso answer debe decir explícitamente los mismos rangos numéricos de minutos, sin sustituirlos por cifras distintas. "
                 f"{response_scope} "
                 "Revisa puntuación, coherencia y cifras antes de finalizar. No muestres razonamiento interno."
@@ -649,7 +650,7 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
         },
     ]
 
-    schema = CoachStructuredResponse.model_json_schema()
+    schema = _response_schema(compact)
 
     result = ollama_generate(
         messages,
@@ -870,6 +871,28 @@ def _question_target(
     }
 
 
+def _response_schema(compact: dict[str, Any]) -> dict[str, Any]:
+    schema = CoachStructuredResponse.model_json_schema()
+    target = ((compact.get("extra_context") or {}).get("question_target") or {})
+    session_types = [
+        session["session_type"]
+        for session in target.get("sessions") or []
+        if session.get("session_type")
+    ]
+    if not session_types:
+        return schema
+
+    decision_schema = schema["$defs"]["CoachDecision"]
+    decision_schema["properties"]["session_type"]["enum"] = list(
+        dict.fromkeys(session_types)
+    )
+    decision_schema["required"] = [
+        *decision_schema.get("required", []),
+        "session_type",
+    ]
+    return schema
+
+
 def _validate_question_target(
     result: CoachStructuredResponse,
     compact: dict[str, Any],
@@ -913,7 +936,9 @@ def _validate_question_target(
                 continue
             if getattr(decision, decision_key) != planned_value:
                 raise ValueError(
-                    f"Decision {decision_key} does not match training plan"
+                    f"Decision {decision_key} does not match training plan: "
+                    f"expected {planned_value!r}, got "
+                    f"{getattr(decision, decision_key)!r}"
                 )
 
         duration_min = planned.get("duration_min")

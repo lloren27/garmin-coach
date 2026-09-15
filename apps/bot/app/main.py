@@ -220,33 +220,121 @@ async def complete_ai_job_endpoint(
     x_sync_secret: str | None = Header(default=None),
 ) -> dict:
     require_sync_secret(x_sync_secret)
+
     payload = payload or {}
+
     status = str(payload.get("status") or "completed")
+
     if status not in {"completed", "failed"}:
-        raise HTTPException(status_code=400, detail="Invalid status")
-    answer = str(payload.get("answer"))[:3500] if payload.get("answer") else None
-    error = str(payload.get("error"))[:500] if payload.get("error") else None
-    transcript = str(payload.get("transcript"))[:3500] if payload.get("transcript") else None
-    response_mode = str(payload.get("response_mode"))[:40] if payload.get("response_mode") else None
-    notify_telegram = bool(payload.get("notify_telegram", True))
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid status",
+        )
+
+    answer = (
+        str(payload.get("answer"))[:3500]
+        if payload.get("answer")
+        else None
+    )
+
+    error = (
+        str(payload.get("error"))[:500]
+        if payload.get("error")
+        else None
+    )
+
+    transcript = (
+        str(payload.get("transcript"))[:3500]
+        if payload.get("transcript")
+        else None
+    )
+
+    response_mode = (
+        str(payload.get("response_mode"))[:40]
+        if payload.get("response_mode")
+        else None
+    )
+
+    structured_output = payload.get("structured_output")
+
+    if (
+        structured_output is not None
+        and not isinstance(structured_output, dict)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid structured_output",
+        )
+
+    output_source = (
+        str(payload.get("output_source"))[:40]
+        if payload.get("output_source")
+        else None
+    )
+
+    if output_source not in {
+        None,
+        "ollama",
+        "deterministic_fallback",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid output_source",
+        )
+
+    if output_source == "ollama" and structured_output is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Ollama output requires structured_output",
+        )
+
+    if structured_output is not None and output_source != "ollama":
+        raise HTTPException(
+            status_code=400,
+            detail="structured_output is only valid for Ollama output",
+        )
+
+    notify_telegram = bool(
+        payload.get("notify_telegram", True)
+    )
+
     document = complete_ai_job(
-        job_id,
+        job_id=job_id,
         status=status,
         answer=answer,
         error=error,
         transcript=transcript,
         response_mode=response_mode,
+        structured_output=structured_output,
+        output_source=output_source,
     )
+
     if not document:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
+
     chat_id = document.get("chat_id")
+
     if chat_id and notify_telegram:
         if status == "completed" and answer:
-            await send_telegram_message(chat_id, answer)
-        elif status == "failed":
-            await send_telegram_message(chat_id, "No he podido procesarlo con el coach local. Revisa que el Mac y Ollama esten activos.")
-    return {"ok": True, "job": document}
+            await send_telegram_message(
+                chat_id,
+                answer,
+            )
 
+        elif status == "failed":
+            await send_telegram_message(
+                chat_id,
+                "No he podido procesarlo con el coach local. "
+                "Revisa que el Mac y Ollama esten activos.",
+            )
+
+    return {
+        "ok": True,
+        "job": document,
+    }
 
 def require_sync_secret(x_sync_secret: str | None) -> None:
     if settings.sync_secret and x_sync_secret != settings.sync_secret:

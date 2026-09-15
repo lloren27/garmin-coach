@@ -9,16 +9,19 @@ import sys
 import tempfile
 import threading
 import unicodedata
+from dataclasses import dataclass
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
+from pydantic import ValidationError
 
 from .lab_tests import parse_lab_test
 from .sync import API_URL, SYNC_SECRET
 from .wattwise_context import fetch_wattwise_context
+from .ai_contracts import CoachStructuredResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -55,6 +58,14 @@ PIPER_VOLUME = os.getenv("PIPER_VOLUME", "1.0")
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
 VOICE_DIR = Path(os.getenv("GARMIN_COACH_VOICE_DIR", "~/Library/Application Support/Garmin Coach/voice")).expanduser()
 ANSWER_MAX_CHARS = max(300, min(3500, int(os.getenv("GARMIN_COACH_ANSWER_MAX_CHARS", "3200"))))
+
+
+@dataclass(frozen=True)
+class CoachRunResult:
+    answer: str
+    structured_output: dict[str, Any] | None
+    source: str
+
 
 TTS_TERM_REPLACEMENTS = (
     (r"\bWattwise\b", "guat guais"),
@@ -533,7 +544,7 @@ def send_telegram_voice(chat_id: str, audio_path: Path, caption: str) -> None:
         raise RuntimeError(f"Telegram {method} failed: {data}")
 
 
-def call_ollama(question: str, context: dict[str, Any]) -> str:
+def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
     compact = compact_context(context)
     freshness = compact["extra_context"]["data_freshness"]
     is_plan = _is_plan_question(question)
@@ -585,6 +596,12 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
                 "Wattwise aporta potencia, TSS, IF y VI; no sumes TSS, TRIMP y carga muscular en una cifra. "
                 "Explica las siglas cuando sean necesarias. Distancias en km, running en min/km, "
                 "ciclismo en km/h y vatios. No conviertas ritmos de carrera en velocidades de bici. "
+                "Tu salida debe cumplir exactamente el esquema JSON solicitado. "
+                "No escribas Markdown ni ningún texto fuera del JSON. "
+                "El campo answer contiene la respuesta natural destinada al deportista. "
+                "El campo decisions contiene únicamente propuestas estructuradas derivadas de los datos disponibles. "
+                "Los campos evidence, warnings y missing_data deben reflejar únicamente información respaldada por el contexto. "
+                "No inventes fechas, métricas, sesiones ni valores. "
                 f"{response_scope} "
                 "Revisa puntuación, coherencia y cifras antes de finalizar. No muestres razonamiento interno."
             ),
@@ -602,16 +619,52 @@ def call_ollama(question: str, context: dict[str, Any]) -> str:
             ),
         },
     ]
+
+    schema = CoachStructuredResponse.model_json_schema()
+
     result = ollama_generate(
         messages,
         think=False,
         timeout_seconds=OLLAMA_TIMEOUT_SECONDS,
         num_predict=OLLAMA_PLAN_NUM_PREDICT if is_plan else OLLAMA_NUM_PREDICT,
+        response_schema=schema,
     )
-    if not valid_generation(result):
-        return basic_fallback_answer(question, context, compact)
-    content = (result.get("message") or {}).get("content") or result.get("response") or ""
-    return finish_coach_answer(str(content), compact)
+    if result.get("done_reason") == "length":
+        raise ValueError("Ollama structured response was truncated")
+
+    content = (
+        (result.get("message") or {}).get("content")
+        or result.get("response")
+        or ""
+    )
+
+    if not str(content).strip():
+        raise ValueError("Ollama returned an empty structured response")
+
+    try:
+        structured = CoachStructuredResponse.model_validate_json(content)
+    except ValidationError as exc:
+        raise ValueError(
+            f"Invalid Ollama structured response: {exc}"
+        ) from exc
+
+    validate_coach_decisions(structured, compact)
+
+    answer = clean_answer(structured.answer)
+
+    if is_bad_answer(answer):
+        raise ValueError("Invalid natural-language answer")
+
+    final_answer = finish_coach_answer(
+        answer,
+        compact,
+    )
+
+    return CoachRunResult(
+        answer=final_answer,
+        structured_output=structured.model_dump(mode="json"),
+        source="ollama",
+    )
 
 
 def _is_plan_question(question: str) -> bool:
@@ -620,29 +673,137 @@ def _is_plan_question(question: str) -> bool:
 
 
 def ollama_generate(
-    messages: list[dict[str, str]], *, think: bool, timeout_seconds: float, num_predict: int | None = None,
+    messages: list[dict[str, str]],
+    *,
+    think: bool,
+    timeout_seconds: float,
+    num_predict: int | None = None,
+    response_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    options = {
+        "temperature": 0 if response_schema else 0.2,
+        "top_p": 0.9,
+        "top_k": 20,
+        "num_ctx": OLLAMA_NUM_CTX,
+        "num_predict": num_predict or OLLAMA_NUM_PREDICT,
+    }
+
+    payload: dict[str, Any] = {
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "stream": False,
+        "think": think,
+        "options": options,
+    }
+
+    if response_schema:
+        payload["format"] = response_schema
     response = httpx.post(
         f"{OLLAMA_URL}/api/chat",
-        json={
-            "model": OLLAMA_MODEL,
-            "messages": messages,
-            "stream": False,
-            "think": think,
-            "options": {
-                "temperature": 0.2, "top_p": 0.9, "top_k": 20,
-                "num_ctx": OLLAMA_NUM_CTX, "num_predict": num_predict or OLLAMA_NUM_PREDICT,
-            },
-        },
+        json=payload,
         timeout=timeout_seconds,
     )
     response.raise_for_status()
     return response.json()
 
 
-def valid_generation(data: dict[str, Any]) -> bool:
-    content = (data.get("message") or {}).get("content") or data.get("response") or ""
-    return bool(str(content).strip()) and data.get("done_reason") != "length" and not is_bad_answer(clean_answer(str(content)))
+def validate_coach_decisions(
+    result: CoachStructuredResponse,
+    compact: dict[str, Any],
+) -> None:
+    madrid = ZoneInfo("Europe/Madrid")
+    today = datetime.now(madrid).date()
+    available_sources = _available_evidence_sources(compact)
+
+    for evidence in result.evidence:
+        if evidence.source not in available_sources:
+            raise ValueError(
+                f"Evidence references unavailable source: {evidence.source}"
+            )
+
+    # Una respuesta de una única sesión no debería
+    # contener varias decisiones independientes.
+    if result.response_type == "single_session":
+        if len(result.decisions) > 1:
+            raise ValueError(
+                "single_session cannot contain multiple decisions"
+            )
+
+    # Protección básica ante una salida absurda del modelo.
+    if result.response_type == "weekly_plan":
+        if len(result.decisions) > 7:
+            raise ValueError(
+                "weekly_plan cannot contain more than 7 decisions"
+            )
+
+    for decision in result.decisions:
+
+        # No permitir recomendaciones para fechas ya pasadas.
+        if decision.date and decision.date < today:
+            raise ValueError(
+                f"Decision points to past date: {decision.date}"
+            )
+
+        # Descanso no puede contener objetivos incompatibles.
+        if decision.action == "rest":
+            if decision.intensity not in {"rest", "recovery"}:
+                raise ValueError(
+                    "Rest decision has incompatible intensity"
+                )
+
+            if decision.target_pace:
+                raise ValueError(
+                    "Rest decision cannot contain target pace"
+                )
+
+            if decision.target_power_w:
+                raise ValueError(
+                    "Rest decision cannot contain target power"
+                )
+
+            if decision.distance_km not in (None, 0):
+                raise ValueError(
+                    "Rest decision cannot contain distance"
+                )
+
+
+def _available_evidence_sources(compact: dict[str, Any]) -> set[str]:
+    extra = compact.get("extra_context") or {}
+    summary = extra.get("summary") or {}
+    available = {"backend"}
+
+    if any(
+        value not in (None, [], {})
+        for value in (
+            extra.get("last_sync"),
+            extra.get("generated_at"),
+            extra.get("recent_activities"),
+            extra.get("wellness"),
+            extra.get("physiology"),
+            extra.get("history"),
+            *summary.values(),
+        )
+    ):
+        available.add("garmin")
+
+    if extra.get("training_plan"):
+        available.add("training_plan")
+    if extra.get("profile"):
+        available.add("profile")
+    if extra.get("applied_lab_tests"):
+        available.add("lab_test")
+    if extra.get("checkins"):
+        available.add("checkin")
+    if extra.get("strength_manual") or extra.get("strength_manual_current"):
+        available.add("strength")
+    if extra.get("wattwise_snapshot"):
+        available.add("wattwise")
+
+    wattwise_live = extra.get("wattwise_live") or {}
+    if wattwise_live and wattwise_live.get("status") != "unavailable":
+        available.add("wattwise")
+
+    return available
 
 
 def basic_fallback_answer(question: str, context: dict[str, Any], compact: dict[str, Any] | None = None) -> str:
@@ -964,10 +1125,37 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
         context = dict(context)
         context["wattwise_live"] = fetch_wattwise_context()
         try:
-            answer = call_ollama(question, context)
-        except (httpx.HTTPError, ValueError):
-            answer = basic_fallback_answer(question, context)
-        payload: dict[str, Any] = {"status": "completed", "answer": answer}
+            coach_result = call_ollama(question, context)
+        except (httpx.HTTPError, ValueError) as exc:
+            coach_result = CoachRunResult(
+                answer=basic_fallback_answer(
+                    question,
+                    context,
+                ),
+                structured_output=None,
+                source="deterministic_fallback",
+            )
+
+            print(
+                json.dumps(
+                    {
+                        "type": "coach_fallback",
+                        "job": job_id,
+                        "error": str(exc)[:500],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+        answer = coach_result.answer
+
+        payload: dict[str, Any] = {
+            "status": "completed",
+            "answer": answer,
+            "structured_output": coach_result.structured_output,
+            "output_source": coach_result.source,
+        }
+
         if transcript:
             payload["transcript"] = transcript
 

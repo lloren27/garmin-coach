@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -12,6 +13,31 @@ from unittest.mock import Mock, patch
 
 import httpx
 from garmin_sync import ai_worker as worker
+
+
+def structured_response(
+    answer: str,
+    *,
+    response_type: str = "single_session",
+) -> str:
+    return json.dumps(
+        {
+            "response_type": response_type,
+            "answer": answer,
+            "decisions": [],
+            "evidence": [],
+            "warnings": [],
+            "missing_data": [],
+        }
+    )
+
+
+def ollama_result(answer: str) -> worker.CoachRunResult:
+    return worker.CoachRunResult(
+        answer=answer,
+        structured_output={"answer": answer},
+        source="ollama",
+    )
 
 
 class ResponseFlowTests(unittest.TestCase):
@@ -27,7 +53,7 @@ class ResponseFlowTests(unittest.TestCase):
     def test_text_and_voice_use_model_and_same_answer_without_voice_truncation(self) -> None:
         answer = "Hoy te recomiendo un rodaje suave para facilitar la recuperación. " * 20
         captured = []
-        with patch.object(worker, "call_ollama", return_value=answer) as model, patch.object(worker, "deterministic_answer") as direct, patch.object(worker, "download_telegram_audio", return_value=Path("audio.ogg")), patch.object(worker, "transcribe_audio", return_value="¿Qué hago mañana?"), patch.object(worker, "synthesize_voice", return_value=Path("voice.ogg")) as synth, patch.object(worker, "send_telegram_voice"):
+        with patch.object(worker, "call_ollama", return_value=ollama_result(answer)) as model, patch.object(worker, "deterministic_answer") as direct, patch.object(worker, "download_telegram_audio", return_value=Path("audio.ogg")), patch.object(worker, "transcribe_audio", return_value="¿Qué hago mañana?"), patch.object(worker, "synthesize_voice", return_value=Path("voice.ogg")) as synth, patch.object(worker, "send_telegram_voice"):
             for job in ({"id": "text", "text": "¿Qué hago mañana?"}, {"id": "voice", "audio_file_id": "audio", "response_mode": "voice", "chat_id": "chat"}):
                 worker.process_job(job, {})
                 captured.append(self.post.call_args.args[1])
@@ -51,7 +77,7 @@ class ResponseFlowTests(unittest.TestCase):
     def test_voice_failure_preserves_full_answer_as_text(self) -> None:
         answer = "Hoy te recomiendo descansar para recuperar. " * 30
         for result in (None, RuntimeError("Piper unavailable")):
-            with self.subTest(result=result), patch.object(worker, "call_ollama", return_value=answer), patch.object(worker, "synthesize_voice", side_effect=result if isinstance(result, Exception) else None, return_value=None):
+            with self.subTest(result=result), patch.object(worker, "call_ollama", return_value=ollama_result(answer)), patch.object(worker, "synthesize_voice", side_effect=result if isinstance(result, Exception) else None, return_value=None):
                 worker.process_job({"id": "voice", "text": "¿Qué hago?", "response_mode": "voice", "chat_id": "chat"}, {})
                 payload = self.post.call_args.args[1]
                 self.assertEqual(payload["answer"], answer)
@@ -67,7 +93,7 @@ class ResponseFlowTests(unittest.TestCase):
 
         def slow_answer(_question, _context):
             time.sleep(0.04)
-            return "Hoy descansa."
+            return ollama_result("Hoy descansa.")
 
         with patch.object(worker, "TELEGRAM_BOT_TOKEN", "token"), patch.object(worker, "TELEGRAM_ACTION_INTERVAL_SECONDS", 0.01, create=True), patch.object(worker, "telegram_api", side_effect=fake_telegram), patch.object(worker, "call_ollama", side_effect=slow_answer):
             worker.process_job({"id": "text", "chat_id": "chat", "text": "¿Qué hago?"}, {})
@@ -80,7 +106,7 @@ class ResponseFlowTests(unittest.TestCase):
 
     def test_simple_question_uses_one_concise_generation_and_hides_internal_reasoning(self) -> None:
         response = Mock()
-        response.json.return_value = {"message": {"thinking": "private reasoning", "content": "Hoy conviene reducir la carga para recuperar."}, "done_reason": "stop"}
+        response.json.return_value = {"message": {"thinking": "private reasoning", "content": structured_response("Hoy conviene reducir la carga para recuperar.")}, "done_reason": "stop"}
         with patch.object(worker.httpx, "post", return_value=response) as post:
             result = worker.call_ollama("¿Qué hago?", {})
             self.assertEqual(post.call_count, 1)
@@ -90,11 +116,34 @@ class ResponseFlowTests(unittest.TestCase):
             self.assertLessEqual(request["options"]["temperature"], 0.3)
             self.assertIn("100 y 180 palabras", str(request["messages"]))
             self.assertNotIn("/no_think", str(request))
-            self.assertNotIn("private reasoning", result)
+            self.assertNotIn("private reasoning", result.answer)
+            self.assertEqual(result.source, "ollama")
+            self.assertEqual(result.structured_output["response_type"], "single_session")
+
+    def test_valid_structured_response_is_sent_with_auditable_output(self) -> None:
+        draft = {
+            "message": {
+                "content": structured_response(
+                    "Hoy realiza treinta minutos muy suaves y para si aparece dolor.",
+                )
+            },
+            "done_reason": "stop",
+        }
+
+        with patch.object(worker, "ollama_generate", return_value=draft):
+            worker.process_job({"id": "job", "text": "¿Qué hago mañana?"}, {})
+
+        payload = self.post.call_args.args[1]
+        self.assertEqual(payload["output_source"], "ollama")
+        self.assertEqual(payload["structured_output"]["response_type"], "single_session")
+        self.assertEqual(
+            payload["structured_output"]["answer"],
+            "Hoy realiza treinta minutos muy suaves y para si aparece dolor.",
+        )
 
     def test_weekly_plan_uses_one_generation_with_more_room_than_a_simple_answer(self) -> None:
         response = Mock()
-        response.json.return_value = {"message": {"content": "Lunes, descanso. Martes, rodaje suave."}, "done_reason": "stop"}
+        response.json.return_value = {"message": {"content": structured_response("Lunes descansa y el martes haz un rodaje suave de cuarenta minutos. El resto de la semana mantén la carga moderada y ajusta si aparecen molestias.", response_type="weekly_plan")}, "done_reason": "stop"}
         with patch.object(worker.httpx, "post", return_value=response) as post:
             worker.call_ollama("Prepárame el plan de esta semana, día por día", {})
             request = post.call_args.kwargs["json"]
@@ -104,23 +153,25 @@ class ResponseFlowTests(unittest.TestCase):
             self.assertIn("todos los días", str(request["messages"]))
             self.assertIn("día y fecha exacta", str(request["messages"]))
 
-    def test_truncated_or_empty_model_response_is_not_presented_as_complete(self) -> None:
+    def test_truncated_or_empty_model_response_falls_back(self) -> None:
         for content, reason in (("Hoy reduce la carga si", "length"), ("", "stop")):
-            response = Mock()
-            response.json.return_value = {"message": {"content": content, "thinking": "secret"}, "done_reason": reason}
-            with patch.object(worker.httpx, "post", return_value=response):
-                result = worker.call_ollama("¿Qué hago mañana?", worker.enrich_context_for_question("¿Qué hago mañana?", {}))
-                self.assertIn("lectura básica", result)
-                self.assertNotIn("secret", result)
+            draft = {"message": {"content": content, "thinking": "secret"}, "done_reason": reason}
+            with self.subTest(reason=reason), patch.object(worker, "ollama_generate", return_value=draft):
+                worker.process_job({"id": "job", "text": "¿Qué hago mañana?"}, {})
+                payload = self.post.call_args.args[1]
+                self.assertIn("lectura básica", payload["answer"])
+                self.assertIsNone(payload["structured_output"])
+                self.assertEqual(payload["output_source"], "deterministic_fallback")
 
     def test_incomplete_single_draft_is_not_sent(self) -> None:
         draft = {"message": {"content": "Hoy corre si", "thinking": "private"}, "done_reason": "length"}
         with patch.object(worker, "ollama_generate", return_value=draft) as generate:
-            result = worker.call_ollama("¿Qué hago mañana?", worker.enrich_context_for_question("¿Qué hago mañana?", {}))
+            worker.process_job({"id": "job", "text": "¿Qué hago mañana?"}, {})
             self.assertEqual(generate.call_count, 1)
-            self.assertIn("lectura básica", result)
-            self.assertNotIn("Hoy corre si", result)
-            self.assertNotIn("private", result)
+            payload = self.post.call_args.args[1]
+            self.assertIn("lectura básica", payload["answer"])
+            self.assertNotIn("Hoy corre si", payload["answer"])
+            self.assertIsNone(payload["structured_output"])
 
     def test_context_retains_activities_history_strength_and_source_dates(self) -> None:
         activities = [{"id": i, "sport": "cycling" if i % 2 else "running"} for i in range(25)]

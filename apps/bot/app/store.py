@@ -312,7 +312,6 @@ def complete_sync_request(status: str = "completed", error: str | None = None) -
     SYNC_REQUEST_FILE.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n")
     return document
 
-
 def create_ai_job(
     chat_id: str,
     text: str,
@@ -351,6 +350,8 @@ def create_ai_job(
         "completed_at": None,
         "answer": None,
         "error": None,
+        "structured_output": None,
+        "output_source": None,
     }
     if DATABASE_URL:
         create_ai_job_postgres(document)
@@ -360,6 +361,60 @@ def create_ai_job(
     jobs.append(document)
     save_ai_jobs_file(jobs)
     return document
+
+
+def complete_ai_job(
+    job_id: str,
+    status: str = "completed",
+    answer: str | None = None,
+    error: str | None = None,
+    transcript: str | None = None,
+    response_mode: str | None = None,
+    structured_output: dict[str, Any] | None = None,
+    output_source: str | None = None,
+) -> dict[str, Any] | None:
+    if DATABASE_URL:
+        return complete_ai_job_postgres(
+            job_id=job_id,
+            status=status,
+            answer=answer,
+            error=error,
+            transcript=transcript,
+            response_mode=response_mode,
+            structured_output=structured_output,
+            output_source=output_source,
+        )
+
+    jobs = load_ai_jobs_file()
+    now = datetime.now(timezone.utc).isoformat()
+    completed = None
+
+    for job in jobs:
+        if job.get("id") == job_id:
+            job.update(
+                {
+                    "status": status,
+                    "completed_at": now,
+                    "answer": answer,
+                    "error": error,
+                    "structured_output": structured_output,
+                    "output_source": output_source,
+                }
+            )
+
+            if transcript is not None:
+                job["transcript"] = transcript
+
+            if response_mode is not None:
+                job["response_mode"] = response_mode
+
+            completed = job
+            break
+
+    if completed:
+        save_ai_jobs_file(jobs)
+
+    return completed
 
 
 def claim_next_ai_job() -> dict[str, Any] | None:
@@ -378,41 +433,6 @@ def claim_next_ai_job() -> dict[str, Any] | None:
     if claimed:
         save_ai_jobs_file(jobs)
     return claimed
-
-
-def complete_ai_job(
-    job_id: str,
-    status: str = "completed",
-    answer: str | None = None,
-    error: str | None = None,
-    transcript: str | None = None,
-    response_mode: str | None = None,
-) -> dict[str, Any] | None:
-    if DATABASE_URL:
-        return complete_ai_job_postgres(job_id, status, answer, error, transcript, response_mode)
-
-    jobs = load_ai_jobs_file()
-    now = datetime.now(timezone.utc).isoformat()
-    completed = None
-    for job in jobs:
-        if job.get("id") == job_id:
-            job.update(
-                {
-                    "status": status,
-                    "completed_at": now,
-                    "answer": answer,
-                    "error": error,
-                }
-            )
-            if transcript is not None:
-                job["transcript"] = transcript
-            if response_mode is not None:
-                job["response_mode"] = response_mode
-            completed = job
-            break
-    if completed:
-        save_ai_jobs_file(jobs)
-    return completed
 
 
 def load_ai_jobs_file() -> list[dict[str, Any]]:
@@ -441,6 +461,7 @@ def _stale_running_job(job: dict[str, Any]) -> bool:
         claimed = claimed.replace(tzinfo=timezone.utc)
     age = datetime.now(timezone.utc) - claimed.astimezone(timezone.utc)
     return age.total_seconds() > 15 * 60
+
 
 def save_training_plan(
     plan: dict[str, Any],
@@ -489,6 +510,7 @@ def save_training_plan(
         "sessions": sessions,
     }
 
+
 def _training_plan_metadata(
     plan: dict[str, Any],
 ) -> dict[str, Any]:
@@ -511,6 +533,7 @@ def _training_plan_metadata(
         for key, value in plan.items()
         if key not in normalized_fields
     }
+
 
 def _planned_session_metadata(
     session: dict[str, Any],
@@ -535,6 +558,7 @@ def _planned_session_metadata(
         for key, value in session.items()
         if key not in normalized_fields
     }
+
 
 def save_training_plan_postgres(
     plan: dict[str, Any],
@@ -631,6 +655,7 @@ def save_training_plan_postgres(
                     ),
                 )
 
+
 def save_training_plan_file(
     plan: dict[str, Any],
     sessions: list[dict[str, Any]],
@@ -677,6 +702,7 @@ def save_training_plan_file(
         encoding="utf-8",
     )
 
+
 def load_training_plan_state_file() -> dict[str, Any]:
     if not TRAINING_PLAN_STATE_FILE.exists():
         return {
@@ -695,6 +721,7 @@ def load_training_plan_state_file() -> dict[str, Any]:
         }
 
     return state
+
 
 def load_active_training_plan(
     owner_id: str,
@@ -731,6 +758,7 @@ def load_active_training_plan(
 
     plan["sessions"] = sessions
     return plan
+
 
 def load_active_training_plan_postgres(
     owner_id: str,
@@ -848,6 +876,7 @@ def load_active_training_plan_postgres(
 
     return result
 
+
 def save_sync_postgres(document: dict[str, Any]) -> None:
     import psycopg
     from psycopg.types.json import Jsonb
@@ -868,6 +897,7 @@ def save_sync_postgres(document: dict[str, Any]) -> None:
             (Jsonb(document), document["received_at"]),
         )
 
+
 def load_sync_postgres() -> dict[str, Any] | None:
     import psycopg
 
@@ -884,6 +914,7 @@ def load_sync_postgres() -> dict[str, Any] | None:
     if isinstance(document, str):
         return json.loads(document)
     return document
+
 
 def load_sync_history_postgres(limit: int) -> list[dict[str, Any]]:
     import psycopg
@@ -1004,42 +1035,62 @@ def complete_ai_job_postgres(
     error: str | None,
     transcript: str | None = None,
     response_mode: str | None = None,
+    structured_output: dict[str, Any] | None = None,
+    output_source: str | None = None,
 ) -> dict[str, Any] | None:
     import psycopg
     from psycopg.types.json import Jsonb
 
     now = datetime.now(timezone.utc).isoformat()
+
     with psycopg.connect(DATABASE_URL) as conn:
         ensure_schema(conn)
+
         row = conn.execute(
             "select document from coach_ai_jobs where id = %s",
             (job_id,),
         ).fetchone()
+
         if not row:
             return None
+
         job = row[0]
+
         if isinstance(job, str):
             job = json.loads(job)
+
         job.update(
             {
                 "status": status,
                 "completed_at": now,
                 "answer": answer,
                 "error": error,
+                "structured_output": structured_output,
+                "output_source": output_source,
             }
         )
+
         if transcript is not None:
             job["transcript"] = transcript
+
         if response_mode is not None:
             job["response_mode"] = response_mode
+
         conn.execute(
             """
             update coach_ai_jobs
-            set status = %s, document = %s, updated_at = now()
+            set status = %s,
+                document = %s,
+                updated_at = now()
             where id = %s
             """,
-            (status, Jsonb(job), job_id),
+            (
+                status,
+                Jsonb(job),
+                job_id,
+            ),
         )
+
         return job
 
 

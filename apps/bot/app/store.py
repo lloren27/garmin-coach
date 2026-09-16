@@ -6,6 +6,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from .file_state import atomic_json, serialized_file_state
+from .plan_intent import requests_plan_change
+from .pending_changes import create_pending_change, allowed_now
+from .proposal_repository import FileProposalRepository, PostgresProposalRepository
 
 
 DATA_DIR = Path("data")
@@ -312,6 +316,7 @@ def complete_sync_request(status: str = "completed", error: str | None = None) -
     SYNC_REQUEST_FILE.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n")
     return document
 
+@serialized_file_state
 def create_ai_job(
     chat_id: str,
     text: str,
@@ -357,12 +362,51 @@ def create_ai_job(
         create_ai_job_postgres(document)
         return document
 
+    _bind_job_plan(document, load_active_training_plan(str(chat_id)))
     jobs = load_ai_jobs_file()
     jobs.append(document)
     save_ai_jobs_file(jobs)
     return document
 
 
+def _bind_job_plan(job, plan):
+    requested = requests_plan_change(job['text']) and not job.get('document_file_id')
+    job.update({
+        'owner_id': job['chat_id'],
+        'interaction_mode': 'PLAN_CHANGE' if requested else 'ANALYZE',
+        'requested_change_proposal': bool(requested and plan),
+        'plan_id': plan['id'] if plan else None,
+        'plan_revision': plan.get('revision', 1) if plan else None,
+    })
+
+
+@serialized_file_state
+def prepare_proposal_context(job, sources):
+    """Return one effective permission; persist generation sources for validation."""
+    def prepare(current, repo):
+        plan = repo.read_plan(current.get('plan_id'))
+        effective = allowed_now(current, plan)
+        current['proposal_execution_allowed'] = effective
+        current['proposal_evidence_sources'] = sorted(sources)
+        return {'training_plan': plan, 'change_proposal_allowed_now': effective}
+
+    if DATABASE_URL:
+        import psycopg
+        from psycopg.types.json import Jsonb
+        with psycopg.connect(DATABASE_URL) as conn:
+            row = conn.execute('select document from coach_ai_jobs where id = %s for update', (job['id'],)).fetchone()
+            current = row[0]
+            context = prepare(current, PostgresProposalRepository(conn))
+            conn.execute('update coach_ai_jobs set document = %s where id = %s', (Jsonb(current), job['id']))
+            return context
+    jobs = load_ai_jobs_file()
+    current = next(j for j in jobs if j['id'] == job['id'])
+    context = prepare(current, FileProposalRepository(DATA_DIR, TRAINING_PLAN_STATE_FILE))
+    save_ai_jobs_file(jobs)
+    return context
+
+
+@serialized_file_state
 def complete_ai_job(
     job_id: str,
     status: str = "completed",
@@ -391,6 +435,13 @@ def complete_ai_job(
 
     for job in jobs:
         if job.get("id") == job_id:
+            if output_source == 'ollama':
+                proposal = create_pending_change(structured_output, job,
+                    FileProposalRepository(DATA_DIR, TRAINING_PLAN_STATE_FILE))
+                if proposal:
+                    if job.get('status') == 'completed' and job.get('pending_change'):
+                        return {**job, '_completion_replayed': True}
+                    job['pending_change'] = proposal
             job.update(
                 {
                     "status": status,
@@ -417,6 +468,7 @@ def complete_ai_job(
     return completed
 
 
+@serialized_file_state
 def claim_next_ai_job() -> dict[str, Any] | None:
     if DATABASE_URL:
         return claim_next_ai_job_postgres()
@@ -444,7 +496,8 @@ def load_ai_jobs_file() -> list[dict[str, Any]]:
 
 def save_ai_jobs_file(jobs: list[dict[str, Any]]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    AI_JOBS_FILE.write_text(json.dumps(jobs[-100:], indent=2, ensure_ascii=True) + "\n")
+    # Proposal foreign references and retries must survive job retention.
+    atomic_json(AI_JOBS_FILE, jobs)
 
 
 def _stale_running_job(job: dict[str, Any]) -> bool:
@@ -463,6 +516,7 @@ def _stale_running_job(job: dict[str, Any]) -> bool:
     return age.total_seconds() > 15 * 60
 
 
+@serialized_file_state
 def save_training_plan(
     plan: dict[str, Any],
     owner_id: str,
@@ -489,6 +543,7 @@ def save_training_plan(
 
     plan_document = {
         "id": plan_id,
+        "revision": 1,
         "owner_id": str(owner_id),
         "status": "active",
         "start_date": str(plan["start_date"]),
@@ -516,6 +571,7 @@ def _training_plan_metadata(
 ) -> dict[str, Any]:
     normalized_fields = {
         "id",
+        "revision",
         "owner_id",
         "status",
         "start_date",
@@ -676,7 +732,7 @@ def save_training_plan_file(
     plans.append(plan)
     stored_sessions.extend(sessions)
 
-    plans = plans[-50:]
+    # Keep identities referenced by jobs and proposals.
 
     retained_plan_ids = {
         str(plan.get("id"))
@@ -697,10 +753,7 @@ def save_training_plan_file(
     }
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    TRAINING_PLAN_STATE_FILE.write_text(
-        json.dumps(state, indent=2, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
+    atomic_json(TRAINING_PLAN_STATE_FILE, state)
 
 
 def load_training_plan_state_file() -> dict[str, Any]:
@@ -742,6 +795,7 @@ def load_active_training_plan(
         return None
 
     plan = dict(plans[-1])
+    plan.setdefault('revision', 1)
 
     sessions = [
         session
@@ -781,7 +835,8 @@ def load_active_training_plan_postgres(
                 source_sync_at,
                 document,
                 created_at,
-                updated_at
+                updated_at,
+                revision
             from training_plans
             where owner_id = %s
               and status = 'active'
@@ -827,6 +882,7 @@ def load_active_training_plan_postgres(
     result.update(
         {
             "id": row[0],
+            "revision": row[11],
             "owner_id": row[1],
             "status": row[2],
             "start_date": row[3].isoformat(),
@@ -982,6 +1038,10 @@ def create_ai_job_postgres(document: dict[str, Any]) -> None:
 
     with psycopg.connect(DATABASE_URL) as conn:
         ensure_schema(conn)
+        row = conn.execute("select id from training_plans where owner_id = %s and status = 'active' for share",
+                           (document['chat_id'],)).fetchone()
+        plan = PostgresProposalRepository(conn).read_plan(row[0]) if row else None
+        _bind_job_plan(document, plan)
         conn.execute(
             """
             insert into coach_ai_jobs (id, status, document, created_at)
@@ -1047,7 +1107,7 @@ def complete_ai_job_postgres(
         ensure_schema(conn)
 
         row = conn.execute(
-            "select document from coach_ai_jobs where id = %s",
+            "select document from coach_ai_jobs where id = %s for update",
             (job_id,),
         ).fetchone()
 
@@ -1058,6 +1118,13 @@ def complete_ai_job_postgres(
 
         if isinstance(job, str):
             job = json.loads(job)
+
+        if output_source == 'ollama':
+            proposal = create_pending_change(structured_output, job, PostgresProposalRepository(conn))
+            if proposal:
+                if job.get('status') == 'completed' and job.get('pending_change'):
+                    return {**job, '_completion_replayed': True}
+                job['pending_change'] = proposal
 
         job.update(
             {
@@ -1157,6 +1224,14 @@ def load_state(key: str) -> dict[str, Any] | None:
 
 
 def ensure_schema(conn: Any) -> None:
+    # The schema is installed atomically. Once P0.3 exists, avoid DDL altogether:
+    # even CREATE INDEX IF NOT EXISTS takes locks that conflict with job updates.
+    migrated = conn.execute("""select 1 from pg_attribute
+        where attrelid = to_regclass('training_plans') and attname = 'revision'
+        and not attisdropped and to_regclass('pending_changes') is not null""").fetchone()
+    if migrated:
+        return
+    conn.execute('select pg_advisory_xact_lock(703003)')
     conn.execute(
         """
         create table if not exists sync_state (
@@ -1270,3 +1345,19 @@ def ensure_schema(conn: Any) -> None:
         on planned_sessions (training_plan_id, session_date, sequence)
         """
     )
+    # Avoid upgrading concurrent read locks to ACCESS EXCLUSIVE on every request.
+    # Only an actual migration needs DDL; advisory lock serializes that first run.
+    has_revision = conn.execute("""select 1 from pg_attribute
+        where attrelid = 'training_plans'::regclass and attname = 'revision' and not attisdropped""").fetchone()
+    if not has_revision:
+        conn.execute('alter table training_plans add column if not exists revision integer not null default 1 check (revision > 0)')
+    conn.execute('''create table if not exists pending_changes (
+        id text primary key,
+        owner_id text not null,
+        training_plan_id text not null references training_plans(id),
+        base_plan_revision integer not null check (base_plan_revision > 0),
+        source_job_id text not null unique references coach_ai_jobs(id),
+        status text not null check (status in ('PENDING','INVALID','APPROVED','REJECTED','APPLIED','EXPIRED','SUPERSEDED')),
+        document jsonb not null,
+        created_at timestamptz not null default now()
+    )''')

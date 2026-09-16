@@ -32,7 +32,7 @@ class CoachRoutingTests(unittest.TestCase):
         direct_commands = (
             "/hoy", "/semana", "/ultima", "/proximo", "/fatiga", "/salud",
             "/carga", "/running", "/correr", "/carga_running", "/tendencia",
-            "/feedback", "/ajustar", "/bici", "/potencia", "/wattwise", "/malaga",
+            "/feedback", "/bici", "/potencia", "/wattwise", "/malaga",
             "/fuerza",
         )
         with patch.object(main, "load_sync", return_value=sync), patch.object(main, "load_checkins", return_value=[]), patch.object(main, "load_sync_history", return_value=[]):
@@ -107,6 +107,8 @@ class CoachRoutingTests(unittest.TestCase):
         self.assertIn("strength_load_current", brief)
 
     def test_job_context_includes_only_applied_lab_tests(self) -> None:
+        self.enterContext(patch.object(main, 'prepare_proposal_context', return_value={
+            'training_plan': None, 'change_proposal_allowed_now': False}))
         with patch.object(main, "require_sync_secret"), patch.object(main, "claim_next_ai_job", return_value={"id": "job", "text": "¿Qué hago?"}), patch.object(main, "load_checkins", return_value=[]), patch.object(main, "load_sync_history", return_value=[]) as history, patch.object(main, "load_lab_tests", return_value=[{"id": "a", "status": "applied", "extracted": {"max_hr": 180}, "source": {"file_id": "private"}}, {"id": "b", "status": "pending"}]):
             result = main.next_ai_job()
             history.assert_called_once_with(28)

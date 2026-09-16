@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import httpx
+from .pending_changes import ProposalError, ProposalConflict
+from .store import prepare_proposal_context
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
@@ -180,11 +182,29 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
     wattwise = load_wattwise()
     strength_state = load_strength_state()
     owner_id = str(job.get("chat_id") or job.get("user_id") or "telegram")
-    training_plan = load_active_training_plan(owner_id)
+    sources = {'backend'}
+    for name, value in [('garmin', sync), ('profile', profile), ('checkin', checkins),
+                        ('wattwise', wattwise), ('strength', strength_state)]:
+        if value:
+            sources.add(name)
+    if job.get('plan_id'):
+        sources.add('training_plan')
+    lab_tests = [
+        {key: item.get(key) for key in ('id', 'created_at', 'status', 'extracted')}
+        for item in load_lab_tests(100) if item.get('status') == 'applied'
+    ][-5:]
+    if lab_tests:
+        sources.add('lab_test')
+    proposal_context = prepare_proposal_context(job, sources)
+    training_plan = proposal_context['training_plan']
 
     return {
-        "job": job,
+        "job": {key: value for key, value in job.items() if key not in {
+            'requested_change_proposal', 'interaction_mode', 'proposal_evidence_sources',
+            'proposal_execution_allowed'}},
         "context": {
+            'change_proposal_allowed_now': proposal_context['change_proposal_allowed_now'],
+            'proposal_evidence_sources': sorted(sources),
             "coach_brief": build_ai_brief(
                 str(job.get("text") or ""),
                 sync,
@@ -200,11 +220,7 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
             "profile": profile,
             "checkins": checkins,
             "history": history,
-            "lab_tests": [
-                {key: item.get(key) for key in ("id", "created_at", "status", "extracted")}
-                for item in load_lab_tests(100)
-                if item.get("status") == "applied"
-            ][-5:],
+            "lab_tests": lab_tests,
             "wattwise": wattwise,
             "strength_state": strength_state,
             "strength_owner_id": owner_id,
@@ -298,16 +314,18 @@ async def complete_ai_job_endpoint(
         payload.get("notify_telegram", True)
     )
 
-    document = complete_ai_job(
-        job_id=job_id,
-        status=status,
-        answer=answer,
-        error=error,
-        transcript=transcript,
-        response_mode=response_mode,
-        structured_output=structured_output,
-        output_source=output_source,
-    )
+    if output_source == 'ollama' and status != 'completed':
+        raise HTTPException(status_code=400, detail='Ollama output requires completed status')
+    try:
+        document = complete_ai_job(
+            job_id=job_id, status=status, answer=answer, error=error,
+            transcript=transcript, response_mode=response_mode,
+            structured_output=structured_output, output_source=output_source,
+        )
+    except ProposalConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProposalError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not document:
         raise HTTPException(
@@ -317,7 +335,7 @@ async def complete_ai_job_endpoint(
 
     chat_id = document.get("chat_id")
 
-    if chat_id and notify_telegram:
+    if chat_id and notify_telegram and not document.get('_completion_replayed'):
         if status == "completed" and answer:
             await send_telegram_message(
                 chat_id,
@@ -450,7 +468,8 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
     if command == "/feedback":
         return format_feedback(sync, load_checkins(5), profile, wattwise=load_wattwise())
     if command == "/ajustar":
-        return format_adjust(sync, load_checkins(5), args, profile)
+        document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=text)
+        return format_ai_queued(document)
     if command == "/bici":
         return format_bike(sync, profile, load_wattwise())
     if command in {"/potencia", "/wattwise"}:

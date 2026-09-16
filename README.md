@@ -405,6 +405,17 @@ These parameters can be adjusted with the environment variables above.
 Ollama documents [thinking](https://docs.ollama.com/capabilities/thinking) and
 [context/generation limits](https://docs.ollama.com/modelfile).
 
+## P0.3: persisted plan-change proposals
+
+Explicit requests such as `/ajustar mañana` can now produce an audited pending
+proposal. Python controls authorization, binds the job to its original plan and
+revision, validates the response twice, and persists at most one proposal per job.
+Reading the plan or reporting fatigue alone never enables proposals. This phase
+does not apply any changes to `planned_sessions`.
+
+See [P0.3 behavior, schema changes and tests](docs/p03-pending-changes.md), including
+the effective worker permission, replacement semantics and voice limitation.
+
 ## Running load analytics
 
 The running analytics model adapts the normalization, weekly aggregation, ACWR,

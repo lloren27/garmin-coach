@@ -624,6 +624,15 @@ def call_ollama(question: str, context: dict[str, Any]) -> CoachRunResult:
                 "No escribas Markdown ni ningún texto fuera del JSON. "
                 "El campo answer contiene la respuesta natural destinada al deportista. "
                 "El campo decisions contiene únicamente propuestas estructuradas derivadas de los datos disponibles. "
+                "change_proposal solo puede ser no nulo si extra_context.change_proposal_allowed_now es true. "
+                "Si es false, devuelve change_proposal=null; la fatiga o el audio no cambian ese permiso. "
+                "Si es true, puedes proponer deltas sobre session_id existentes del training_plan recibido. "
+                "Un solo delta por sesión. REPLACE_SESSION transforma la misma sesión, nunca crea otra: "
+                "requiere sport, session_type, duration_min, duration_max e intensity; puede incluir fecha y objetivos. "
+                "RESCHEDULE solo admite date; ADJUST_DURATION duration_min y opcional duration_max; "
+                "ADJUST_INTENSITY intensity u objetivos; CANCEL_SESSION proposed_values vacío. "
+                "Para evidence de la propuesta usa solo proposal_evidence_sources. "
+                "No afirmes que se han aplicado ni aprobado cambios. Si falta identificar la sesión, pregunta. "
                 "Los campos evidence, warnings y missing_data deben reflejar únicamente información respaldada por el contexto. "
                 "No inventes fechas, métricas, sesiones ni valores. "
                 "En evidence.source usa exclusivamente una fuente incluida en extra_context.allowed_evidence_sources. "
@@ -712,6 +721,9 @@ def _validate_ollama_response(
         raise ValueError(
             f"Invalid Ollama structured response: {exc}"
         ) from exc
+
+    if structured.change_proposal is not None and (compact.get('extra_context') or {}).get('change_proposal_allowed_now') is not True:
+        raise ValueError('Change proposal not authorized in execution context')
 
     planned_decisions = _planned_decisions(compact)
     if planned_decisions:
@@ -882,6 +894,8 @@ def _question_target(
 
 def _response_schema(compact: dict[str, Any]) -> dict[str, Any]:
     schema = CoachStructuredResponse.model_json_schema()
+    if (compact.get('extra_context') or {}).get('change_proposal_allowed_now') is not True:
+        schema['properties']['change_proposal'] = {'type': 'null', 'default': None}
     target = ((compact.get("extra_context") or {}).get("question_target") or {})
     if target.get("kind") != "tomorrow" or not target.get("date"):
         return schema
@@ -1203,6 +1217,8 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
     activities = summary.get("activities") or []
 
     extra_context = {
+        'change_proposal_allowed_now': context.get('change_proposal_allowed_now') is True,
+        'proposal_evidence_sources': context.get('proposal_evidence_sources', []),
         "current_time": datetime.now(ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds"),
         "data_freshness": sync_freshness(sync),
         "last_sync": sync.get("received_at"),
@@ -1367,9 +1383,22 @@ def _normalize(value: str) -> str:
     return "".join(char for char in normalized if not unicodedata.combining(char))
 
 
+def complete_coach_job(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Retry transport/server failures with the exact same generated response."""
+    for attempt in range(3):
+        try:
+            return post_json(f'/ai/jobs/{job_id}/complete', payload)
+        except httpx.HTTPError as exc:
+            retryable = not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code >= 500
+            if not retryable or attempt == 2:
+                raise
+    raise AssertionError('unreachable')
+
+
 def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
     job_id = job["id"]
     transcript = None
+    completing = False
     indicator = start_telegram_processing_indicator(str(job.get("chat_id") or "") or None)
     try:
         question = str(job.get("text") or "").strip()
@@ -1452,9 +1481,17 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
             except Exception:
                 payload["answer"] = answer
                 payload["response_mode"] = "text"
-        post_json(f"/ai/jobs/{job_id}/complete", payload)
+        completing = True
+        complete_coach_job(job_id, payload)
         print(json.dumps({"ok": True, "job": job_id, "status": "completed"}))
     except Exception as exc:
+        # A lost acknowledgement may hide a committed proposal. Do not overwrite
+        # that completion with FAILED. An uncommitted running job remains retryable.
+        if completing and isinstance(exc, httpx.HTTPError) and (
+            not isinstance(exc, httpx.HTTPStatusError)
+            or exc.response.status_code >= 500 or exc.response.status_code == 409
+        ):
+            raise
         error_payload: dict[str, Any] = {"status": "failed", "error": str(exc)[:500]}
         if transcript:
             error_payload["transcript"] = transcript

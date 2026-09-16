@@ -10,7 +10,7 @@ F0.1 añade en la capa de fuerza:
 
 - un diccionario `STRENGTH_GUIDES`, separado de `CIRCUITS` y cuyas claves son los identificadores estables de sus ejercicios;
 - una guía completa en español para cada uno de los doce ejercicios;
-- una función `get_strength_guide(exercise_id)` que devuelve la guía correspondiente o `None` para un identificador desconocido;
+- una función `get_strength_guide(exercise_id)` que hace un lookup exacto y devuelve la guía correspondiente o `None` para un identificador desconocido;
 - pruebas que garantizan la correspondencia exacta y la estructura de ambos catálogos.
 
 Quedan expresamente fuera de este sprint:
@@ -55,32 +55,54 @@ La interfaz pública será:
 get_strength_guide("sentadilla")
 ```
 
-Para un ID conocido devuelve la entrada de `STRENGTH_GUIDES`. Para un ID desconocido devuelve `None`. La función acepta identificadores estables; la resolución de nombres y alias pertenece a F0.2.
+La implementación hace un lookup exacto, sin normalización:
+
+```python
+def get_strength_guide(exercise_id: str) -> dict[str, Any] | None:
+    return STRENGTH_GUIDES.get(exercise_id)
+```
+
+Para un ID conocido devuelve la entrada de `STRENGTH_GUIDES`. Para un ID desconocido devuelve `None`. Por tanto, `get_strength_guide("sentadilla")` encuentra la guía, mientras que `get_strength_guide("Sentadilla")` y `get_strength_guide("squat")` devuelven `None`. La resolución de nombres, alias y variantes normalizadas pertenece a F0.2.
+
+## Organización del código
+
+El catálogo y su función de acceso vivirán en un módulo nuevo e independiente:
+
+```text
+apps/bot/app/strength.py
+apps/bot/app/strength_guides.py
+apps/bot/tests/test_strength_sessions.py
+apps/bot/tests/test_strength_guides.py
+```
+
+`strength_guides.py` contendrá únicamente `STRENGTH_GUIDES` y `get_strength_guide()`. `strength.py` seguirá siendo propietario de circuitos, parsing, sesiones, histórico y cálculos de carga. Las pruebas del nuevo catálogo se aislarán en `test_strength_guides.py`; la suite existente verificará que el comportamiento de fuerza no cambia.
 
 ## Integridad y pruebas
 
-Las pruebas derivarán el conjunto de IDs directamente desde `CIRCUITS` y exigirán igualdad exacta con las claves de `STRENGTH_GUIDES`:
+Las pruebas derivarán la lista de IDs directamente desde `CIRCUITS`, comprobarán primero que no existen duplicados y después exigirán igualdad exacta con las claves de `STRENGTH_GUIDES`:
 
 ```python
-exercise_ids = {
+all_exercise_ids = [
     exercise["id"]
     for exercises in CIRCUITS.values()
     for exercise in exercises
-}
+]
 
-assert set(STRENGTH_GUIDES) == exercise_ids
+assert len(all_exercise_ids) == len(set(all_exercise_ids))
+assert set(STRENGTH_GUIDES) == set(all_exercise_ids)
 ```
 
-Así se detectan tanto ejercicios sin guía como guías huérfanas. Además, las pruebas comprobarán:
+Así se detectan IDs duplicados, ejercicios sin guía y guías huérfanas. El contrato resultante es: doce ejercicios, doce IDs únicos, doce guías y una guía por `exercise_id`. Además, las pruebas comprobarán:
 
-1. Que cada guía contiene exactamente `objective`, `cues`, `errors` y `media`.
-2. Que `objective` es una cadena no vacía.
-3. Que `cues` y `errors` son tuplas no vacías cuyos elementos son cadenas no vacías.
-4. Que `media` es `None` en F0.1.
-5. Que `get_strength_guide("sentadilla")` devuelve la guía de sentadilla.
-6. Que `get_strength_guide("no_existe") is None`.
-7. Que la suite existente de fuerza sigue pasando sin cambios de comportamiento.
+1. Que existen exactamente doce ejercicios y sus IDs son únicos.
+2. Que cada guía contiene exactamente `objective`, `cues`, `errors` y `media`.
+3. Que `objective` es una cadena no vacía.
+4. Que `cues` y `errors` son tuplas no vacías cuyos elementos son cadenas no vacías.
+5. Que `media` es `None` en F0.1.
+6. Que `get_strength_guide("sentadilla")` devuelve la guía de sentadilla.
+7. Que `get_strength_guide("no_existe")`, `get_strength_guide("Sentadilla")` y `get_strength_guide("squat")` devuelven `None`.
+8. Que la suite existente de fuerza sigue pasando sin cambios de comportamiento.
 
 ## Criterio de terminado
 
-Los doce IDs declarados en `CIRCUITS` tienen una guía técnica estática accesible mediante `get_strength_guide()`, las pruebas garantizan correspondencia exacta entre ambos catálogos y ningún comportamiento existente de fuerza cambia.
+Los doce ejercicios declarados en `CIRCUITS` tienen IDs únicos y una guía técnica estática accesible mediante lookup exacto en `get_strength_guide()`. Las pruebas garantizan correspondencia exacta entre ambos catálogos, ausencia de IDs duplicados y que ningún comportamiento existente de fuerza cambia.

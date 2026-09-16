@@ -137,10 +137,20 @@ def handle_strength_command(
         return format_strength_history(state, owner_id), state, False
     if normalized_args in {"fin", "finalizar", "terminar", "cerrar"}:
         return finish_strength_session(state, owner_id)
+    if normalized_args in {"cancelar", "cancelar sesion", "descartar"}:
+        return cancel_strength_session(state, owner_id)
 
-    circuit = _requested_circuit(normalized_args)
+    delete_match = re.fullmatch(r"(?:borrar|eliminar)(?:\s+(.+))?", normalized_args)
+    if delete_match:
+        return delete_strength_session(state, owner_id, delete_match.group(1) or "")
+
+    circuit = _requested_circuit_to_start(normalized_args)
     if circuit:
         return start_strength_session(state, owner_id, circuit)
+
+    circuit = _requested_circuit_to_view(normalized_args)
+    if circuit:
+        return format_strength_circuit(circuit), state, False
 
     return add_strength_entry(state, owner_id, args)
 
@@ -162,10 +172,11 @@ def format_strength_home(sync: dict[str, Any] | None, state: dict[str, Any], own
     return (
         "Fuerza full body\n"
         f"Objetivo actual: {weekly_target}. Esta semana Garmin detecta {current_sessions}.\n"
-        "Elige circuito: /fuerza A o /fuerza B."
+        "Ver circuitos: /fuerza A o /fuerza B."
         f"{active_line}\n"
+        "Iniciar: /fuerza iniciar A o /fuerza iniciar B.\n"
         "Registrar: /fuerza add sentadilla 60kg 8/8 rir2\n"
-        "Ver sesion: /fuerza actual. Cerrar: /fuerza fin.\n"
+        "Ver sesion: /fuerza actual. Cerrar: /fuerza fin. Cancelar: /fuerza cancelar.\n"
         "A: sentadilla, peso muerto rumano, remo, press/flexiones, gemelo y Pallof press.\n"
         "B: zancada/split squat, hip thrust, jalon, press vertical, soleo y plancha lateral."
     )
@@ -174,12 +185,24 @@ def format_strength_home(sync: dict[str, Any] | None, state: dict[str, Any], own
 def format_strength_help() -> str:
     return (
         "Registro de fuerza\n"
-        "/fuerza A - empieza circuito A\n"
-        "/fuerza B - empieza circuito B\n"
+        "/fuerza A o /fuerza B - muestra los ejercicios sin iniciar una sesion\n"
+        "/fuerza iniciar A o /fuerza iniciar B - empieza una sesion\n"
         "/fuerza add sentadilla 60kg 8/8 rir2 - guarda peso, reps y repeticiones en reserva\n"
         "/fuerza actual - muestra lo registrado\n"
         "/fuerza fin - cierra la sesion y resume el volumen\n"
-        "/fuerza historial - ultimas sesiones cerradas"
+        "/fuerza cancelar - descarta la sesion activa sin guardarla\n"
+        "/fuerza historial - lista sesiones cerradas y sus identificadores\n"
+        "/fuerza borrar <id> - borra una sesion concreta\n"
+        "/fuerza borrar ultima - borra la ultima sesion cerrada"
+    )
+
+
+def format_strength_circuit(circuit: str) -> str:
+    exercises = ", ".join(item["name"] for item in CIRCUITS[circuit])
+    return (
+        f"Circuito {circuit}\n"
+        f"Ejercicios: {exercises}.\n"
+        f"Para iniciarlo usa /fuerza iniciar {circuit}."
     )
 
 
@@ -189,7 +212,7 @@ def start_strength_session(state: dict[str, Any], owner_id: str, circuit: str) -
         active = active_sessions[owner_id]
         return (
             f"Ya hay una sesion de fuerza activa: circuito {active.get('circuit')}. "
-            "Usa /fuerza actual para verla o /fuerza fin para cerrarla.",
+            "Usa /fuerza actual para verla, /fuerza fin para cerrarla o /fuerza cancelar para descartarla.",
             state,
             False,
         )
@@ -218,7 +241,7 @@ def add_strength_entry(state: dict[str, Any], owner_id: str, text: str) -> tuple
     active = state.get("active_sessions", {}).get(owner_id)
     if not active:
         return (
-            "Primero elige circuito con /fuerza A o /fuerza B. "
+            "Primero inicia un circuito con /fuerza iniciar A o /fuerza iniciar B. "
             "Luego registra ejercicios con /fuerza add sentadilla 60kg 8/8 rir2.",
             state,
             False,
@@ -240,7 +263,10 @@ def add_strength_entry(state: dict[str, Any], owner_id: str, text: str) -> tuple
 def finish_strength_session(state: dict[str, Any], owner_id: str) -> tuple[str, dict[str, Any], bool]:
     active = state.get("active_sessions", {}).pop(owner_id, None)
     if not active:
-        return "No hay una sesion de fuerza activa. Empieza con /fuerza A o /fuerza B.", state, False
+        return "No hay una sesion de fuerza activa. Empieza con /fuerza iniciar A o /fuerza iniciar B.", state, False
+
+    if not active.get("entries"):
+        return "La sesion estaba vacia: se ha cerrado y no se ha guardado.", state, True
 
     active["status"] = "completed"
     active["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -250,6 +276,53 @@ def finish_strength_session(state: dict[str, Any], owner_id: str) -> tuple[str, 
     sessions.append(active)
     state["sessions"] = sessions[-50:]
     return format_completed_session(active), state, True
+
+
+def cancel_strength_session(state: dict[str, Any], owner_id: str) -> tuple[str, dict[str, Any], bool]:
+    active = state.get("active_sessions", {}).pop(owner_id, None)
+    if not active:
+        return "No hay una sesion de fuerza activa para cancelar.", state, False
+    return f"Sesion de fuerza cancelada: circuito {active.get('circuit')}; no se ha guardado.", state, True
+
+
+def delete_strength_session(
+    state: dict[str, Any],
+    owner_id: str,
+    selector: str,
+) -> tuple[str, dict[str, Any], bool]:
+    selector = selector.strip().lower()
+    if not selector:
+        return "Indica el identificador: /fuerza borrar <id>. Consulta /fuerza historial.", state, False
+
+    sessions = state.setdefault("sessions", [])
+    owned = [(index, session) for index, session in enumerate(sessions) if session.get("owner_id") == owner_id]
+    if not owned:
+        return "No hay sesiones de fuerza cerradas para borrar.", state, False
+
+    if selector in {"ultima", "ultimo"}:
+        matches = [owned[-1]]
+    else:
+        exact = [(index, session) for index, session in owned if str(session.get("id") or "").lower() == selector]
+        matches = exact or [
+            (index, session)
+            for index, session in owned
+            if str(session.get("id") or "").lower().startswith(selector)
+        ]
+
+    if not matches:
+        return f"No encuentro una sesion tuya con el identificador {selector}.", state, False
+    if len(matches) > 1:
+        return "Ese identificador coincide con varias sesiones. Usa mas caracteres del ID.", state, False
+
+    index, session = matches[0]
+    del sessions[index]
+    session_id = _short_session_id(session)
+    completed = str(session.get("completed_at") or session.get("started_at") or "")[:10] or "sin fecha"
+    return (
+        f"Sesion de fuerza borrada: {session_id}, {completed}, circuito {session.get('circuit')}.",
+        state,
+        True,
+    )
 
 
 def parse_strength_entry(text: str, circuit: str) -> dict[str, Any] | None:
@@ -390,7 +463,7 @@ def strength_recovery_risk(summary: dict[str, Any] | None) -> int:
 def format_active_session(state: dict[str, Any], owner_id: str) -> str:
     active = state.get("active_sessions", {}).get(owner_id)
     if not active:
-        return "No hay una sesion de fuerza activa. Empieza con /fuerza A o /fuerza B."
+        return "No hay una sesion de fuerza activa. Empieza con /fuerza iniciar A o /fuerza iniciar B."
     entries = active.get("entries") or []
     if not entries:
         return (
@@ -429,9 +502,11 @@ def format_strength_history(state: dict[str, Any], owner_id: str) -> str:
         summary = session.get("summary") or summarize_strength_session(session)
         completed = str(session.get("completed_at") or session.get("started_at") or "")[:10]
         lines.append(
-            f"{completed}: circuito {session.get('circuit')}, {summary.get('sets', 0)} series, "
+            f"{_short_session_id(session)} · {completed}: circuito {session.get('circuit')}, "
+            f"{summary.get('sets', 0)} series, "
             f"{_format_compact_number(summary.get('volume_kg', 0))} kg"
         )
+    lines.append("Borra una con /fuerza borrar <id>.")
     return "\n".join(lines)
 
 
@@ -596,11 +671,21 @@ def _format_compact_number(value: Any) -> str:
     return str(int(number)) if number.is_integer() else str(round(number, 1))
 
 
-def _requested_circuit(normalized_args: str) -> str | None:
+def _requested_circuit_to_view(normalized_args: str) -> str | None:
     if normalized_args in {"a", "b"}:
         return normalized_args.upper()
-    match = re.search(r"\b(?:circuito|sesion|empezar|iniciar)\s+([ab])\b", normalized_args)
+    match = re.fullmatch(r"(?:ver\s+)?(?:circuito\s+)?([ab])", normalized_args)
     return match.group(1).upper() if match else None
+
+
+def _requested_circuit_to_start(normalized_args: str) -> str | None:
+    match = re.fullmatch(r"(?:empezar|iniciar)\s+(?:circuito\s+)?([ab])", normalized_args)
+    return match.group(1).upper() if match else None
+
+
+def _short_session_id(session: dict[str, Any]) -> str:
+    session_id = str(session.get("id") or "")
+    return session_id[:8] if session_id else "sin-id"
 
 
 def _match_exercise(normalized_text: str, circuit: str) -> CircuitExercise | None:

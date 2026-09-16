@@ -4,7 +4,7 @@ Esta guía explica cómo registrar una sesión de fuerza en el bot, qué formato
 
 ## Flujo de una sesión
 
-1. Inicia uno de los dos circuitos disponibles:
+1. Consulta los ejercicios de uno de los dos circuitos sin iniciar una sesión:
 
    ```text
    /fuerza A
@@ -14,21 +14,63 @@ Esta guía explica cómo registrar una sesión de fuerza en el bot, qué formato
    /fuerza B
    ```
 
-2. Registra cada ejercicio al terminar sus series.
+2. Inicia expresamente el circuito elegido:
 
-3. Consulta lo registrado, si lo necesitas:
+   ```text
+   /fuerza iniciar A
+   ```
+
+   ```text
+   /fuerza iniciar B
+   ```
+
+3. Registra cada ejercicio al terminar sus series.
+
+4. Consulta lo registrado, si lo necesitas:
 
    ```text
    /fuerza actual
    ```
 
-4. Cierra la sesión para guardar el resumen y que el entrenador use su carga al dar recomendaciones:
+5. Cierra la sesión para guardar el resumen y que el entrenador use su carga al dar recomendaciones:
 
    ```text
    /fuerza fin
    ```
 
+Una sesión sin ejercicios se descarta al cerrarla y no aparece en el historial. Si quieres abandonar una sesión activa, tenga o no ejercicios, utiliza `/fuerza cancelar`.
+
 Puedes consultar las últimas sesiones cerradas con `/fuerza historial` y ver esta ayuda breve con `/fuerza ayuda`.
+
+## Consultar y borrar sesiones guardadas
+
+Cada sesión iniciada recibe un UUID único. El historial muestra sus primeros ocho caracteres, que normalmente bastan para identificarla:
+
+```text
+/fuerza historial
+```
+
+Ejemplo de respuesta:
+
+```text
+Ultimas sesiones de fuerza
+7c9d15a4 · 2026-09-16: circuito A, 2 series, 960 kg
+a82f04c1 · 2026-09-14: circuito B, 12 series, 4850 kg
+```
+
+Para borrar una sesión concreta, utiliza el identificador corto mostrado o el UUID completo:
+
+```text
+/fuerza borrar 7c9d15a4
+```
+
+El bot solo busca entre las sesiones del usuario que envía el comando. Si el prefijo coincide con más de una sesión, no borra ninguna y solicita más caracteres del ID. También se puede borrar la última sesión cerrada con:
+
+```text
+/fuerza borrar ultima
+```
+
+El borrado es definitivo. Conviene consultar primero `/fuerza historial` para comprobar el identificador.
 
 ## Sintaxis de un registro
 
@@ -115,6 +157,7 @@ El circuito A incluye sentadilla, peso muerto rumano, remo, press o flexiones, g
 
 ```text
 /fuerza A
+/fuerza iniciar A
 /fuerza add sentadilla 60kg 2x8 rir2
 /fuerza add peso muerto rumano 70kg 2x8 rir2
 /fuerza add remo 45kg 2x10 rir2
@@ -141,6 +184,7 @@ El circuito B incluye zancada o split squat, hip thrust, jalón, press vertical,
 
 ```text
 /fuerza B
+/fuerza iniciar B
 /fuerza add zancada 30kg 2x10 rir2
 /fuerza add hip thrust 80kg 2x8 rir2
 /fuerza add jalon al pecho 45kg 2x10 rir2

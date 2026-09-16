@@ -5,7 +5,6 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from app import store
 from app.coach import format_feedback, format_load, format_natural_coach
 from app.strength import (
     handle_strength_command,
@@ -53,6 +52,21 @@ SYNC = {
 
 
 class StrengthSessionTests(unittest.TestCase):
+    def test_circuit_letter_previews_exercises_without_starting_session(self) -> None:
+        response, state, changed = handle_strength_command("A", None, {}, "user-1")
+
+        self.assertFalse(changed)
+        self.assertIn("Circuito A", response)
+        self.assertIn("sentadilla", response)
+        self.assertEqual(state["active_sessions"], {})
+
+    def test_explicit_start_command_starts_session(self) -> None:
+        response, state, changed = handle_strength_command("iniciar A", None, {}, "user-1")
+
+        self.assertTrue(changed)
+        self.assertIn("Sesion de fuerza iniciada: circuito A", response)
+        self.assertEqual(state["active_sessions"]["user-1"]["circuit"], "A")
+
     def test_parse_strength_entry_reads_weight_reps_and_rir(self) -> None:
         entry = parse_strength_entry("sentadilla 60kg 8/8 rir2", "A")
 
@@ -77,7 +91,7 @@ class StrengthSessionTests(unittest.TestCase):
     def test_strength_command_starts_logs_and_finishes_session(self) -> None:
         state = {}
 
-        response, state, changed = handle_strength_command("A", None, state, "user-1")
+        response, state, changed = handle_strength_command("iniciar A", None, state, "user-1")
         self.assertTrue(changed)
         self.assertIn("circuito A", response)
 
@@ -92,11 +106,15 @@ class StrengthSessionTests(unittest.TestCase):
         self.assertIn("960 kg", response)
 
     def test_strength_state_persists_between_messages(self) -> None:
+        from app import store
+
         original_data_dir = store.DATA_DIR
         with tempfile.TemporaryDirectory() as tmp:
             store.DATA_DIR = Path(tmp)
             try:
-                response, state, changed = handle_strength_command("A", None, store.load_strength_state(), "chat-1")
+                response, state, changed = handle_strength_command(
+                    "iniciar A", None, store.load_strength_state(), "chat-1"
+                )
                 self.assertTrue(changed)
                 self.assertIn("Sesion de fuerza iniciada", response)
                 store.save_strength_state(state)
@@ -121,6 +139,109 @@ class StrengthSessionTests(unittest.TestCase):
                 self.assertIn("circuito A", response)
             finally:
                 store.DATA_DIR = original_data_dir
+
+    def test_fin_discards_empty_session_instead_of_saving_it(self) -> None:
+        _, state, _ = handle_strength_command("iniciar A", None, {}, "user-1")
+
+        response, state, changed = handle_strength_command("fin", None, state, "user-1")
+
+        self.assertTrue(changed)
+        self.assertIn("vacia", response)
+        self.assertIn("no se ha guardado", response)
+        self.assertEqual(state["active_sessions"], {})
+        self.assertEqual(state["sessions"], [])
+
+    def test_cancel_discards_active_session_even_when_it_has_entries(self) -> None:
+        _, state, _ = handle_strength_command("iniciar A", None, {}, "user-1")
+        _, state, _ = handle_strength_command("add sentadilla 60kg 8/8 rir2", None, state, "user-1")
+
+        response, state, changed = handle_strength_command("cancelar", None, state, "user-1")
+
+        self.assertTrue(changed)
+        self.assertIn("cancelada", response)
+        self.assertIn("no se ha guardado", response)
+        self.assertEqual(state["active_sessions"], {})
+        self.assertEqual(state["sessions"], [])
+
+    def test_history_lists_short_ids_and_delete_removes_selected_owned_session(self) -> None:
+        state = {
+            "active_sessions": {},
+            "sessions": [
+                {
+                    "id": "7c9d15a4-8fb1-4f47-8a71-2e0db978c647",
+                    "owner_id": "user-1",
+                    "circuit": "A",
+                    "status": "completed",
+                    "completed_at": "2026-09-16T08:00:00+00:00",
+                    "entries": [],
+                },
+                {
+                    "id": "a82f04c1-1111-4222-8333-123456789abc",
+                    "owner_id": "user-1",
+                    "circuit": "B",
+                    "status": "completed",
+                    "completed_at": "2026-09-15T08:00:00+00:00",
+                    "entries": [],
+                },
+                {
+                    "id": "7c9d15a4-aaaa-4bbb-8ccc-987654321def",
+                    "owner_id": "user-2",
+                    "circuit": "A",
+                    "status": "completed",
+                    "completed_at": "2026-09-14T08:00:00+00:00",
+                    "entries": [],
+                },
+            ],
+        }
+
+        response, _, changed = handle_strength_command("historial", None, state, "user-1")
+        self.assertFalse(changed)
+        self.assertIn("7c9d15a4", response)
+        self.assertIn("a82f04c1", response)
+        self.assertNotIn("987654321def", response)
+
+        response, state, changed = handle_strength_command("borrar 7c9d15a4", None, state, "user-1")
+
+        self.assertTrue(changed)
+        self.assertIn("7c9d15a4", response)
+        self.assertEqual(
+            [session["id"] for session in state["sessions"]],
+            ["a82f04c1-1111-4222-8333-123456789abc", "7c9d15a4-aaaa-4bbb-8ccc-987654321def"],
+        )
+
+    def test_delete_rejects_ambiguous_session_prefix(self) -> None:
+        state = {
+            "active_sessions": {},
+            "sessions": [
+                {"id": "abcd1234-one", "owner_id": "user-1", "circuit": "A", "entries": []},
+                {"id": "abcd1234-two", "owner_id": "user-1", "circuit": "B", "entries": []},
+            ],
+        }
+
+        response, state, changed = handle_strength_command("borrar abcd", None, state, "user-1")
+
+        self.assertFalse(changed)
+        self.assertIn("varias sesiones", response)
+        self.assertEqual(len(state["sessions"]), 2)
+
+    def test_delete_ultima_removes_latest_owned_session(self) -> None:
+        state = {
+            "active_sessions": {},
+            "sessions": [
+                {"id": "first-session", "owner_id": "user-1", "circuit": "A", "entries": []},
+                {"id": "other-session", "owner_id": "user-2", "circuit": "A", "entries": []},
+                {"id": "last-session", "owner_id": "user-1", "circuit": "B", "entries": []},
+            ],
+        }
+
+        response, state, changed = handle_strength_command("borrar ultima", None, state, "user-1")
+
+        self.assertTrue(changed)
+        self.assertIn("last-ses", response)
+        self.assertEqual(
+            [session["id"] for session in state["sessions"]],
+            ["first-session", "other-session"],
+        )
 
     def test_strength_load_summary_scores_muscular_work(self) -> None:
         state = _strength_state_with_leg_work()

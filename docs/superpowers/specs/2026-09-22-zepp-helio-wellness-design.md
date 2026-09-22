@@ -39,7 +39,7 @@ El payload conservará las fuentes y la vista resuelta:
 {
   "wellness": {
     "schema_version": 2,
-    "garmin": { "2026-09-22": {} },
+    "garmin": { "2026-09-20": {}, "2026-09-21": {}, "2026-09-22": {} },
     "zepp": { "2026-09-20": {}, "2026-09-21": {}, "2026-09-22": {} },
     "effective": {
       "date": "2026-09-22",
@@ -70,6 +70,12 @@ consumidores detectar explícitamente el nuevo contrato. Las claves existentes d
 Garmin se preservarán dentro de `wellness.garmin` para no perder trazabilidad.
 Los formateadores y el contexto de IA migrarán a la vista effective y mostrarán
 la fuente cuando comuniquen una métrica.
+
+Garmin y Zepp cubrirán la misma ventana de lookback. Para cada fecha, el
+resolver recibirá exclusivamente `wellness.garmin[date]` y
+`wellness.zepp[date]`, de modo que el fallback de una métrica permitida por la
+política también funciona para ayer y anteayer, no sólo para hoy. Las
+actividades históricas mantienen su flujo Garmin actual e independiente.
 
 ## Política de precedencia
 
@@ -119,12 +125,18 @@ El normalizador deduplicará la misma sesión por su identificador, o por
 `start`/`end` cuando no exista, durante el lookback. La sesión elegida retendrá
 sus timestamps de inicio y fin.
 
+La fecha wellness se calcula en la zona horaria configurada del atleta o del
+sincronizador, nunca en la zona implícita del servidor. Los timestamps se
+conservan como ISO-8601 con offset; por ejemplo, una sesión con inicio
+`2026-09-21T23:41:00+02:00` y fin `2026-09-22T07:09:00+02:00` tiene
+`wellness_date: "2026-09-22"`. Railway no recalculará esa fecha en UTC.
+
 ## Normalización Zepp
 
 Por cada día solicitado, el proveedor recogerá las señales disponibles:
 
 - sueño completo, puntuación y FC en reposo;
-- pasos y segmentos de actividad;
+- pasos y segmentos diarios de movimiento usados sólo para formar agregados;
 - estrés a cinco minutos, con resumen diario derivado;
 - carga: ATL, CTL, TSB, TRIMP y sport load;
 - VO2max de Zepp como observación auxiliar por entrenamiento, separada del
@@ -142,6 +154,8 @@ El VO2max Zepp no se generará artificialmente para cada día del lookback: una
 fecha sin entrenamiento cualificado significa «sin nueva observación», no un
 valor nulo de VO2max. Permanecerá en el origen Zepp para auditoría y no entrará
 en `effective.vo2max`, que continúa siguiendo la referencia deportiva Garmin.
+Los segmentos de movimiento de Zepp nunca se transformarán en
+`summary.activities` ni competirán con las actividades Garmin.
 
 ## Resiliencia y seguridad
 
@@ -157,6 +171,13 @@ incluye `last_success_at`, `days_requested` y `days_received`; por ejemplo,
 `partial` con 3 y 2 comunica un resultado usable pero incompleto. La capa de
 aislamiento es deliberada porque Zepp-export usa una API no oficial que puede
 cambiar.
+
+Un día cuenta en `days_received` cuando la consulta de esa fecha termina
+correctamente, incluso si faltan métricas opcionales como VO2max. Por tanto,
+`days_requested: 3` y `days_received: 2` significa que falló la consulta
+completa de un día, no que faltó un dato individual. Internamente, el proveedor
+modelará cada fecha como resultado `ok` o `error` antes de calcular el estado
+global.
 
 `ZEPP_TOKEN` no se imprimirá, persistirá ni enviará a Railway. Se documentarán
 `ZEPP_TOKEN`, `ZEPP_USER_ID`, `ZEPP_BASE_URL` y
@@ -183,6 +204,17 @@ Los valores deportivos Garmin seguirán etiquetados como Garmin. Si una fuente
 no está disponible, la salida explicará el dato real disponible sin inventar
 equivalencias ni mostrar el secreto o el detalle técnico del error.
 
+## Secuencia de implementación
+
+La implementación estabilizará primero el contrato puro y determinista:
+modelos normalizados, proveedor Zepp, normalizador y sus pruebas; después el
+resolver, política, validadores, sueño atómico y pruebas de fallback. Sólo
+cuando esas capas produzcan la misma salida ante las mismas entradas se añadirá
+el lookback de ambos proveedores, la persistencia/upsert y la construcción de
+`effective`/`history`. Finalmente se migrarán `/today`, `/health` y el contexto
+de Ollama, y se ejecutarán pruebas end-to-end del sync. Ollama no cambia antes
+de que el resolver esté estable.
+
 ## Pruebas y criterios de aceptación
 
 La integración contará con pruebas aisladas para:
@@ -200,7 +232,11 @@ La integración contará con pruebas aisladas para:
 11. validadores defensivos y fallback sólo ante datos válidos;
 12. VO2max Zepp observado por entrenamiento, sin anular VO2max Garmin;
 13. clasificación `partial` y conteo de días del proveedor;
-14. upsert por usuario, fecha y fuente sin duplicados.
+14. upsert por usuario, fecha y fuente sin duplicados;
+15. fallback Garmin por cada fecha del lookback;
+16. fecha de sueño y timestamps invariantes frente a la zona horaria de
+    Railway;
+17. segmentos de movimiento Zepp excluidos de las actividades Garmin.
 
 Se considerará terminado cuando una sincronización completa mantenga las
 actividades Garmin intactas, publique los tres días de wellness normalizado y

@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from garminconnect import Garmin
 
 from .running_analytics import enrich_running_load
+from .wellness_resolver import resolve_wellness
+from .zepp_provider import ZeppProvider
 
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
@@ -378,6 +380,122 @@ def compact_wellness(client: Garmin) -> dict[str, Any]:
     }
 
 
+def collect_wellness_history(
+    client: Garmin,
+    dates: list[date],
+    zepp_provider: ZeppProvider,
+    timezone_name: str,
+) -> dict[str, Any]:
+    ordered_dates = sorted(dates)
+    garmin_days = {
+        day.isoformat(): compact_garmin_wellness(client, day, timezone_name)
+        for day in ordered_dates
+    }
+    zepp_results, provider_status = zepp_provider.fetch_days(ordered_dates)
+    zepp_days = {
+        day.isoformat(): _zepp_result_data(zepp_results.get(day.isoformat()))
+        for day in ordered_dates
+    }
+    history = {
+        day_text: {
+            "effective": resolve_wellness(garmin_days[day_text], zepp_days[day_text], day_text),
+        }
+        for day_text in garmin_days
+    }
+    today = ordered_dates[-1].isoformat()
+    return {
+        "schema_version": 2,
+        "timezone": timezone_name,
+        "garmin": garmin_days,
+        "zepp": zepp_days,
+        "history": history,
+        "effective": history[today]["effective"],
+        "provider_status": {"zepp": provider_status},
+    }
+
+
+def compact_garmin_wellness(client: Garmin, wellness_date: date, timezone_name: str) -> dict[str, Any]:
+    day = wellness_date.isoformat()
+    daily = safe_call("daily_summary", client.get_user_summary, day)
+    sleep = safe_call("sleep", client.get_sleep_data, day)
+    rhr = safe_call("resting_hr", client.get_rhr_day, day)
+    stress = safe_call("stress", client.get_stress_data, day)
+    all_day_stress = safe_call("all_day_stress", client.get_all_day_stress, day)
+
+    result: dict[str, Any] = {}
+    daily_source = daily if isinstance(daily, dict) and "_unavailable" not in daily else {}
+    steps = _pick(daily_source, "totalSteps", "steps")
+    if isinstance(steps, (int, float)) and not isinstance(steps, bool):
+        result["steps"] = {"value": round(steps), "unit": "steps", "source": "garmin", "observed_at": day}
+    resting = _pick(daily_source, "restingHeartRate")
+    rhr_source = rhr if isinstance(rhr, dict) and "_unavailable" not in rhr else {}
+    resting = resting if resting is not None else _pick(rhr_source, "restingHeartRate", "value", "heartRate")
+    if isinstance(resting, (int, float)) and not isinstance(resting, bool):
+        result["resting_hr"] = {"value": round(resting), "unit": "bpm", "source": "garmin", "observed_at": day}
+
+    normalized_sleep = compact_garmin_sleep(sleep, timezone_name)
+    if normalized_sleep:
+        result["sleep"] = normalized_sleep
+    normalized_stress = compact_garmin_stress(stress, all_day_stress, day)
+    if normalized_stress:
+        result["stress"] = normalized_stress
+    return result
+
+
+def compact_garmin_sleep(value: Any, timezone_name: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or "_unavailable" in value:
+        return {}
+    dto = value.get("dailySleepDTO") if isinstance(value.get("dailySleepDTO"), dict) else value
+    total_seconds = _pick(dto, "sleepTimeSeconds", "totalSleepSeconds")
+    start = _timestamp_to_iso(_pick(dto, "sleepStartTimestampGMT", "sleepStartTimestampLocal"), timezone_name)
+    end = _timestamp_to_iso(_pick(dto, "sleepEndTimestampGMT", "sleepEndTimestampLocal"), timezone_name)
+    if not isinstance(total_seconds, (int, float)) or not start or not end:
+        return {}
+    score = value.get("sleepScores") if isinstance(value.get("sleepScores"), dict) else {}
+    overall = score.get("overall") if isinstance(score.get("overall"), dict) else score.get("overall")
+    values = {
+        "start": start,
+        "end": end,
+        "total_minutes": round(total_seconds / 60),
+        "deep_minutes": _seconds_to_minutes(_pick(dto, "deepSleepSeconds")),
+        "light_minutes": _seconds_to_minutes(_pick(dto, "lightSleepSeconds")),
+        "rem_minutes": _seconds_to_minutes(_pick(dto, "remSleepSeconds")),
+        "awake_minutes": _seconds_to_minutes(_pick(dto, "awakeSleepSeconds")),
+        "score": _pick(overall, "value") if isinstance(overall, dict) else overall,
+        "source": "garmin",
+    }
+    return {key: item for key, item in values.items() if item is not None}
+
+
+def compact_garmin_stress(stress: Any, all_day: Any, day: str) -> dict[str, Any]:
+    primary = stress if isinstance(stress, dict) and "_unavailable" not in stress else {}
+    secondary = all_day if isinstance(all_day, dict) and "_unavailable" not in all_day else {}
+    average = _pick(primary, "avgStressLevel", "averageStressLevel", "overallStressLevel", "stressLevel")
+    if average is None:
+        average = _pick(secondary, "avgStressLevel", "averageStressLevel")
+    if not isinstance(average, (int, float)) or isinstance(average, bool):
+        return {}
+    return {"avg": average, "source": "garmin", "observed_at": day}
+
+
+def _zepp_result_data(result: Any) -> dict[str, Any]:
+    data = getattr(result, "data", None)
+    return data.to_dict() if data is not None and getattr(result, "status", None) == "ok" else {}
+
+
+def _seconds_to_minutes(value: Any) -> int | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(value / 60)
+    return None
+
+
+def _timestamp_to_iso(value: Any, timezone_name: str) -> str | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    seconds = value / 1000 if value > 10_000_000_000 else value
+    return datetime.fromtimestamp(seconds, ZoneInfo(timezone_name)).isoformat()
+
+
 def compact_daily(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict) or "_unavailable" in value:
         return {}
@@ -737,10 +855,18 @@ def build_payload() -> dict[str, Any]:
     client.login(str(TOKENSTORE))
     activities = get_activities(client)
     summary = summarize(activities, load_remote_profile())
+    timezone_name = os.getenv("GARMIN_COACH_TIMEZONE", "Europe/Madrid")
+    wellness_dates = _wellness_dates()
+    zepp_provider = ZeppProvider(
+        token=os.getenv("ZEPP_TOKEN", ""),
+        user_id=os.getenv("ZEPP_USER_ID", ""),
+        base_url=os.getenv("ZEPP_BASE_URL") or None,
+        timezone_name=timezone_name,
+    )
     return {
         "generated_at": datetime.now(MADRID_TZ).isoformat(timespec="seconds"),
         "summary": summary,
-        "wellness": compact_wellness(client),
+        "wellness": collect_wellness_history(client, wellness_dates, zepp_provider, timezone_name),
         "physiology": compact_physiology(client),
         "plan_level": choose_plan_level(summary),
         "race": {
@@ -751,6 +877,15 @@ def build_payload() -> dict[str, Any]:
             "target_pace": "5:13/km",
         },
     }
+
+
+def _wellness_dates() -> list[date]:
+    try:
+        lookback = int(os.getenv("ZEPP_SYNC_LOOKBACK_DAYS", "2"))
+    except ValueError:
+        lookback = 2
+    lookback = max(0, lookback)
+    return [TODAY - timedelta(days=offset) for offset in range(lookback, -1, -1)]
 
 
 def main() -> int:

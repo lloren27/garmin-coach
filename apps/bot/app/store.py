@@ -21,10 +21,21 @@ SYNC_REQUEST_FILE = DATA_DIR / "sync_request.json"
 AI_JOBS_FILE = DATA_DIR / "ai_jobs.json"
 LAB_TESTS_FILE = DATA_DIR / "lab_tests.json"
 WATTWISE_FILE = DATA_DIR / "wattwise_snapshot.json"
+WELLNESS_HISTORY_FILE = DATA_DIR / "wellness_history.json"
 TRAINING_PLAN_STATE_FILE = DATA_DIR / "training_plan_state.json"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 STRENGTH_STATE_KEY = "strength_sessions"
+WELLNESS_DAILY_DDL = """
+create table if not exists wellness_daily (
+    owner_id text not null,
+    wellness_date date not null,
+    source text not null,
+    document jsonb not null,
+    updated_at timestamptz not null default now(),
+    primary key (owner_id, wellness_date, source)
+)
+"""
 
 
 def save_sync(payload: dict[str, Any]) -> dict[str, Any]:
@@ -32,6 +43,7 @@ def save_sync(payload: dict[str, Any]) -> dict[str, Any]:
         "received_at": datetime.now(timezone.utc).isoformat(),
         "payload": payload,
     }
+    upsert_wellness_days(payload)
     if DATABASE_URL:
         save_sync_postgres(document)
         return document
@@ -63,6 +75,47 @@ def load_sync_history(limit: int = 10) -> list[dict[str, Any]]:
         if line.strip():
             rows.append(json.loads(line))
     return rows[-limit:]
+
+
+def upsert_wellness_days(payload: dict[str, Any], owner_id: str = "default") -> None:
+    wellness = payload.get("wellness") if isinstance(payload, dict) else None
+    if not isinstance(wellness, dict) or wellness.get("schema_version") != 2:
+        return
+    if DATABASE_URL:
+        upsert_wellness_days_postgres(wellness, owner_id)
+        return
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    state = _load_wellness_history_file()
+    owner = state.setdefault(owner_id, {})
+    garmin = wellness.get("garmin") if isinstance(wellness.get("garmin"), dict) else {}
+    zepp = wellness.get("zepp") if isinstance(wellness.get("zepp"), dict) else {}
+    history = wellness.get("history") if isinstance(wellness.get("history"), dict) else {}
+    for day in sorted(set(garmin) | set(zepp) | set(history)):
+        entry = owner.setdefault(day, {"sources": {}})
+        sources = entry.setdefault("sources", {})
+        for source, days in (("garmin", garmin), ("zepp", zepp)):
+            value = days.get(day)
+            if isinstance(value, dict):
+                sources[source] = value
+        resolved = history.get(day)
+        if isinstance(resolved, dict) and isinstance(resolved.get("effective"), dict):
+            entry["effective"] = resolved["effective"]
+    atomic_json(WELLNESS_HISTORY_FILE, state)
+
+
+def load_wellness_history(limit: int = 10, owner_id: str = "default") -> dict[str, Any]:
+    if DATABASE_URL:
+        return load_wellness_history_postgres(limit, owner_id)
+    owner = _load_wellness_history_file().get(owner_id, {})
+    dates = sorted(owner)[-limit:]
+    return {day: owner[day] for day in dates}
+
+
+def _load_wellness_history_file() -> dict[str, Any]:
+    if not WELLNESS_HISTORY_FILE.exists():
+        return {}
+    value = json.loads(WELLNESS_HISTORY_FILE.read_text(encoding="utf-8"))
+    return value if isinstance(value, dict) else {}
 
 
 def save_wattwise(payload: dict[str, Any]) -> dict[str, Any]:
@@ -994,6 +1047,63 @@ def load_sync_history_postgres(limit: int) -> list[dict[str, Any]]:
             document = json.loads(document)
         history.append(document)
     return list(reversed(history))
+
+
+def upsert_wellness_days_postgres(wellness: dict[str, Any], owner_id: str) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        conn.execute(WELLNESS_DAILY_DDL)
+        garmin = wellness.get("garmin") if isinstance(wellness.get("garmin"), dict) else {}
+        zepp = wellness.get("zepp") if isinstance(wellness.get("zepp"), dict) else {}
+        history = wellness.get("history") if isinstance(wellness.get("history"), dict) else {}
+        for day in sorted(set(garmin) | set(zepp) | set(history)):
+            records: list[tuple[str, dict[str, Any]]] = []
+            for source, days in (("garmin", garmin), ("zepp", zepp)):
+                value = days.get(day)
+                if isinstance(value, dict):
+                    records.append((source, value))
+            resolved = history.get(day)
+            if isinstance(resolved, dict) and isinstance(resolved.get("effective"), dict):
+                records.append(("effective", resolved["effective"]))
+            for source, document in records:
+                conn.execute(
+                    """
+                    insert into wellness_daily (owner_id, wellness_date, source, document, updated_at)
+                    values (%s, %s, %s, %s, now())
+                    on conflict (owner_id, wellness_date, source)
+                    do update set document = excluded.document, updated_at = excluded.updated_at
+                    """,
+                    (owner_id, day, source, Jsonb(document)),
+                )
+
+
+def load_wellness_history_postgres(limit: int, owner_id: str) -> dict[str, Any]:
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        conn.execute(WELLNESS_DAILY_DDL)
+        rows = conn.execute(
+            """
+            select wellness_date::text, source, document
+            from wellness_daily
+            where owner_id = %s
+            order by wellness_date asc, source asc
+            """,
+            (owner_id,),
+        ).fetchall()
+    result: dict[str, Any] = {}
+    for day, source, document in rows:
+        if isinstance(document, str):
+            document = json.loads(document)
+        entry = result.setdefault(day, {"sources": {}})
+        if source == "effective":
+            entry["effective"] = document
+        else:
+            entry["sources"][source] = document
+    dates = sorted(result)[-limit:]
+    return {day: result[day] for day in dates}
 
 
 def save_checkin_postgres(document: dict[str, Any]) -> None:

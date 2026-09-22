@@ -5,9 +5,12 @@ from datetime import datetime
 from unittest.mock import patch
 
 from app.coach import (
+    build_ai_brief,
     format_checkin_saved,
     format_feedback,
+    format_health,
     format_strength,
+    format_today,
     format_week,
     format_week_plan,
     parse_checkin,
@@ -74,7 +77,59 @@ DAILY_SYNC = {
 }
 
 
+ZEPPCENTRIC_SYNC = {
+    "payload": {
+        "wellness": {
+            "schema_version": 2,
+            "timezone": "Europe/Madrid",
+            "effective": {
+                "sleep": {
+                    "total_minutes": 448,
+                    "deep_minutes": 82,
+                    "rem_minutes": 96,
+                    "light_minutes": 248,
+                    "awake_minutes": 22,
+                    "score": 84,
+                    "source": "zepp",
+                },
+                "resting_hr": {"value": 47, "unit": "bpm", "source": "zepp"},
+                "steps": {"value": 8231, "unit": "steps", "source": "zepp"},
+                "stress": {"avg": 23, "source": "zepp"},
+                "vo2max": {"value": 52, "unit": "ml/kg/min", "source": "garmin"},
+            },
+        },
+        "summary": {
+            "today": {"date": "2026-09-22", "activities": [{"id": "run-1"}]},
+            "activities": [{"id": "run-1", "date": "2026-09-22", "sport": "running"}],
+            "fatigue": {"level": "media"},
+            "next_workout": {"title": "Rodaje facil"},
+        },
+    }
+}
+
+
 class DailyFeedbackTests(unittest.TestCase):
+    def test_today_labels_effective_zepp_health_but_keeps_garmin_activities(self) -> None:
+        answer = format_today(ZEPPCENTRIC_SYNC)
+
+        self.assertIn("Sueno: 7 h 28 min [Zepp]", answer)
+        self.assertIn("FC reposo: 47 bpm [Zepp]", answer)
+        self.assertIn("Actividades: 1", answer)
+
+    def test_health_labels_effective_metrics_and_legacy_payload_still_formats(self) -> None:
+        answer = format_health(ZEPPCENTRIC_SYNC)
+        legacy_answer = format_health(DAILY_SYNC)
+
+        self.assertIn("Sueno: total 7 h 28 min [Zepp]", answer)
+        self.assertIn("VO2max: 52 ml/kg/min [Garmin]", answer)
+        self.assertIn("Salud y recuperacion Garmin", legacy_answer)
+
+    def test_ai_brief_includes_source_labelled_effective_wellness(self) -> None:
+        brief = build_ai_brief("¿entreno hoy?", ZEPPCENTRIC_SYNC, {}, [], [], None, None, None, None)
+        content = "\n".join(section["content"] for section in brief["sections"])
+
+        self.assertIn("Sueno: total 7 h 28 min [Zepp]", content)
+        self.assertIn("VO2max: 52 ml/kg/min [Garmin]", content)
     def test_feedback_aggregates_all_daily_activities_and_health(self) -> None:
         old_scores = [{"checkin": {"rpe": 9, "sleep": 2, "energy": 2, "raw": "rpe 9 sueno 2 energia 2"}}]
         answer = format_feedback(DAILY_SYNC, old_scores)

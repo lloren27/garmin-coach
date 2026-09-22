@@ -1212,7 +1212,7 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
     sync = context.get("sync") or {}
     payload = sync.get("payload") or {}
     summary = payload.get("summary") or {}
-    wellness = payload.get("wellness") or {}
+    wellness = _compact_wellness(payload.get("wellness"))
     physiology = payload.get("physiology") or {}
     activities = summary.get("activities") or []
 
@@ -1259,6 +1259,21 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
     return {
         "coach_brief": coach_brief,
         "extra_context": extra_context,
+    }
+
+
+def _compact_wellness(value: Any) -> dict[str, Any]:
+    """Keep the resolved v2 view for Ollama, never raw provider payloads."""
+    if not isinstance(value, dict):
+        return {}
+    if value.get("schema_version") != 2:
+        return value
+
+    effective = value.get("effective")
+    return {
+        "schema_version": 2,
+        "timezone": value.get("timezone"),
+        "effective": effective if isinstance(effective, dict) else {},
     }
 
 

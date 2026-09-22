@@ -2,10 +2,34 @@ from __future__ import annotations
 
 import unittest
 
-from garmin_sync.ai_worker import _compact_injury_checkins, prepare_text_for_tts
+from garmin_sync.ai_worker import _compact_injury_checkins, compact_context, prepare_text_for_tts
 
 
 class AiCheckinContextTests(unittest.TestCase):
+    def test_compact_context_keeps_only_effective_v2_wellness(self) -> None:
+        context = {
+            "sync": {
+                "payload": {
+                    "wellness": {
+                        "schema_version": 2,
+                        "timezone": "Europe/Madrid",
+                        "effective": {"steps": {"value": 8231, "source": "zepp"}},
+                        "garmin": {"2026-09-22": {"raw_detail": "do-not-send"}},
+                        "zepp": {"2026-09-22": {"minute_hr": [1, 2, 3]}},
+                        "history": {"2026-09-22": {"effective": {}}},
+                    }
+                }
+            }
+        }
+
+        result = compact_context(context)
+
+        wellness = result["extra_context"]["wellness"]
+        self.assertEqual(wellness["effective"]["steps"]["source"], "zepp")
+        self.assertNotIn("garmin", wellness)
+        self.assertNotIn("zepp", wellness)
+        self.assertNotIn("history", wellness)
+
     def test_only_pain_and_soreness_are_sent_to_ollama(self) -> None:
         result = _compact_injury_checkins(
             [

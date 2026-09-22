@@ -42,7 +42,7 @@ COACH_QUESTIONS = {
     "/ultima": "Analiza mi última actividad y el conjunto de sesiones de ese día.",
     "/proximo": "Recomienda mi próximo entrenamiento con duración e intensidad justificadas.",
     "/fatiga": "Evalúa mi fatiga y recuperación cruzando la carga de todos los deportes.",
-    "/salud": "Evalúa mi estado general y recuperación Garmin para orientar el entrenamiento.",
+    "/salud": "Evalúa mi estado general y recuperación para orientar el entrenamiento.",
     "/carga": "Evalúa mi carga de running, bici y fuerza, y cómo ajustar el entrenamiento.",
     "/running": "Evalúa la carga de running y su evolución con las métricas disponibles.",
     "/correr": "Evalúa la carga de running y su evolución con las métricas disponibles.",
@@ -66,7 +66,7 @@ def format_help() -> str:
         "/ultima - ultima actividad\n"
         "/proximo - entreno recomendado\n"
         "/fatiga - riesgo de fatiga\n"
-        "/salud - recuperacion, reposo, calorias y metricas Garmin\n"
+        "/salud - recuperacion, reposo, calorias y procedencia de metricas\n"
         "/carga - carga running/bici/fuerza\n"
         "/running - carga especifica de carrera y ACWR\n"
         "/tendencia - evolucion semanal\n"
@@ -623,6 +623,7 @@ def format_today(sync: dict[str, Any] | None) -> str:
     summary = payload.get("summary", {})
     today = summary.get("today", {})
     wellness = payload.get("wellness", {})
+    effective = _effective_wellness(payload)
     daily = _clean_dict(wellness.get("daily"))
     sleep = _clean_dict(wellness.get("sleep"))
     hrv = _clean_dict(wellness.get("hrv"))
@@ -637,16 +638,18 @@ def format_today(sync: dict[str, Any] | None) -> str:
         f"Actividades: {len(today.get('activities') or [])}",
         f"Entreno: {today.get('training_minutes', 0)} min, {today.get('km', 0)} km",
     ]
-    if daily:
+    if effective is not None:
+        _append_effective_today_lines(lines, effective)
+    elif daily:
         lines.append(f"Pasos: {daily.get('steps', 'n/a')}")
         lines.append(f"Pulso reposo: {daily.get('resting_hr', 'n/a')}")
     if calories:
         lines.append(f"Calorias: activas {calories.get('active_kcal', 'n/a')}, total {calories.get('total_kcal', 'n/a')}")
-    if stress and stress.get("avg"):
+    if effective is None and stress and stress.get("avg"):
         lines.append(f"Estres medio: {stress.get('avg')}")
     if body_battery and (body_battery.get("current") or body_battery.get("charged")):
         lines.append(f"Body battery: actual {body_battery.get('current', 'n/a')}, carga {body_battery.get('charged', 'n/a')}")
-    if sleep and sleep.get("sleep_seconds"):
+    if effective is None and sleep and sleep.get("sleep_seconds"):
         lines.append(f"Sueno: {_format_duration(sleep.get('sleep_seconds'))}")
         if sleep.get("score"):
             lines.append(f"Sleep score: {sleep.get('score')}")
@@ -666,6 +669,7 @@ def format_health(sync: dict[str, Any] | None) -> str:
 
     payload = sync.get("payload", {})
     wellness = payload.get("wellness", {})
+    effective = _effective_wellness(payload)
     physiology = payload.get("physiology", {})
     daily = _clean_dict(wellness.get("daily"))
     sleep = _clean_dict(wellness.get("sleep"))
@@ -701,8 +705,10 @@ def format_health(sync: dict[str, Any] | None) -> str:
         ]
     )
 
-    lines = ["Salud y recuperacion Garmin"]
-    if daily:
+    lines = ["Salud y recuperacion" if effective is not None else "Salud y recuperacion Garmin"]
+    if effective is not None:
+        _append_effective_health_lines(lines, effective)
+    if effective is None and daily:
         _append_parts(
             lines,
             "Dia",
@@ -712,9 +718,9 @@ def format_health(sync: dict[str, Any] | None) -> str:
                 _metric_part("activas", daily.get("active_kcal", calories.get("active_kcal")), "kcal"),
             ],
         )
-    elif resting_hr:
+    elif effective is None and resting_hr:
         _append_parts(lines, "Pulso reposo", [_metric_part("", resting_hr.get("value"))])
-    if sleep:
+    if effective is None and sleep:
         parts = []
         if sleep.get("sleep_seconds"):
             parts.append(f"total {_format_duration(sleep.get('sleep_seconds'))}")
@@ -756,7 +762,7 @@ def format_health(sync: dict[str, Any] | None) -> str:
                 _metric_part("drenaje", body_battery.get("drained")),
             ],
         )
-    if stress:
+    if effective is None and stress:
         _append_parts(
             lines,
             "Estres",
@@ -817,6 +823,65 @@ def format_health(sync: dict[str, Any] | None) -> str:
         lines.append("Sin dato real en esta sync: " + _format_missing_groups(missing_groups))
     lines.append("Lectura: estos datos afinan descanso, carga invisible, energia disponible y riesgo de fatiga.")
     return "\n".join(lines)
+
+
+def _effective_wellness(payload: dict[str, Any]) -> dict[str, Any] | None:
+    wellness = payload.get("wellness") or {}
+    if wellness.get("schema_version") != 2:
+        return None
+    effective = wellness.get("effective")
+    return effective if isinstance(effective, dict) else {}
+
+
+def _effective_metric(effective: dict[str, Any], name: str) -> dict[str, Any]:
+    value = effective.get(name)
+    return value if isinstance(value, dict) else {}
+
+
+def _source_label(metric: dict[str, Any]) -> str:
+    source = str(metric.get("source") or "").strip().lower()
+    return {"zepp": "Zepp", "garmin": "Garmin"}.get(source, source.title())
+
+
+def _effective_suffix(metric: dict[str, Any]) -> str:
+    label = _source_label(metric)
+    return f" [{label}]" if label else ""
+
+
+def _append_effective_today_lines(lines: list[str], effective: dict[str, Any]) -> None:
+    steps = _effective_metric(effective, "steps")
+    resting_hr = _effective_metric(effective, "resting_hr")
+    sleep = _effective_metric(effective, "sleep")
+    stress = _effective_metric(effective, "stress")
+    if _has_value(steps.get("value")):
+        lines.append(f"Pasos: {_format_metric_value(steps['value'])}{_effective_suffix(steps)}")
+    if _has_value(resting_hr.get("value")):
+        unit = f" {resting_hr.get('unit')}" if resting_hr.get("unit") else ""
+        lines.append(f"FC reposo: {_format_metric_value(resting_hr['value'])}{unit}{_effective_suffix(resting_hr)}")
+    if _has_value(sleep.get("total_minutes")):
+        lines.append(f"Sueno: {_format_duration(_safe_float(sleep['total_minutes']) * 60)}{_effective_suffix(sleep)}")
+    if _has_value(stress.get("avg")):
+        lines.append(f"Estres medio: {_format_metric_value(stress['avg'])}{_effective_suffix(stress)}")
+
+
+def _append_effective_health_lines(lines: list[str], effective: dict[str, Any]) -> None:
+    steps = _effective_metric(effective, "steps")
+    resting_hr = _effective_metric(effective, "resting_hr")
+    sleep = _effective_metric(effective, "sleep")
+    stress = _effective_metric(effective, "stress")
+    vo2max = _effective_metric(effective, "vo2max")
+    if _has_value(steps.get("value")):
+        lines.append(f"Pasos: {_format_metric_value(steps['value'])}{_effective_suffix(steps)}")
+    if _has_value(resting_hr.get("value")):
+        unit = f" {resting_hr.get('unit')}" if resting_hr.get("unit") else ""
+        lines.append(f"FC reposo: {_format_metric_value(resting_hr['value'])}{unit}{_effective_suffix(resting_hr)}")
+    if _has_value(sleep.get("total_minutes")):
+        lines.append(f"Sueno: total {_format_duration(_safe_float(sleep['total_minutes']) * 60)}{_effective_suffix(sleep)}")
+    if _has_value(stress.get("avg")):
+        lines.append(f"Estres: medio {_format_metric_value(stress['avg'])}{_effective_suffix(stress)}")
+    if _has_value(vo2max.get("value")):
+        unit = f" {vo2max.get('unit')}" if vo2max.get("unit") else ""
+        lines.append(f"VO2max: {_format_metric_value(vo2max['value'])}{unit}{_effective_suffix(vo2max)}")
 
 
 def format_week(
@@ -983,7 +1048,7 @@ def format_training_plan(
 
     lines.append(
         "Regla: el plan es la referencia vigente; "
-        "si la recuperacion Garmin empeora claramente "
+            "si la recuperacion efectiva empeora claramente "
         "o aparecen molestias, debe ajustarse."
     )
 

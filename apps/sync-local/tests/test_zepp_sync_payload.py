@@ -77,6 +77,15 @@ class OneDayFailsProvider(FakeZeppProvider):
         return results, {"status": "partial", "days_requested": 3, "days_received": 2}
 
 
+class AuthErrorZeppProvider:
+    def fetch_days(self, dates: list[date]):
+        results = {
+            day.isoformat(): ProviderDayResult(date=day.isoformat(), status="error", error_kind="auth_error")
+            for day in dates
+        }
+        return results, {"status": "auth_error", "days_requested": len(dates), "days_received": 0}
+
+
 class ZeppSyncPayloadTests(unittest.TestCase):
     def test_today_effective_aliases_the_resolved_history_for_today(self) -> None:
         wellness = collect_wellness_history(FakeGarmin(), DATES, FakeZeppProvider(), "Europe/Madrid")
@@ -125,6 +134,29 @@ class ZeppSyncPayloadTests(unittest.TestCase):
         self.assertEqual(payload["wellness"]["schema_version"], 2)
         self.assertEqual(payload["summary"]["activities"], [{"id": "garmin-activity-1"}])
         self.assertNotIn("zepp-motion-1", str(payload["summary"]["activities"]))
+
+    def test_end_to_end_auth_error_keeps_garmin_activity_and_allowed_fallbacks(self) -> None:
+        fake_client = FakeGarmin(sleeps={"2026-09-22": GARMIN_SLEEP})
+        summary = {
+            "activities": [{"id": "garmin-activity-1"}],
+            "avg_weekly_km_8w": 0,
+            "longest_120d": [],
+        }
+        with (
+            patch.object(sync, "Garmin", return_value=fake_client),
+            patch.object(sync, "get_activities", return_value=[]),
+            patch.object(sync, "summarize", return_value=summary),
+            patch.object(sync, "load_remote_profile", return_value={}),
+            patch.object(sync, "compact_physiology", return_value={}),
+            patch.object(sync, "ZeppProvider", return_value=AuthErrorZeppProvider()),
+            patch.object(sync, "TODAY", date(2026, 9, 22)),
+        ):
+            payload = sync.build_payload()
+
+        self.assertEqual(payload["wellness"]["provider_status"]["zepp"]["status"], "auth_error")
+        self.assertEqual(payload["summary"]["activities"], [{"id": "garmin-activity-1"}])
+        self.assertEqual(payload["wellness"]["effective"]["sleep"]["source"], "garmin")
+        self.assertNotIn("stress", payload["wellness"]["effective"])
 
 
 if __name__ == "__main__":

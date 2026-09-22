@@ -61,6 +61,42 @@ stress, respiration, SpO2, intensity minutes, body composition, training status,
 race predictions, lactate threshold, FTP, endurance score, and hill score when
 available for the account/device.
 
+### Helio Strap / Zepp wellness (local only)
+
+The local sync can add wellness from an Amazfit Helio Strap through
+`zepp-export`. Install the normal local-sync dependencies first (the Zepp
+dependency is included in `apps/sync-local/requirements.txt`), then add these
+values **only** to the root `.env` on the Mac:
+
+```text
+ZEPP_TOKEN=...
+ZEPP_USER_ID=...
+ZEPP_BASE_URL=...
+ZEPP_SYNC_LOOKBACK_DAYS=2
+```
+
+Do not add those values to Railway and never share or log `ZEPP_TOKEN`. The
+sync queries today plus the preceding `ZEPP_SYNC_LOOKBACK_DAYS` days and upserts
+each date, so sleep and load that Zepp consolidates later are refreshed on the
+next run. The default of `2` means three dates in total.
+
+Run the same local command as for Garmin:
+
+```bash
+scripts/run_sync.sh
+```
+
+Zepp is preferred for sleep, resting heart rate and steps when valid. Garmin
+remains the only source of activities and sport-specific reference data.
+Stress and Zepp load metrics are not substituted with Garmin values, while a
+complete Garmin sleep session can be used when Zepp has no valid session.
+
+If the token expires, refresh `ZEPP_TOKEN` from the Zepp account/export flow in
+the Mac `.env` and run the sync again. Until then the sync keeps Garmin
+activities and allowed Garmin fallbacks; it does not invent Zepp-only stress or
+load values. `/hoy` and `/salud` show the selected source beside each resolved
+metric.
+
 ## 3b. Automate Mac sync
 
 Install the macOS LaunchAgent:

@@ -39,6 +39,7 @@ El payload conservará las fuentes y la vista resuelta:
 {
   "wellness": {
     "schema_version": 2,
+    "timezone": "Europe/Madrid",
     "garmin": { "2026-09-20": {}, "2026-09-21": {}, "2026-09-22": {} },
     "zepp": { "2026-09-20": {}, "2026-09-21": {}, "2026-09-22": {} },
     "effective": {
@@ -64,9 +65,12 @@ El payload conservará las fuentes y la vista resuelta:
 }
 ```
 
-`wellness.effective` siempre representa hoy; `wellness.history` contiene las
-vistas resueltas de los días reconsultados. `schema_version: 2` permite a los
-consumidores detectar explícitamente el nuevo contrato. Las claves existentes del wellness
+`wellness.effective` siempre representa hoy y es exactamente la misma
+resolución que `wellness.history[today].effective`; no se ejecutará un segundo
+camino de resolución para crearla. `wellness.history` contiene las vistas
+resueltas de los días reconsultados. `schema_version: 2` permite a los
+consumidores detectar explícitamente el nuevo contrato y `timezone` registra la
+zona usada para las fechas wellness. Las claves existentes del wellness
 Garmin se preservarán dentro de `wellness.garmin` para no perder trazabilidad.
 Los formateadores y el contexto de IA migrarán a la vista effective y mostrarán
 la fuente cuando comuniquen una métrica.
@@ -211,7 +215,8 @@ modelos normalizados, proveedor Zepp, normalizador y sus pruebas; después el
 resolver, política, validadores, sueño atómico y pruebas de fallback. Sólo
 cuando esas capas produzcan la misma salida ante las mismas entradas se añadirá
 el lookback de ambos proveedores, la persistencia/upsert y la construcción de
-`effective`/`history`. Finalmente se migrarán `/today`, `/health` y el contexto
+`effective`/`history`, derivando `effective` directamente de la entrada de hoy
+del historial resuelto. Finalmente se migrarán `/today`, `/health` y el contexto
 de Ollama, y se ejecutarán pruebas end-to-end del sync. Ollama no cambia antes
 de que el resolver esté estable.
 

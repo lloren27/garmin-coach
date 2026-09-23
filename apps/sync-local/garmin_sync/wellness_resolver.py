@@ -14,6 +14,7 @@ EFFECTIVE_SOURCE_POLICY: dict[str, tuple[str, ...]] = {
     "tsb": ("zepp",),
     "trimp": ("zepp",),
     "sport_load": ("zepp",),
+    "recovery_factor": ("zepp",),
     "vo2max": ("garmin",),
 }
 
@@ -47,7 +48,7 @@ def is_valid_metric(name: str, candidate: Any) -> bool:
         return isinstance(candidate, dict) and _is_number(candidate.get("avg"))
     if name in {"atl", "ctl", "tsb"}:
         return _is_number(_metric_value(candidate))
-    if name == "trimp":
+    if name in {"trimp", "recovery_factor"}:
         value = _metric_value(candidate)
         return _is_number(value) and value >= 0
     if name == "sport_load":
@@ -60,7 +61,7 @@ def is_valid_metric(name: str, candidate: Any) -> bool:
 
 
 def _candidate_for(metric: str, provider: dict[str, Any]) -> Any:
-    if metric in {"atl", "ctl", "tsb"}:
+    if metric in {"atl", "ctl", "tsb", "recovery_factor"}:
         if metric in provider:
             return provider[metric]
         training_load = provider.get("training_load")

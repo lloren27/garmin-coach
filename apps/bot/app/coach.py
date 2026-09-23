@@ -870,6 +870,12 @@ def _append_effective_health_lines(lines: list[str], effective: dict[str, Any]) 
     sleep = _effective_metric(effective, "sleep")
     stress = _effective_metric(effective, "stress")
     vo2max = _effective_metric(effective, "vo2max")
+    atl = _effective_metric(effective, "atl")
+    ctl = _effective_metric(effective, "ctl")
+    tsb = _effective_metric(effective, "tsb")
+    trimp = _effective_metric(effective, "trimp")
+    sport_load = _effective_metric(effective, "sport_load")
+    recovery_factor = _effective_metric(effective, "recovery_factor")
     if _has_value(steps.get("value")):
         lines.append(f"Pasos: {_format_metric_value(steps['value'])}{_effective_suffix(steps)}")
     if _has_value(resting_hr.get("value")):
@@ -879,6 +885,17 @@ def _append_effective_health_lines(lines: list[str], effective: dict[str, Any]) 
         lines.append(f"Sueno: total {_format_duration(_safe_float(sleep['total_minutes']) * 60)}{_effective_suffix(sleep)}")
     if _has_value(stress.get("avg")):
         lines.append(f"Estres: medio {_format_metric_value(stress['avg'])}{_effective_suffix(stress)}")
+    training_load = [("ATL", atl), ("CTL", ctl), ("TSB", tsb)]
+    rendered_load = [f"{label} {_format_metric_value(metric['value'])}" for label, metric in training_load if _has_value(metric.get("value"))]
+    if rendered_load:
+        source = next(metric for _label, metric in training_load if _has_value(metric.get("value")))
+        lines.append(f"Carga Zepp: {', '.join(rendered_load)}{_effective_suffix(source)}")
+    if _has_value(trimp.get("value")):
+        lines.append(f"TRIMP: {_format_metric_value(trimp['value'])}{_effective_suffix(trimp)}")
+    if _has_value(sport_load.get("value")):
+        lines.append(f"Sport Load: {_format_metric_value(sport_load['value'])}{_effective_suffix(sport_load)}")
+    if _has_value(recovery_factor.get("value")):
+        lines.append(f"Factor recuperacion: {_format_metric_value(recovery_factor['value'])}{_effective_suffix(recovery_factor)}")
     if _has_value(vo2max.get("value")):
         unit = f" {vo2max.get('unit')}" if vo2max.get("unit") else ""
         lines.append(f"VO2max: {_format_metric_value(vo2max['value'])}{unit}{_effective_suffix(vo2max)}")

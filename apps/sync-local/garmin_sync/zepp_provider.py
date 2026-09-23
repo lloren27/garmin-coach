@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -76,6 +76,8 @@ class ZeppProvider:
         day_text = day.isoformat()
         try:
             sleep = self._normalize_sleep(client.get_sleep(day_text))
+            if not _is_valid_sleep(sleep):
+                sleep = self._sleep_from_band_data(client, day)
             steps = self._normalize_steps(client.get_steps(day_text), day_text)
             stress = self._normalize_stress(client.get_stress(day_text, day_text), day_text)
             training_load = self._normalize_training_load(client.get_training_load(day_text, day_text), day_text)
@@ -198,7 +200,7 @@ class ZeppProvider:
         record = self._daily_record(value, day)
         if not record:
             return None
-        result = {key: _number(record.get(key)) for key in ("atl", "ctl", "tsb")}
+        result = {key: _number(record.get(key)) for key in ("atl", "ctl", "tsb", "recovery_factor")}
         result = {key: item for key, item in result.items() if item is not None}
         if not result:
             return None
@@ -223,15 +225,72 @@ class ZeppProvider:
                 observations.append({"value": measurement, "unit": "ml/kg/min", "source": "zepp", "observed_at": observed_at})
         return observations
 
-    @staticmethod
-    def _daily_record(value: Any, day: str) -> dict[str, Any] | None:
+    def _sleep_from_band_data(self, client: Any, day: date) -> NormalizedSleep | None:
+        fetch_band_data = getattr(client, "get_band_data", None)
+        if not callable(fetch_band_data):
+            return None
+        for source_day in (day - timedelta(days=1), day):
+            band = fetch_band_data(source_day.isoformat())
+            summary = band.get("summary") if isinstance(band, dict) else None
+            record = summary.get("slp") if isinstance(summary, dict) else None
+            if not isinstance(record, dict):
+                continue
+            start = _number(record.get("st"))
+            end = _number(record.get("ed"))
+            if start is None or end is None or end <= start:
+                continue
+            start_at = datetime.fromtimestamp(start, self._timezone)
+            end_at = datetime.fromtimestamp(end, self._timezone)
+            if end_at.date() != day:
+                continue
+            stages = record.get("stage") if isinstance(record.get("stage"), list) else []
+            stage_minutes = {"deep": 0, "light": 0, "rem": 0, "awake": 0}
+            for stage in stages:
+                if not isinstance(stage, dict):
+                    continue
+                name = {4: "light", 5: "deep", 7: "awake", 8: "rem"}.get(stage.get("mode"))
+                start_minute = _number(stage.get("start"))
+                end_minute = _number(stage.get("stop"))
+                if name and start_minute is not None and end_minute is not None and end_minute >= start_minute:
+                    stage_minutes[name] += round(end_minute - start_minute)
+            sleep = NormalizedSleep(
+                start=start_at.isoformat(),
+                end=end_at.isoformat(),
+                total_minutes=round((end_at - start_at).total_seconds() / 60),
+                deep_minutes=stage_minutes["deep"] or _integer(record.get("dp")),
+                light_minutes=stage_minutes["light"] or _integer(record.get("lt")),
+                rem_minutes=stage_minutes["rem"] or None,
+                awake_minutes=stage_minutes["awake"] or None,
+                score=_integer(record.get("ss")),
+                resting_hr=_integer(record.get("rhr")),
+            )
+            if _is_valid_sleep(sleep):
+                return sleep
+        return None
+
+    def _daily_record(self, value: Any, day: str) -> dict[str, Any] | None:
         if isinstance(value, dict):
             return value
         if isinstance(value, list):
             for item in value:
-                if isinstance(item, dict) and str(item.get("date") or item.get("day") or "") == day:
+                if isinstance(item, dict) and self._record_date(item) == day:
                     return item
             return next((item for item in value if isinstance(item, dict)), None)
+        return None
+
+    def _record_date(self, item: dict[str, Any]) -> str | None:
+        direct = item.get("date") or item.get("day")
+        if direct is not None:
+            return str(direct)[:10]
+        timestamp = item.get("timestamp")
+        if isinstance(timestamp, str):
+            try:
+                return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(self._timezone).date().isoformat()
+            except ValueError:
+                return timestamp[:10] if len(timestamp) >= 10 else None
+        if isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool):
+            seconds = timestamp / 1000 if timestamp > 10_000_000_000 else timestamp
+            return datetime.fromtimestamp(seconds, self._timezone).date().isoformat()
         return None
 
 
@@ -272,3 +331,12 @@ def _first_number(value: dict[str, Any] | None, keys: tuple[str, ...]) -> float 
 
 def _string(value: Any) -> str | None:
     return str(value) if value not in (None, "") else None
+
+
+def _is_valid_sleep(value: NormalizedSleep | None) -> bool:
+    if value is None or value.total_minutes <= 0:
+        return False
+    try:
+        return datetime.fromisoformat(value.end) > datetime.fromisoformat(value.start)
+    except ValueError:
+        return False

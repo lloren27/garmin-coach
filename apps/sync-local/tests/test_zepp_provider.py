@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -20,6 +21,7 @@ VALID_SLEEP = {
     "resting_hr": 47,
 }
 VALID_STEPS = {"steps": 8231}
+MADRID = ZoneInfo("Europe/Madrid")
 
 
 class FakeZeppClient:
@@ -85,6 +87,60 @@ class RealShapeZeppClient(FakeZeppClient):
         return [{"date": "2026-09-22", "daily_load": 82, "weekly_load": 300}]
 
 
+class InvalidSelectedSleepZeppClient(FakeZeppClient):
+    def get_sleep(self, _day: str) -> dict:
+        return {
+            "start": "2026-09-22T00:00:00",
+            "end": "2026-09-22T00:00:00",
+            "duration_minutes": 0,
+        }
+
+    def get_band_data(self, day: str) -> dict:
+        if day != "2026-09-23":
+            return {"date": day, "summary": {}}
+        start = int(datetime(2026, 9, 22, 23, 41, tzinfo=MADRID).timestamp())
+        end = int(datetime(2026, 9, 23, 7, 9, tzinfo=MADRID).timestamp())
+        return {
+            "date": day,
+            "summary": {
+                "slp": {
+                    "st": start,
+                    "ed": end,
+                    "rhr": 47,
+                    "ss": 84,
+                    "dp": 82,
+                    "lt": 244,
+                    "stage": [
+                        {"start": 0, "stop": 82, "mode": 5},
+                        {"start": 82, "stop": 326, "mode": 4},
+                        {"start": 326, "stop": 422, "mode": 8},
+                        {"start": 422, "stop": 448, "mode": 7},
+                    ],
+                }
+            },
+        }
+
+
+class TimestampedTrainingLoadZeppClient(FakeZeppClient):
+    def get_training_load(self, _start: str, _end: str) -> list[dict]:
+        return [
+            {
+                "timestamp": int(datetime(2026, 9, 22, 12, tzinfo=MADRID).timestamp() * 1000),
+                "atl": 31,
+                "ctl": 29,
+                "tsb": -2,
+                "recovery_factor": 0.5,
+            },
+            {
+                "timestamp": int(datetime(2026, 9, 23, 12, tzinfo=MADRID).timestamp() * 1000),
+                "atl": 42,
+                "ctl": 37,
+                "tsb": -5,
+                "recovery_factor": 0.82,
+            },
+        ]
+
+
 class ZeppProviderTests(unittest.TestCase):
     def test_fetch_days_marks_rest_day_ok_when_vo2max_is_absent(self) -> None:
         provider = ZeppProvider(token="secret", user_id="42", base_url="https://example.test")
@@ -138,6 +194,28 @@ class ZeppProviderTests(unittest.TestCase):
         self.assertEqual(data["stress"]["sample_count"], 3)
         self.assertEqual(data["stress"]["coverage_minutes"], 15)
         self.assertEqual(data["sport_load"]["value"], 82)
+
+    def test_falls_back_to_valid_band_sleep_when_export_selects_an_empty_session(self) -> None:
+        provider = ZeppProvider(token="secret", user_id="42", timezone_name="Europe/Madrid")
+        provider._client = InvalidSelectedSleepZeppClient()
+
+        days, _status = provider.fetch_days([date(2026, 9, 23)])
+        sleep = days["2026-09-23"].data.to_dict()["sleep"]
+
+        self.assertEqual(sleep["total_minutes"], 448)
+        self.assertEqual(sleep["deep_minutes"], 82)
+        self.assertEqual(sleep["rem_minutes"], 96)
+        self.assertTrue(sleep["end"].startswith("2026-09-23T07:09:00"))
+
+    def test_selects_training_load_for_the_requested_timestamp_date(self) -> None:
+        provider = ZeppProvider(token="secret", user_id="42", timezone_name="Europe/Madrid")
+        provider._client = TimestampedTrainingLoadZeppClient()
+
+        days, _status = provider.fetch_days([date(2026, 9, 23)])
+        training_load = days["2026-09-23"].data.to_dict()["training_load"]
+
+        self.assertEqual(training_load["atl"], 42)
+        self.assertEqual(training_load["recovery_factor"], 0.82)
 
     def test_missing_credentials_disable_provider_without_client(self) -> None:
         provider = ZeppProvider(token="", user_id="")

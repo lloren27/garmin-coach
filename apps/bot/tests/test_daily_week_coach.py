@@ -95,6 +95,12 @@ ZEPPCENTRIC_SYNC = {
                 "resting_hr": {"value": 47, "unit": "bpm", "source": "zepp"},
                 "steps": {"value": 8231, "unit": "steps", "source": "zepp"},
                 "stress": {"avg": 23, "source": "zepp"},
+                "atl": {"value": 42, "source": "zepp"},
+                "ctl": {"value": 37, "source": "zepp"},
+                "tsb": {"value": -5, "source": "zepp"},
+                "trimp": {"value": 68, "source": "zepp"},
+                "sport_load": {"value": 95, "source": "zepp"},
+                "recovery_factor": {"value": 0.82, "source": "zepp"},
                 "vo2max": {"value": 52, "unit": "ml/kg/min", "source": "garmin"},
             },
         },
@@ -122,6 +128,10 @@ class DailyFeedbackTests(unittest.TestCase):
 
         self.assertIn("Sueno: total 7 h 28 min [Zepp]", answer)
         self.assertIn("VO2max: 52 ml/kg/min [Garmin]", answer)
+        self.assertIn("Carga Zepp: ATL 42, CTL 37, TSB -5 [Zepp]", answer)
+        self.assertIn("TRIMP: 68 [Zepp]", answer)
+        self.assertIn("Sport Load: 95 [Zepp]", answer)
+        self.assertIn("Factor recuperacion: 0.82 [Zepp]", answer)
         self.assertIn("Salud y recuperacion Garmin", legacy_answer)
 
     def test_ai_brief_includes_source_labelled_effective_wellness(self) -> None:
@@ -130,6 +140,7 @@ class DailyFeedbackTests(unittest.TestCase):
 
         self.assertIn("Sueno: total 7 h 28 min [Zepp]", content)
         self.assertIn("VO2max: 52 ml/kg/min [Garmin]", content)
+        self.assertIn("Factor recuperacion: 0.82 [Zepp]", content)
     def test_feedback_aggregates_all_daily_activities_and_health(self) -> None:
         old_scores = [{"checkin": {"rpe": 9, "sleep": 2, "energy": 2, "raw": "rpe 9 sueno 2 energia 2"}}]
         answer = format_feedback(DAILY_SYNC, old_scores)

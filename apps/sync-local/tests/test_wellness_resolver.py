@@ -70,6 +70,15 @@ class WellnessResolverTests(unittest.TestCase):
         self.assertNotIn("ctl", resolved)
         self.assertNotIn("tsb", resolved)
 
+    def test_zepp_recovery_factor_is_provider_specific(self) -> None:
+        resolved = resolve_wellness(
+            {"recovery_factor": {"value": 0.4}},
+            {"training_load": {"recovery_factor": 0.82}},
+            "2026-09-22",
+        )
+
+        self.assertEqual(resolved["recovery_factor"], {"value": 0.82, "source": "zepp"})
+
     def test_validators_reject_zero_resting_hr_but_allow_zero_steps(self) -> None:
         self.assertFalse(is_valid_metric("resting_hr", {"value": 0}))
         self.assertTrue(is_valid_metric("steps", {"value": 0}))

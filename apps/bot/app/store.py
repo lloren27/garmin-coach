@@ -25,6 +25,7 @@ WELLNESS_HISTORY_FILE = DATA_DIR / "wellness_history.json"
 TRAINING_PLAN_STATE_FILE = DATA_DIR / "training_plan_state.json"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+VALID_SYNC_MODES = {"full", "zepp_activities"}
 STRENGTH_STATE_KEY = "strength_sessions"
 WELLNESS_DAILY_DDL = """
 create table if not exists wellness_daily (
@@ -324,10 +325,13 @@ def save_lab_tests(tests: list[dict[str, Any]]) -> None:
     LAB_TESTS_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
 
-def save_sync_request(requested_by: str | None = None) -> dict[str, Any]:
+def save_sync_request(requested_by: str | None = None, mode: str = "full") -> dict[str, Any]:
+    if mode not in VALID_SYNC_MODES:
+        raise ValueError("invalid sync mode")
     document = {
         "requested_at": datetime.now(timezone.utc).isoformat(),
         "requested_by": requested_by,
+        "mode": mode,
         "status": "pending",
         "completed_at": None,
         "last_error": None,

@@ -63,7 +63,8 @@ def main() -> int:
         return 0
 
     reason = "requested" if pending_request else "stale"
-    print(json.dumps({"ok": True, "action": "sync", "reason": reason, "age_minutes": age_minutes}))
+    mode = pending_request.get("mode", "full") if pending_request else "full"
+    print(json.dumps({"ok": True, "action": "sync", "reason": reason, "mode": mode, "age_minutes": age_minutes}))
 
     try:
         run_full_sync()

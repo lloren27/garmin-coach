@@ -131,6 +131,8 @@ def format_sync_requested(document: dict[str, Any], sync: dict[str, Any] | None 
         "Sincronizacion solicitada",
         f"Peticion: {_format_datetime_es(document.get('requested_at'))} hora Espana",
     ]
+    if document.get("mode") == "zepp_activities":
+        lines.append("Modo: actividades Zepp recientes")
     if sync:
         lines.append(f"Ultimos datos actuales: {_format_datetime_es(sync.get('received_at'))} hora Espana")
     lines.append("El Mac la ejecutara en cuanto este despierto y el watcher local la detecte.")

@@ -79,6 +79,20 @@ class CoachRoutingTests(unittest.TestCase):
         main.route_message("/coach@MyBot dolor gemelo derecho", "user", "chat")
         self.assertIn("dolor gemelo derecho", self.queue.call_args.kwargs["text"])
 
+    def test_sync_zepp_command_persists_activity_mode_and_rejects_extra_arguments(self) -> None:
+        document = {"requested_at": "2026-09-24T07:00:00+00:00", "mode": "zepp_activities"}
+        with patch.object(main, "save_sync_request", return_value=document) as save:
+            response = main.route_message("/sync zepp", "user", "chat")
+
+        save.assert_called_once_with("user", mode="zepp_activities")
+        self.assertIn("actividades Zepp", response)
+
+        with patch.object(main, "save_sync_request") as save:
+            response = main.route_message("/sync zepp ahora", "user", "chat")
+
+        save.assert_not_called()
+        self.assertEqual(response, "Uso: /sync o /sync zepp")
+
     def test_strength_logging_stays_transactional(self) -> None:
         with patch.object(main, "handle_strength_command", return_value=("Guardado", {"sessions": []}, True)) as handle, patch.object(main, "save_strength_state") as save:
             self.assertEqual(main.route_message("/fuerza add sentadilla 60kg 8/8 rir2", "user", "chat"), "Guardado")

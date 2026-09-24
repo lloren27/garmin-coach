@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 from .pending_changes import ProposalError, ProposalConflict
-from .store import prepare_proposal_context
+from .store import VALID_SYNC_MODES, prepare_proposal_context
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
@@ -102,7 +102,10 @@ async def sync(payload: dict, x_sync_secret: str | None = Header(default=None)) 
 async def request_sync(payload: dict | None = None, x_sync_secret: str | None = Header(default=None)) -> dict:
     require_sync_secret(x_sync_secret)
     payload = payload or {}
-    document = save_sync_request(str(payload.get("requested_by")) if payload.get("requested_by") else None)
+    mode = payload.get("mode", "full")
+    if not isinstance(mode, str) or mode not in VALID_SYNC_MODES:
+        raise HTTPException(status_code=400, detail="Invalid sync mode")
+    document = save_sync_request(str(payload.get("requested_by")) if payload.get("requested_by") else None, mode=mode)
     return {"ok": True, "request": document}
 
 
@@ -482,7 +485,13 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
         document = create_ai_job(chat_id=ai_chat_id, user_id=user_id, text=args)
         return format_ai_queued(document)
     if command == "/sync":
-        document = save_sync_request(user_id)
+        if not args:
+            mode = "full"
+        elif args.lower() == "zepp":
+            mode = "zepp_activities"
+        else:
+            return "Uso: /sync o /sync zepp"
+        document = save_sync_request(user_id, mode=mode)
         return format_sync_requested(document, sync)
     if command == "/perfil":
         if not args:

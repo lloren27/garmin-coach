@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -13,8 +13,10 @@ import httpx
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
+from .activity_merge import merge_activities
 from .running_analytics import enrich_running_load
 from .wellness_resolver import resolve_wellness
+from .zepp_activity_provider import ZeppActivityProvider
 from .zepp_provider import ZeppProvider
 
 
@@ -115,9 +117,24 @@ def normalize_activities(activities: list[dict[str, Any]]) -> list[dict[str, Any
             continue
         distance_km = round((distance_m or 0) / 1000, 2)
         normalized.append(
-            compact_activity(activity, run_date, distance_km, duration_s)
+            compact_activity(activity, run_date, distance_km, duration_s, activity_started_at(activity))
         )
-    return sorted(normalized, key=lambda item: item["date"])
+    return sorted(normalized, key=lambda item: (item.get("started_at", item["date"]), item["id"]))
+
+
+def activity_started_at(activity: dict[str, Any]) -> str:
+    local = activity.get("startTimeLocal")
+    gmt = activity.get("startTimeGMT")
+    raw = local or gmt
+    if not isinstance(raw, str) or not raw:
+        return ""
+    try:
+        started = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=MADRID_TZ if local else timezone.utc)
+    return started.astimezone(MADRID_TZ).isoformat()
 
 
 def compact_activity(
@@ -125,10 +142,13 @@ def compact_activity(
     activity_date: date,
     distance_km: float,
     duration_s: float,
+    started_at: str = "",
 ) -> dict[str, Any]:
     item = {
         "id": str(activity.get("activityId") or ""),
+        "source": "garmin",
         "date": activity_date.isoformat(),
+        "started_at": started_at,
         "name": activity.get("activityName") or activity_type(activity) or "Activity",
         "sport": sport(activity),
         "type": activity_type(activity),
@@ -152,7 +172,11 @@ def compact_activity(
 
 
 def summarize(activities: list[dict[str, Any]], profile: dict[str, Any] | None = None) -> dict[str, Any]:
-    normalized = normalize_activities(activities)
+    return summarize_normalized(normalize_activities(activities), profile)
+
+
+def summarize_normalized(activities: list[dict[str, Any]], profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    normalized = list(activities)
     normalized, running_load = enrich_running_load(normalized, profile, TODAY)
     runs = [activity for activity in normalized if activity["sport"] == "running" and activity["km"] >= 1]
 
@@ -853,9 +877,18 @@ def load_remote_profile() -> dict[str, Any]:
 def build_payload() -> dict[str, Any]:
     client = Garmin()
     client.login(str(TOKENSTORE))
-    activities = get_activities(client)
-    summary = summarize(activities, load_remote_profile())
+    profile = load_remote_profile()
     timezone_name = os.getenv("GARMIN_COACH_TIMEZONE", "Europe/Madrid")
+    activity_start, activity_end = _activity_date_range()
+    zepp_activity_provider = ZeppActivityProvider(
+        token=os.getenv("ZEPP_TOKEN", ""),
+        user_id=os.getenv("ZEPP_USER_ID", ""),
+        base_url=os.getenv("ZEPP_BASE_URL") or None,
+        timezone_name=timezone_name,
+    )
+    zepp_activities, activity_status = zepp_activity_provider.fetch_activities(activity_start, activity_end)
+    activities = merge_activities(normalize_activities(get_activities(client)), zepp_activities)
+    summary = summarize_normalized(activities, profile)
     wellness_dates = _wellness_dates()
     zepp_provider = ZeppProvider(
         token=os.getenv("ZEPP_TOKEN", ""),
@@ -866,6 +899,7 @@ def build_payload() -> dict[str, Any]:
     return {
         "generated_at": datetime.now(MADRID_TZ).isoformat(timespec="seconds"),
         "summary": summary,
+        "activity_provider_status": {"zepp": activity_status},
         "wellness": collect_wellness_history(client, wellness_dates, zepp_provider, timezone_name),
         "physiology": compact_physiology(client),
         "plan_level": choose_plan_level(summary),
@@ -886,6 +920,14 @@ def _wellness_dates() -> list[date]:
         lookback = 2
     lookback = max(0, lookback)
     return [TODAY - timedelta(days=offset) for offset in range(lookback, -1, -1)]
+
+
+def _activity_date_range() -> tuple[date, date]:
+    try:
+        lookback = int(os.getenv("ZEPP_ACTIVITY_SYNC_LOOKBACK_DAYS", "3"))
+    except ValueError:
+        lookback = 3
+    return TODAY - timedelta(days=max(0, lookback)), TODAY
 
 
 def main() -> int:

@@ -86,6 +86,42 @@ class AuthErrorZeppProvider:
         return results, {"status": "auth_error", "days_requested": len(dates), "days_received": 0}
 
 
+ZEPPRUN = {
+    "id": "zepp:run.watch.helio.zepp.com:42",
+    "source": "zepp",
+    "source_activity_id": "42",
+    "date": "2026-09-24",
+    "started_at": "2026-09-24T07:25:00+02:00",
+    "name": "Correr al aire libre",
+    "sport": "running",
+    "type": "7",
+    "km": 8.02,
+    "duration_s": 2518,
+    "hours": 0.7,
+    "pace": "5:14/km",
+    "avg_speed_kmh": 11.5,
+    "avg_hr": 151,
+}
+
+GARMINRUN = {
+    "activityId": "garmin-activity-1",
+    "activityName": "Carrera Garmin",
+    "activityType": {"typeKey": "running"},
+    "startTimeLocal": "2026-09-22T07:00:00",
+    "distance": 5000,
+    "duration": 1800,
+}
+
+
+class FakeZeppActivityProvider:
+    def __init__(self, activities: list[dict] | None = None, status: dict | None = None) -> None:
+        self.activities = activities or []
+        self.status = status or {"status": "ok", "records_received": len(self.activities)}
+
+    def fetch_activities(self, _start_day: date, _end_day: date):
+        return self.activities, self.status
+
+
 class ZeppSyncPayloadTests(unittest.TestCase):
     def test_today_effective_aliases_the_resolved_history_for_today(self) -> None:
         wellness = collect_wellness_history(FakeGarmin(), DATES, FakeZeppProvider(), "Europe/Madrid")
@@ -113,48 +149,60 @@ class ZeppSyncPayloadTests(unittest.TestCase):
         self.assertEqual((status["days_requested"], status["days_received"]), (3, 2))
         self.assertIn("2026-09-21", wellness["history"])
 
-    def test_build_payload_keeps_only_garmin_activities_when_zepp_has_motion(self) -> None:
+    def test_build_payload_merges_a_zepp_only_run_and_publishes_status(self) -> None:
         fake_client = FakeGarmin()
-        summary = {
-            "activities": [{"id": "garmin-activity-1"}],
-            "avg_weekly_km_8w": 0,
-            "longest_120d": [],
-        }
         with (
             patch.object(sync, "Garmin", return_value=fake_client),
             patch.object(sync, "get_activities", return_value=[]),
-            patch.object(sync, "summarize", return_value=summary),
             patch.object(sync, "load_remote_profile", return_value={}),
             patch.object(sync, "compact_physiology", return_value={}),
             patch.object(sync, "ZeppProvider", return_value=FakeZeppProvider()),
+            patch.object(sync, "ZeppActivityProvider", return_value=FakeZeppActivityProvider([ZEPPRUN])),
+            patch.object(sync, "TODAY", date(2026, 9, 24)),
+        ):
+            payload = sync.build_payload()
+
+        self.assertEqual(payload["summary"]["activities"][-1]["source"], "zepp")
+        self.assertEqual(payload["activity_provider_status"]["zepp"]["status"], "ok")
+
+    def test_build_payload_keeps_only_garmin_activities_when_zepp_has_motion(self) -> None:
+        fake_client = FakeGarmin()
+        with (
+            patch.object(sync, "Garmin", return_value=fake_client),
+            patch.object(sync, "get_activities", return_value=[GARMINRUN]),
+            patch.object(sync, "load_remote_profile", return_value={}),
+            patch.object(sync, "compact_physiology", return_value={}),
+            patch.object(sync, "ZeppProvider", return_value=FakeZeppProvider()),
+            patch.object(sync, "ZeppActivityProvider", return_value=FakeZeppActivityProvider()),
             patch.object(sync, "TODAY", date(2026, 9, 22)),
         ):
             payload = sync.build_payload()
 
         self.assertEqual(payload["wellness"]["schema_version"], 2)
-        self.assertEqual(payload["summary"]["activities"], [{"id": "garmin-activity-1"}])
+        self.assertEqual(payload["summary"]["activities"][0]["id"], "garmin-activity-1")
+        self.assertEqual(payload["summary"]["activities"][0]["source"], "garmin")
         self.assertNotIn("zepp-motion-1", str(payload["summary"]["activities"]))
 
     def test_end_to_end_auth_error_keeps_garmin_activity_and_allowed_fallbacks(self) -> None:
         fake_client = FakeGarmin(sleeps={"2026-09-22": GARMIN_SLEEP})
-        summary = {
-            "activities": [{"id": "garmin-activity-1"}],
-            "avg_weekly_km_8w": 0,
-            "longest_120d": [],
-        }
         with (
             patch.object(sync, "Garmin", return_value=fake_client),
-            patch.object(sync, "get_activities", return_value=[]),
-            patch.object(sync, "summarize", return_value=summary),
+            patch.object(sync, "get_activities", return_value=[GARMINRUN]),
             patch.object(sync, "load_remote_profile", return_value={}),
             patch.object(sync, "compact_physiology", return_value={}),
             patch.object(sync, "ZeppProvider", return_value=AuthErrorZeppProvider()),
+            patch.object(
+                sync,
+                "ZeppActivityProvider",
+                return_value=FakeZeppActivityProvider(status={"status": "auth_error", "records_received": 0}),
+            ),
             patch.object(sync, "TODAY", date(2026, 9, 22)),
         ):
             payload = sync.build_payload()
 
         self.assertEqual(payload["wellness"]["provider_status"]["zepp"]["status"], "auth_error")
-        self.assertEqual(payload["summary"]["activities"], [{"id": "garmin-activity-1"}])
+        self.assertEqual(payload["summary"]["activities"][0]["id"], "garmin-activity-1")
+        self.assertEqual(payload["activity_provider_status"]["zepp"]["status"], "auth_error")
         self.assertEqual(payload["wellness"]["effective"]["sleep"]["source"], "garmin")
         self.assertNotIn("stress", payload["wellness"]["effective"])
 

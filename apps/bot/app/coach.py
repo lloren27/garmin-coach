@@ -87,7 +87,7 @@ def format_help() -> str:
         "/fuerza - circuitos A/B y registro de pesos, reps y RIR\n"
         "/malaga - foco Maraton de Malaga\n"
         "/syncinfo - ultima sincronizacion\n"
-        "Tambien puedes mandar una nota de voz: el Mac la transcribe y el coach local responde."
+        "Tambien puedes mandar una nota de voz: el TrAIner la transcribe y el coach local responde."
     )
 
 
@@ -135,7 +135,7 @@ def format_sync_requested(document: dict[str, Any], sync: dict[str, Any] | None 
         lines.append("Modo: actividades Zepp recientes")
     if sync:
         lines.append(f"Ultimos datos actuales: {_format_datetime_es(sync.get('received_at'))} hora Espana")
-    lines.append("El Mac la ejecutara en cuanto este despierto y el watcher local la detecte.")
+    lines.append("TrAIner la ejecutara en cuanto este despierto y el watcher local la detecte.")
     return "\n".join(lines)
 
 
@@ -153,7 +153,7 @@ def format_ai_help() -> str:
 def format_ai_queued(document: dict[str, Any]) -> str:
     return (
         "Consulta recibida. Estoy haciendo el análisis de tus datos; normalmente tarda entre 40 y 70 segundos. "
-        "Un plan semanal puede tardar algo más. Verás «escribiendo…» cuando el Mac empiece a procesarla."
+        "Un plan semanal puede tardar algo más. Verás «escribiendo…» cuando TrAIner empiece a procesarla."
     )
 
 
@@ -163,7 +163,7 @@ def format_voice_queued(document: dict[str, Any]) -> str:
     return (
         f"Audio recibido{duration_text}.\n"
         "Voy a escuchar tu consulta y revisar tus datos; normalmente tarda entre 40 y 70 segundos. "
-        "Verás «escribiendo…» mientras el Mac la procesa."
+        "Verás «escribiendo…» mientras el trAIner la procesa."
     )
 
 
@@ -171,7 +171,7 @@ def format_lab_test_help() -> str:
     return (
         "Prueba de esfuerzo\n"
         "Envia el PDF o DOCX a este chat con el texto /prueba_esfuerzo en el comentario del archivo.\n"
-        "El Mac lo leera localmente y propondra datos para el perfil: FCmax, VT1, VT2, VO2max, ritmos, potencia y notas.\n"
+        "TrAIner lo leera localmente y propondra datos para el perfil: FCmax, VT1, VT2, VO2max, ritmos, potencia y notas.\n"
         "No se aplicara nada automaticamente. Corrige con /corregir_prueba y confirma con /aplicar_prueba."
     )
 
@@ -181,7 +181,7 @@ def format_lab_test_queued(document: dict[str, Any]) -> str:
     return (
         "Prueba de esfuerzo recibida\n"
         f"Archivo: {name}\n"
-        "El Mac la procesara localmente y te mandara una propuesta antes de tocar el perfil."
+        "TrAIner la procesara localmente y te mandara una propuesta antes de tocar el perfil."
     )
 
 
@@ -1714,7 +1714,7 @@ def format_wattwise(
     payload = _wattwise_payload(wattwise)
     metrics = _wattwise_metrics(wattwise)
     if not payload or payload.get("status") != "ok":
-        return "Todavia no tengo un analisis Wattwise publicado. Ejecuta /sync con el Mac despierto."
+        return "Todavia no tengo un analisis Wattwise publicado. Ejecuta /sync con el TrAIner despierto."
     if not metrics:
         return "Wattwise esta conectado, pero aun no hay actividades ciclistas con potencia suficiente para calcular TSS e IF."
 

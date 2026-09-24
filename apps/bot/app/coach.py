@@ -637,7 +637,7 @@ def format_today(sync: dict[str, Any] | None) -> str:
 
     lines = [
         f"Hoy ({_format_date_es(today.get('date'))})",
-        f"Actividades: {len(today.get('activities') or [])}",
+        f"Actividades: {len(today.get('activities') or [])}{_today_activity_source_suffix(today.get('activities') or [])}",
         f"Entreno: {today.get('training_minutes', 0)} min, {today.get('km', 0)} km",
     ]
     if effective is not None:
@@ -1187,7 +1187,7 @@ def format_latest(sync: dict[str, Any] | None) -> str:
     activity = activities[-1]
     lines = [
         "Ultima actividad",
-        f"{_format_date_es(activity.get('date'))} - {activity.get('name', 'Actividad')}",
+        f"{_format_date_es(activity.get('date'))} - {activity.get('name', 'Actividad')}{_activity_source_suffix(activity)}",
         f"Tipo: {_sport_label(activity.get('sport'))}",
         f"Duracion: {_format_duration(activity.get('duration_s'))}",
     ]
@@ -1205,7 +1205,7 @@ def format_latest(sync: dict[str, Any] | None) -> str:
         source = "Garmin" if activity.get("running_load_source") == "garmin" else "TRIMP estimado"
         lines.append(
             f"Carga running: {_format_compact_number(activity.get('running_load'), 1)} ({source}); "
-            f"{_running_activity_load_reading(activity)}"
+            f"{_running_activity_load_reading(activity)}{_activity_source_suffix(activity)}"
         )
     lines.append(f"Feedback: {_latest_feedback(activity)}")
     return "\n".join(lines)
@@ -2345,18 +2345,26 @@ def _activity_line(activity: dict[str, Any]) -> str:
     return ", ".join(bits)
 
 
+def _activity_source_suffix(activity: dict[str, Any]) -> str:
+    return " [Zepp]" if activity.get("source") == "zepp" else ""
+
+
+def _today_activity_source_suffix(activities: list[dict[str, Any]]) -> str:
+    return " [Zepp]" if any(activity.get("source") == "zepp" for activity in activities) else ""
+
+
 def _daily_activity_line(activity: dict[str, Any]) -> str:
     sport = activity.get("sport")
     duration = _format_duration(activity.get("duration_s"))
     if sport == "running":
         pace = f" a {activity.get('pace')}" if activity.get("pace") else ""
-        return f"running {_format_compact_number(activity.get('km'), 1)} km en {duration}{pace}"
+        return f"running {_format_compact_number(activity.get('km'), 1)} km en {duration}{pace}{_activity_source_suffix(activity)}"
     if sport == "cycling":
         speed = f" a {_format_compact_number(activity.get('avg_speed_kmh'), 1)} km/h" if activity.get("avg_speed_kmh") else ""
-        return f"bici {_format_compact_number(activity.get('km'), 1)} km en {duration}{speed}"
+        return f"bici {_format_compact_number(activity.get('km'), 1)} km en {duration}{speed}{_activity_source_suffix(activity)}"
     if sport == "strength":
-        return f"fuerza durante {duration}"
-    return f"{_sport_label(sport)} durante {duration}"
+        return f"fuerza durante {duration}{_activity_source_suffix(activity)}"
+    return f"{_sport_label(sport)} durante {duration}{_activity_source_suffix(activity)}"
 
 
 def _manual_strength_day_line(strength_context: dict[str, Any] | None) -> str:

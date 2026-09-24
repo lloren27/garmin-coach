@@ -6,6 +6,36 @@ from garmin_sync.ai_worker import _compact_injury_checkins, compact_context, pre
 
 
 class AiCheckinContextTests(unittest.TestCase):
+    def test_ai_context_keeps_zepp_provenance_without_raw_history_payload(self) -> None:
+        context = {
+            "sync": {
+                "payload": {
+                    "summary": {
+                        "activities": [
+                            {
+                                "id": "zepp:run:track-42",
+                                "source": "zepp",
+                                "source_activity_id": "track-42",
+                                "date": "2026-09-24",
+                                "started_at": "2026-09-24T07:25:00+02:00",
+                                "sport": "running",
+                                "km": 8.02,
+                                "duration_s": 2518,
+                                "avg_hr": 151,
+                                "originSummary": {"raw": "never send"},
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+        activities = compact_context(context)["extra_context"]["recent_activities"]
+
+        self.assertEqual(activities[0]["source"], "zepp")
+        self.assertEqual(activities[0]["source_activity_id"], "track-42")
+        self.assertNotIn("originSummary", activities[0])
+
     def test_compact_context_keeps_only_effective_v2_wellness(self) -> None:
         context = {
             "sync": {

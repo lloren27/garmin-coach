@@ -1214,7 +1214,7 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
     summary = payload.get("summary") or {}
     wellness = _compact_wellness(payload.get("wellness"))
     physiology = payload.get("physiology") or {}
-    activities = summary.get("activities") or []
+    activities = _compact_activities(summary.get("activities") or [])
 
     extra_context = {
         'change_proposal_allowed_now': context.get('change_proposal_allowed_now') is True,
@@ -1260,6 +1260,21 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
         "coach_brief": coach_brief,
         "extra_context": extra_context,
     }
+
+
+def _compact_activities(activities: list[Any]) -> list[dict[str, Any]]:
+    allowed = {
+        "id", "source", "source_activity_id", "date", "started_at", "name", "sport", "type",
+        "km", "duration_s", "hours", "pace", "avg_speed_kmh", "avg_hr", "max_hr",
+        "training_effect", "anaerobic_training_effect", "training_load", "provider_exercise_load",
+        "calories", "elevation_gain_m", "avg_power", "normalized_power", "running_load",
+        "running_load_source", "hr_reserve_pct",
+    }
+    return [
+        {key: value for key, value in activity.items() if key in allowed}
+        for activity in activities
+        if isinstance(activity, dict)
+    ]
 
 
 def _compact_wellness(value: Any) -> dict[str, Any]:

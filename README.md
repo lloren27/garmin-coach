@@ -73,6 +73,7 @@ ZEPP_TOKEN=...
 ZEPP_USER_ID=...
 ZEPP_BASE_URL=...
 ZEPP_SYNC_LOOKBACK_DAYS=2
+ZEPP_ACTIVITY_SYNC_LOOKBACK_DAYS=3
 ```
 
 Do not add those values to Railway and never share or log `ZEPP_TOKEN`. The
@@ -87,7 +88,12 @@ scripts/run_sync.sh
 ```
 
 Zepp is preferred for sleep, resting heart rate and steps when valid. Garmin
-remains the only source of activities and sport-specific reference data.
+remains the preferred source for activities and sport-specific reference data,
+but a completed Zepp workout is imported when no matching Garmin activity exists.
+The default activity lookback of `3` imports today plus the previous three days.
+When Garmin and Zepp recorded the same activity, Garmin is kept only after a
+deterministic match on sport, start time, overlap and distance; uncertain records
+are retained rather than silently discarded.
 Stress and Zepp load metrics are not substituted with Garmin values, while a
 complete Garmin sleep session can be used when Zepp has no valid session.
 
@@ -128,6 +134,12 @@ Immediate manual sync:
 ```bash
 scripts/run_sync.sh
 ```
+
+For a workout recorded only with the Helio Strap, first open the Zepp mobile app
+and wait until that activity is visible there: the app must publish it to Zepp
+Cloud before the Mac can import it. Then send `/sync zepp` to Telegram. The Mac
+watcher runs one complete local sync (it also refreshes Garmin and wellness),
+and the imported session appears as `[Zepp]` in `/hoy`, `/ultima` and `/feedback`.
 
 Logs:
 
@@ -325,6 +337,7 @@ The local bridge renews Wattwise's short-lived access token automatically using
 - `/feedback`
 - `/coach`
 - `/sync`
+- `/sync zepp` (request a complete sync that includes recent Zepp activities)
 - `/perfil`
 - `/prueba_esfuerzo`
 - `/pruebas`
@@ -358,6 +371,7 @@ Adjunta un PDF o DOCX con /prueba_esfuerzo en el comentario del archivo
 /aplicar_prueba
 /descartar_prueba
 /sync
+/sync zepp
 /salud
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
 /perfil peso 71.5 ftp 235
@@ -394,8 +408,10 @@ pending proposal. Review it with `/ver_prueba` or `/pruebas`, preview zones with
 `/zonas`, correct values with `/corregir_prueba`, discard the pending proposal
 with `/descartar_prueba`, and apply it to the athlete profile with
 `/aplicar_prueba`.
-`/sync` requests a Garmin sync from Telegram. The Railway bot stores the request,
-and the local Mac watcher executes it while the Mac is awake.
+`/sync` requests a complete local sync from Telegram. `/sync zepp` is useful
+after recording a workout with the Helio Strap: it requests the same complete
+sync while making the Zepp-activity intent explicit. In both cases the Railway
+bot stores one request and the local Mac watcher executes it while the Mac is awake.
 All coaching questions now follow one flow: text, `/coach`, coaching commands
 (such as `/feedback`, `/semana`, `/ajustar`, and `/fuerza` without arguments),
 and transcribed voice enter the same local Ollama analysis. The Mac must be

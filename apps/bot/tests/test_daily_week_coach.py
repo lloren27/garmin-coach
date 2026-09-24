@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 from datetime import datetime
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ from app.coach import (
     format_checkin_saved,
     format_feedback,
     format_health,
+    format_latest,
     format_strength,
     format_today,
     format_week,
@@ -115,6 +117,55 @@ ZEPPCENTRIC_SYNC = {
 
 
 class DailyFeedbackTests(unittest.TestCase):
+    def test_latest_zepp_activity_is_labelled_and_keeps_common_metrics(self) -> None:
+        sync = deepcopy(DAILY_SYNC)
+        sync["payload"]["summary"]["activities"] = [
+            {
+                "id": "zepp:run:track-42",
+                "source": "zepp",
+                "source_activity_id": "track-42",
+                "date": "2026-09-09",
+                "name": "Correr al aire libre",
+                "sport": "running",
+                "km": 8.02,
+                "duration_s": 2518,
+                "pace": "5:14/km",
+                "avg_hr": 151,
+            }
+        ]
+
+        answer = format_latest(sync)
+
+        self.assertIn("[Zepp]", answer)
+        self.assertIn("Distancia: 8.02 km", answer)
+        self.assertIn("Pulso medio: 151 ppm", answer)
+        self.assertNotIn("Training effect:", answer)
+        self.assertNotIn("Wattwise", answer)
+        self.assertNotIn("Potencia", answer)
+
+    def test_today_and_feedback_label_zepp_activities_but_garmin_stays_unsuffixed(self) -> None:
+        sync = deepcopy(DAILY_SYNC)
+        zepp_run = {
+            "id": "zepp:run:track-42",
+            "source": "zepp",
+            "date": "2026-09-09",
+            "sport": "running",
+            "km": 8.02,
+            "duration_s": 2518,
+            "pace": "5:14/km",
+        }
+        sync["payload"]["summary"]["activities"] = [zepp_run]
+        sync["payload"]["summary"]["today"] = {
+            "date": "2026-09-09",
+            "activities": [zepp_run],
+            "training_minutes": 42,
+            "km": 8.0,
+        }
+
+        self.assertIn("Actividades: 1 [Zepp]", format_today(sync))
+        self.assertIn("[Zepp]", format_feedback(sync))
+        self.assertNotIn("[Zepp]", format_latest(DAILY_SYNC))
+
     def test_today_labels_effective_zepp_health_but_keeps_garmin_activities(self) -> None:
         answer = format_today(ZEPPCENTRIC_SYNC)
 

@@ -43,7 +43,7 @@ Desde `apps/sync-local`, comando unitario base:
 
 En un worktree usar los intérpretes absolutos del checkout original con `PYTHONPATH` apuntando a los paquetes del worktree, sin copiar `.env` ni enlazar archivos de datos de producción.
 
-## Tarea 1: Contratos internos e incidencias tipadas
+## Task 1: Contratos internos e incidencias tipadas
 
 **Files:** crear `apps/sync-local/garmin_sync/coach_generation_contracts.py`, `coach_validation.py` y `apps/sync-local/tests/test_coach_generation_contracts.py`.
 
@@ -87,7 +87,7 @@ def test_keep_plan_cannot_regenerate_duration(self):
 - [ ] Implementar catálogo inicial: `PLAN_SESSION`, `RECOVERY_RECOMMENDATION`, `OBSERVED_ACTIVITY`, `OBSERVED_WELLNESS`, `DATA_STALE`, `DATA_MISSING`, `NEEDS_CLARIFICATION`, `CHANGE_REQUESTED`, `ANALYSIS_LIMITED`. Cada código exige la referencia o condición correspondiente; no implica carga aceptable ni diagnóstico.
 - [ ] Ejecutar los casos hasta verde; revisar el JSON Schema producido, incluidas las restricciones de cada variante; guardar el bloque en un commit.
 
-## Tarea 2: Instantánea, evidencias y resolución del plan
+## Task 2: Instantánea, evidencias y resolución del plan
 
 **Files:** crear `apps/sync-local/garmin_sync/coach_generation_context.py`, `coach_generation_resolver.py` y `apps/sync-local/tests/test_coach_generation_context.py`.
 
@@ -128,7 +128,7 @@ def test_wrong_snapshot_is_fatal(self):
 - [ ] Validar evidencia y conclusiones contra la instantánea. Comprobar permisos antes de adaptar propuestas; conservar sus operaciones y la posterior comprobación del backend. Mapear proveedor Zepp a la representación pública compatible sin atribuirlo a Garmin (por ejemplo, fuente `backend` con hecho explícitamente atribuido a Zepp).
 - [ ] Ejecutar todas las pruebas de tarea 1 y 2 en verde y guardar el bloque en un commit.
 
-## Tarea 3: Texto canónico y adaptación pública
+## Task 3: Texto canónico y adaptación pública
 
 **Files:** crear `apps/sync-local/garmin_sync/coach_generation_renderer.py` y `apps/sync-local/tests/test_coach_generation_renderer.py`.
 
@@ -157,7 +157,7 @@ def test_render_uses_resolved_duration(self):
 - [ ] Implementar presupuesto de longitud por bloques: instrucciones y condiciones obligatorias primero, explicación opcional después. Si lo obligatorio excede el máximo, emitir una incidencia fatal de rendering y pasar a reserva; nunca truncar una sesión.
 - [ ] Probar texto largo, varias sesiones, títulos maliciosos y redondeo que pueda cambiar objetivos; ejecutar tareas 1–3 en verde y guardar un commit.
 
-## Tarea 4: Orquestación, reparación y observabilidad
+## Task 4: Orquestación, reparación y observabilidad
 
 **Files:** modificar `apps/sync-local/garmin_sync/ai_worker.py`; crear `apps/sync-local/garmin_sync/coach_generation_pipeline.py`, `apps/sync-local/tests/test_coach_generation_pipeline.py`; adaptar `test_ai_response_flow.py` y `test_change_proposal_flow.py` al contrato interno.
 
@@ -189,7 +189,7 @@ def test_fatal_does_not_retry(self):
 - [ ] Mantener el fallback y `output_source`, finalización idempotente y texto idéntico para voz. Retirar validadores de texto libre y rutas obsoletas solo después de trasladar sus garantías a pruebas nuevas; mantener tests del contrato público histórico.
 - [ ] Ejecutar tareas 1–4 y suites de respuesta/propuestas en verde; guardar un commit.
 
-## Tarea 5: Compatibilidad, prueba local y documentación
+## Task 5: Compatibilidad, prueba local y documentación
 
 **Files:** modificar `docs/coach-validation.md`; ampliar `apps/bot/tests/test_pending_changes.py`, `test_ai_job_completion.py` y pruebas del worker si se detecta un caso no cubierto; crear `apps/sync-local/tests/manual_coach_generation_smoke.py`.
 

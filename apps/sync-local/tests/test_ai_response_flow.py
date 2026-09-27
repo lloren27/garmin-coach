@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import copy
 import json
 import time
 from datetime import datetime, timedelta
@@ -93,7 +94,7 @@ class ResponseFlowTests(unittest.TestCase):
             calls.append((method, payload))
             return {"ok": True}
 
-        def slow_answer(_question, _context):
+        def slow_answer(_question, _context, **kwargs):
             time.sleep(0.04)
             return ollama_result("Hoy descansa.")
 
@@ -106,237 +107,83 @@ class ResponseFlowTests(unittest.TestCase):
         self.assertEqual(len(calls), count_after_stop)
         self.assertTrue(all(call == ("sendChatAction", {"chat_id": "chat", "action": "typing"}) for call in calls))
 
-    def test_simple_question_uses_one_concise_generation_and_hides_internal_reasoning(self) -> None:
-        response = Mock()
-        response.json.return_value = {"message": {"thinking": "private reasoning", "content": structured_response("Hoy conviene reducir la carga para recuperar.")}, "done_reason": "stop"}
-        with patch.object(worker.httpx, "post", return_value=response) as post:
-            result = worker.call_ollama("¿Qué hago?", {})
-            self.assertEqual(post.call_count, 1)
-            request = post.call_args.kwargs["json"]
-            self.assertFalse(request["think"])
-            self.assertLessEqual(request["options"]["num_predict"], 1024)
-            self.assertLessEqual(request["options"]["temperature"], 0.3)
-            self.assertIn("100 y 180 palabras", str(request["messages"]))
-            self.assertNotIn("/no_think", str(request))
-            self.assertNotIn("private reasoning", result.answer)
-            self.assertEqual(result.source, "ollama")
-            self.assertEqual(result.structured_output["response_type"], "single_session")
+    def _generation_transport(self, requests, decisions=None, mutate=None):
+        def post(*args, **kwargs):
+            request = kwargs['json']
+            requests.append(request)
+            schema = request['format']
+            raw = dict(schema_version='1', context_snapshot_id=schema['properties']['context_snapshot_id']['const'],
+                       response_type='single_session', decisions=copy.deepcopy(decisions) if decisions else [{'action': 'ask_user'}],
+                       conclusions=[], evidence_refs=[])
+            if mutate: mutate(raw, len(requests))
+            reply = Mock()
+            reply.json.return_value = {'message': {'content': json.dumps(raw), 'thinking': 'private reasoning'},
+                                       'done_reason': 'stop'}
+            return reply
+        return post
 
-    def test_valid_structured_response_is_sent_with_auditable_output(self) -> None:
-        draft = {
-            "message": {
-                "content": structured_response(
-                    "Hoy realiza treinta minutos muy suaves y para si aparece dolor.",
-                )
-            },
-            "done_reason": "stop",
-        }
+    def test_simple_generation_uses_internal_contract_and_hides_reasoning(self):
+        requests = []
+        with patch.object(worker.httpx, 'post', side_effect=self._generation_transport(requests)):
+            result = worker.call_ollama('¿Qué hago?', {})
+        self.assertEqual(len(requests), 1)
+        self.assertFalse(requests[0]['think'])
+        self.assertLessEqual(requests[0]['options']['temperature'], 0.3)
+        self.assertNotIn('answer', requests[0]['format']['properties'])
+        self.assertNotIn('private reasoning', result.answer)
+        self.assertEqual(result.source, 'ollama')
+        self.assertEqual(result.answer, result.structured_output['answer'])
 
-        with patch.object(worker, "ollama_generate", return_value=draft):
-            worker.process_job({"id": "job", "text": "¿Qué me recomiendas?"}, {})
+    def test_weekly_generation_has_more_token_room(self):
+        requests = []
+        with patch.object(worker.httpx, 'post', side_effect=self._generation_transport(requests)):
+            worker.call_ollama('¿Qué hago?', {})
+            worker.call_ollama('Plan de esta semana', {})
+        self.assertGreater(requests[1]['options']['num_predict'], requests[0]['options']['num_predict'])
 
+    def test_planned_tomorrow_resolves_dose_and_rejects_model_duplicates(self):
+        tomorrow = (datetime.now(ZoneInfo('Europe/Madrid')).date() + timedelta(days=1)).isoformat()
+        context = {'training_plan': {'sessions': [{'id': 'run', 'date': tomorrow, 'sport': 'running',
+            'session_type': 'easy_run', 'intensity': 'easy', 'duration_min': 40, 'duration_max': 55}]}}
+        requests = []
+        def mutate(raw, attempt):
+            if attempt == 1: raw['decisions'][0]['duration_min'] = 30
+        with patch.object(worker.httpx, 'post', side_effect=self._generation_transport(requests,
+                          [{'action': 'keep_plan', 'session_id': 'run'}], mutate)):
+            result = worker.call_ollama('¿Qué hago mañana?', context)
+        self.assertEqual(len(requests), 2)
+        decision = result.structured_output['decisions'][0]
+        self.assertEqual(decision['date'], tomorrow)
+        self.assertEqual(decision['source'], 'training_plan')
+        self.assertEqual(decision['duration_min'], 40)
+        self.assertIn('40 a 55 minutos', result.answer)
+        self.assertNotIn('30 minutos', result.answer)
+
+    def test_catalog_and_repair_do_not_invent_checkin(self):
+        requests = []
+        def mutate(raw, attempt):
+            if attempt == 1: raw['evidence_refs'] = ['checkin:fake']
+        with patch.object(worker.httpx, 'post', side_effect=self._generation_transport(requests, mutate=mutate)):
+            result = worker.call_ollama('¿Qué hago?', {})
+        catalog = json.loads(requests[0]['messages'][1]['content'])['context']['available_evidence']
+        self.assertEqual(catalog, [])
+        repair = json.loads(requests[1]['messages'][-1]['content'])
+        self.assertEqual(repair['validation_errors'][0]['code'], 'UNKNOWN_EVIDENCE_REF')
+        self.assertEqual(result.structured_output['evidence'], [])
+
+    def test_process_job_sends_canonical_answer_and_auditable_output(self):
+        requests = []
+        with patch.object(worker, 'ollama_generate') as generate:
+            def answer(messages, **kwargs):
+                raw = dict(schema_version='1', context_snapshot_id=kwargs['response_schema']['properties']['context_snapshot_id']['const'],
+                           response_type='information', decisions=[{'action': 'ask_user'}], conclusions=[], evidence_refs=[])
+                return {'message': {'content': json.dumps(raw)}}
+            generate.side_effect = answer
+            worker.process_job({'id': 'job', 'text': '¿Qué hago?'}, {})
         payload = self.post.call_args.args[1]
-        self.assertEqual(payload["output_source"], "ollama")
-        self.assertEqual(payload["structured_output"]["response_type"], "single_session")
-        self.assertEqual(
-            payload["structured_output"]["answer"],
-            "Hoy realiza treinta minutos muy suaves y para si aparece dolor.",
-        )
-
-    def test_weekly_plan_uses_one_generation_with_more_room_than_a_simple_answer(self) -> None:
-        response = Mock()
-        response.json.return_value = {"message": {"content": structured_response("Lunes descansa y el martes haz un rodaje suave de cuarenta minutos. El resto de la semana mantén la carga moderada y ajusta si aparecen molestias.", response_type="weekly_plan")}, "done_reason": "stop"}
-        with patch.object(worker.httpx, "post", return_value=response) as post:
-            worker.call_ollama("Prepárame el plan de esta semana, día por día", {})
-            request = post.call_args.kwargs["json"]
-            self.assertEqual(post.call_count, 1)
-            self.assertGreater(request["options"]["num_predict"], 1024)
-            self.assertLessEqual(request["options"]["num_predict"], 1600)
-            self.assertIn("todos los días", str(request["messages"]))
-            self.assertIn("día y fecha exacta", str(request["messages"]))
-
-    def test_tomorrow_target_is_explicitly_sent_to_ollama(self) -> None:
-        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
-        answer = (
-            "Mañana toca un rodaje fácil de 40 a 55 minutos, según el plan vigente. "
-            "Mantén una intensidad fácil porque la carga reciente aconseja un entrenamiento suave."
-        )
-        response = Mock()
-        response.json.return_value = {
-            "message": {
-                "content": structured_response(answer)
-            },
-            "done_reason": "stop",
-        }
-        context = {
-            "training_plan": {
-                "sessions": [
-                    {
-                        "date": tomorrow.isoformat(),
-                        "sport": "running",
-                        "session_type": "easy_run",
-                        "intensity": "easy",
-                        "duration_min": 40,
-                        "duration_max": 55,
-                    }
-                ]
-            }
-        }
-
-        with patch.object(worker.httpx, "post", return_value=response) as post:
-            worker.call_ollama("¿Qué entrenamiento debería hacer mañana?", context)
-
-        request = post.call_args.kwargs["json"]
-        self.assertIn("question_target", str(request["messages"]))
-        self.assertIn(tomorrow.isoformat(), str(request["messages"]))
-
-    def test_planned_tomorrow_retries_when_model_emits_decisions(self) -> None:
-        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
-        answer = (
-            "Mañana toca un rodaje fácil de 40 a 55 minutos, según el plan vigente. "
-            "Mantén una intensidad fácil porque la carga reciente aconseja un entrenamiento suave."
-        )
-        invalid = Mock()
-        invalid.json.return_value = {
-            "message": {
-                "content": structured_response(
-                    answer,
-                    decisions=[
-                        {
-                            "action": "keep_plan",
-                            "reason": "El plan vigente sigue siendo adecuado.",
-                        }
-                    ],
-                )
-            },
-            "done_reason": "stop",
-        }
-        repaired = Mock()
-        repaired.json.return_value = {
-            "message": {
-                "content": structured_response(
-                    answer,
-                )
-            },
-            "done_reason": "stop",
-        }
-        context = {
-            "training_plan": {
-                "sessions": [
-                    {
-                        "date": tomorrow.isoformat(),
-                        "sport": "running",
-                        "session_type": "easy_run",
-                        "intensity": "easy",
-                        "duration_min": 40,
-                        "duration_max": 55,
-                    }
-                ]
-            }
-        }
-
-        with patch.object(worker.httpx, "post", side_effect=[invalid, repaired]) as post:
-            result = worker.call_ollama("¿Qué entrenamiento debería hacer mañana?", context)
-
-        self.assertEqual(result.source, "ollama")
-        schema = post.call_args_list[0].kwargs["json"]["format"]
-        self.assertEqual(schema["properties"]["decisions"]["maxItems"], 0)
-        repair_prompt = post.call_args_list[1].kwargs["json"]["messages"][-1]["content"]
-        self.assertIn("must not emit decisions", repair_prompt)
-
-    def test_planned_tomorrow_decisions_are_derived_by_python(self) -> None:
-        tomorrow = datetime.now(ZoneInfo("Europe/Madrid")).date() + timedelta(days=1)
-        answer = (
-            "Para mañana mantén la sesión de movilidad de 15 a 20 minutos prevista "
-            "en el plan de entrenamiento y evita añadir intensidad."
-        )
-        response = Mock()
-        response.json.return_value = {
-            "message": {"content": structured_response(answer)},
-            "done_reason": "stop",
-        }
-        context = {
-            "training_plan": {
-                "sessions": [
-                    {
-                        "date": tomorrow.isoformat(),
-                        "sport": "recovery",
-                        "session_type": "rest_mobility",
-                        "intensity": "very_easy",
-                        "duration_min": 15,
-                        "duration_max": 20,
-                    }
-                ]
-            }
-        }
-
-        with patch.object(worker.httpx, "post", return_value=response) as post:
-            result = worker.call_ollama("¿Qué entrenamiento debería hacer mañana?", context)
-
-        decision = result.structured_output["decisions"][0]
-        self.assertEqual(decision["source"], "training_plan")
-        self.assertEqual(decision["action"], "keep_plan")
-        self.assertEqual(decision["date"], tomorrow.isoformat())
-        self.assertEqual(decision["sport"], "recovery")
-        self.assertEqual(decision["session_type"], "rest_mobility")
-        self.assertEqual(decision["intensity"], "very_easy")
-        self.assertEqual(decision["duration_min"], 15)
-        self.assertEqual(decision["duration_max_min"], 20)
-        schema = post.call_args.kwargs["json"]["format"]
-        self.assertEqual(schema["properties"]["decisions"]["maxItems"], 0)
-
-    def test_prompt_exposes_only_available_evidence_sources(self) -> None:
-        answer = "Hoy mantén la carga suave porque no hay datos adicionales para elevar la intensidad."
-        response = Mock()
-        response.json.return_value = {
-            "message": {
-                "content": structured_response(
-                    answer,
-                    evidence=[{"source": "backend", "fact": "No hay datos adicionales."}],
-                )
-            },
-            "done_reason": "stop",
-        }
-
-        with patch.object(worker.httpx, "post", return_value=response) as post:
-            worker.call_ollama("¿Qué hago?", {})
-
-        prompt = str(post.call_args.kwargs["json"]["messages"])
-        self.assertIn("allowed_evidence_sources", prompt)
-        self.assertIn("backend", prompt)
-        self.assertNotIn("'checkin'", prompt)
-
-    def test_validation_failure_is_repaired_once_with_allowed_sources(self) -> None:
-        answer = "Hoy mantén la carga suave porque los datos disponibles no justifican más intensidad."
-        invalid = Mock()
-        invalid.json.return_value = {
-            "message": {
-                "content": structured_response(
-                    answer,
-                    evidence=[{"source": "checkin", "fact": "No hay molestias registradas."}],
-                )
-            },
-            "done_reason": "stop",
-        }
-        repaired = Mock()
-        repaired.json.return_value = {
-            "message": {
-                "content": structured_response(
-                    answer,
-                    evidence=[{"source": "backend", "fact": "No hay datos adicionales."}],
-                )
-            },
-            "done_reason": "stop",
-        }
-
-        with patch.object(worker.httpx, "post", side_effect=[invalid, repaired]) as post:
-            result = worker.call_ollama("¿Qué hago?", {})
-
-        self.assertEqual(result.source, "ollama")
-        self.assertEqual(post.call_count, 2)
-        repair_prompt = post.call_args_list[1].kwargs["json"]["messages"][-1]["content"]
-        self.assertIn("Evidence references unavailable source: checkin", repair_prompt)
-        self.assertIn("backend", repair_prompt)
+        self.assertEqual(payload['output_source'], 'ollama')
+        self.assertEqual(payload['answer'], payload['structured_output']['answer'])
+        self.assertEqual(payload['structured_output']['decisions'][0]['action'], 'ask_user')
 
     def test_http_failure_is_not_retried_as_a_validation_repair(self) -> None:
         with patch.object(worker.httpx, "post", side_effect=httpx.ConnectError("offline")) as post:

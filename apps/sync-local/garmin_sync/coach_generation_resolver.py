@@ -4,7 +4,7 @@ from datetime import date
 from pydantic import ValidationError
 from .ai_contracts import CoachDecision, CoachEvidence, StructuredChangeProposal
 from .coach_generation_contracts import CoachGenerationResponse, Conclusion
-from .coach_generation_context import ContextSnapshot, EvidenceRecord
+from .coach_generation_context import ContextSnapshot, EvidenceRecord, thaw
 from .coach_validation import CoachValidationError, RepairHint, ValidationIssue, ValidationCode as Code, ValidationPhase as Phase, ValidationSeverity as Severity
 
 
@@ -61,6 +61,8 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             if (not session or session.get('status') not in (None, 'planned')
                 or session.get('completed_activity_id') or item.session_id in seen):
                 fail(Code.UNKNOWN_PLAN_SESSION, Phase.RESOLUTION, path + '.session_id')
+            if any(session.get(k) is None for k in ('sport', 'session_type', 'intensity', 'duration_min')) or session.get('intensity') == 'unknown':
+                fail(Code.INVALID_CONTEXT, Phase.RESOLUTION, path, fatal=True)
             seen.add(item.session_id)
             if session.get('date') not in snapshot.target_dates:
                 fail(Code.PLAN_DATE_MISMATCH, Phase.RESOLUTION, path + '.date', hint=RepairHint(allowed_values=snapshot.target_dates))
@@ -69,6 +71,8 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             data.update(action='keep_plan', source='training_plan', reason=REASONS['PLAN_SESSION'],
                         duration_max_min=session.get('duration_max'))
         else:
+            if item.action not in {'ask_user', 'information_only'} and not item.evidence_refs:
+                fail(Code.INVALID_DECISION, Phase.DOMAIN, path + '.evidence_refs', hint=RepairHint(allowed_refs=tuple(snapshot.evidence)))
             data = item.model_dump(exclude={'evidence_refs', 'code'}, exclude_none=True)
             if item.action in {'ask_user', 'information_only'}:
                 data['reason'] = REASONS[item.code]
@@ -87,6 +91,14 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
                 (snapshot.target_dates and str(decision.date) not in snapshot.target_dates)):
             fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, path + '.date')
         decisions.append(decision)
+    if seen:
+        expected = {k for k, s in snapshot.sessions.items() if s.get('status') in (None, 'planned')
+                    and not s.get('completed_activity_id') and s.get('date') in snapshot.target_dates}
+        if seen != expected:
+            fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions', hint=RepairHint(rule='Include every planned session in the requested scope, or ask for clarification.'))
+    rests = {d.date for d in decisions if d.action == 'rest'}
+    if any(d.date in rests and d.action not in {'rest', 'ask_user', 'information_only'} for d in decisions):
+        fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions')
     if not decisions and not response.conclusions and not refs:
         fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions')
     for index, conclusion in enumerate(response.conclusions):
@@ -95,6 +107,10 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
         if conclusion.code in required and required[conclusion.code] not in kinds:
             fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]')
         if conclusion.code == 'DATA_STALE' and snapshot.freshness != 'stale':
+            fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]')
+        if conclusion.code == 'RECOVERY_RECOMMENDATION' and not any(d.action in {'rest', 'recovery'} for d in decisions):
+            fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]')
+        if conclusion.code == 'DATA_MISSING' and snapshot.evidence:
             fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]')
         if conclusion.code == 'CHANGE_REQUESTED' and response.change_proposal is None:
             fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]')
@@ -114,5 +130,17 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             fail(Code.UNAUTHORIZED_CHANGE_PROPOSAL, Phase.AUTHORIZATION, 'change_proposal.evidence_refs', fatal=True)
         proposal = StructuredChangeProposal(reason=REASONS['CHANGE_REQUESTED'], confidence=value.confidence,
                                              evidence=evidence, changes=changes)
+    if proposal is not None:
+        from app.pending_changes import PendingChangeValidator
+        plan = thaw(snapshot.plan)
+        if any(plan.get(k) is None for k in ('id', 'owner_id', 'revision', 'start_date', 'end_date')):
+            fail(Code.INVALID_CONTEXT, Phase.AUTHORIZATION, 'change_proposal', fatal=True)
+        job = dict(requested_change_proposal=snapshot.proposal_allowed, plan_id=plan['id'],
+                   owner_id=plan['owner_id'], plan_revision=plan['revision'],
+                   proposal_evidence_sources=list(snapshot.proposal_sources))
+        errors = PendingChangeValidator().validate(proposal, job, plan, today=snapshot.now.date())
+        if errors:
+            fail(Code.INVALID_DECISION, Phase.DOMAIN, 'change_proposal',
+                 hint=RepairHint(rule='Respect operation fields, dose, sport, session identity and plan date bounds.'))
     return ResolvedGeneration(response.response_type, tuple(decisions), tuple(response.conclusions),
                               tuple(snapshot.evidence[r] for r in dict.fromkeys(refs)), proposal)

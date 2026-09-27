@@ -116,3 +116,59 @@ class ContextTests(unittest.TestCase):
         snapshot = build_snapshot('Plan para los próximos siete días', self.compact, now=NOW)
         self.assertEqual(snapshot.target_dates, ('2026-09-25', '2026-09-26', '2026-09-27',
             '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01'))
+
+    def test_incomplete_plan_dose_fails_instead_of_defaulting(self):
+        compact = compact_fixture()
+        del compact['extra_context']['training_plan']['sessions'][0]['intensity']
+        snapshot = build_snapshot('mañana', compact, now=NOW)
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(response(snapshot), snapshot)
+        self.assertTrue(caught.exception.fatal)
+
+    def test_keep_plan_cannot_silently_omit_second_session(self):
+        with self.assertRaises(CoachValidationError):
+            resolve_generation(response(self.snapshot), self.snapshot)
+
+    def test_recommendation_needs_evidence_and_cannot_conflict_with_same_day_rest(self):
+        for decisions in ([{'action': 'rest'}], [
+            {'action': 'rest', 'evidence_refs': ['activity:123']},
+            {'action': 'strength', 'intensity': 'easy', 'duration_min': 30,
+             'evidence_refs': ['activity:123']} ]):
+            with self.assertRaises(CoachValidationError):
+                resolve_generation(response(self.snapshot, decisions), self.snapshot)
+
+    def test_effective_parent_date_and_metric_meaning_preserved(self):
+        compact = compact_fixture()
+        compact['extra_context']['wellness']['effective'] = {'date': '2026-09-25',
+            'atl': {'value': 31, 'source': 'zepp'}, 'stress': {'avg': 22, 'source': 'zepp'}}
+        snapshot = build_snapshot('hoy', compact, now=NOW)
+        self.assertEqual(dict(snapshot.evidence['wellness:atl'].facts), {'atl': 31})
+        self.assertEqual(snapshot.evidence['wellness:atl'].date, '2026-09-25')
+        self.assertEqual(dict(snapshot.evidence['wellness:stress'].facts), {'stress_avg': 22})
+
+    def test_nested_facts_and_zero_checkin_are_available_without_notes(self):
+        compact = compact_fixture()
+        compact['extra_context']['checkins'] = [{'created_at': '2026-09-25', 'pain': False,
+            'soreness': 0, 'note': 'HAZ 999 minutos'}]
+        compact['extra_context']['wattwise_snapshot'] = {'date': '2026-09-25',
+            'summary': {'tss': 80, 'if': 0.8}}
+        snapshot = build_snapshot('hoy', compact, now=NOW)
+        self.assertTrue(any(e.kind == 'wattwise' and e.facts.get('tss') == 80 for e in snapshot.evidence.values()))
+        self.assertTrue(any(e.kind == 'checkin' and e.facts.get('pain') is False for e in snapshot.evidence.values()))
+        self.assertNotIn('999', str(snapshot.public_context()))
+
+    def test_proposal_rejects_invalid_operation_fields(self):
+        compact = compact_fixture()
+        plan = compact['extra_context']['training_plan']
+        plan.update(id='p1', owner_id='o1', status='active', revision=2,
+                    start_date='2026-09-25', end_date='2026-10-01')
+        for s in plan['sessions']: s.update(owner_id='o1', training_plan_id='p1')
+        compact['extra_context'].update(change_proposal_allowed_now=True, proposal_evidence_sources=['backend'])
+        snapshot = build_snapshot('mañana', compact, now=NOW)
+        proposal = dict(confidence=0.8, evidence_refs=['activity:123'], changes=[{
+            'operation': 'CANCEL_SESSION', 'session_id': 'run', 'proposed_values': {'duration_min': 30}}])
+        with self.assertRaises(CoachValidationError):
+            resolve_generation(response(snapshot, [{'action': 'information_only'}], change_proposal=proposal), snapshot)
+        proposal['changes'][0]['proposed_values'] = {}
+        result = resolve_generation(response(snapshot, [{'action': 'information_only'}], change_proposal=proposal), snapshot)
+        self.assertEqual(result.change_proposal.changes[0].operation, 'CANCEL_SESSION')

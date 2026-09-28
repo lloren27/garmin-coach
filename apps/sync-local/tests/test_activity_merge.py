@@ -83,8 +83,9 @@ class ActivityMergeTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in merged], ["zepp:run:42", "zepp:run:43"])
 
     def test_zepp_run_enters_common_summary_when_garmin_is_absent(self) -> None:
+        from garmin_sync.sync import TODAY
         summary = summarize_normalized(
-            [activity("zepp:run:42", "zepp", "2026-09-24T07:25:00+02:00", 8.02, 2518, avg_hr=151)],
+            [activity("zepp:run:42", "zepp", f"{TODAY.isoformat()}T07:25:00+02:00", 8.02, 2518, avg_hr=151)],
             {"profile": {"max_hr": 190, "resting_hr": 50, "sex": "hombre"}},
         )
 

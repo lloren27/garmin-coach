@@ -83,3 +83,21 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(first, second)
         error = json.loads(self.requests[1][0][-1]['content'])['validation_errors'][0]
         self.assertIn('activity:123', error['repair_hint']['allowed_refs'])
+
+    def test_forbidden_proposal_source_wins_over_bad_structure(self):
+        compact = compact_fixture()
+        compact['extra_context'].update(change_proposal_allowed_now=True, proposal_evidence_sources=['garmin'])
+        requests = []
+        def generate(messages, **kwargs):
+            requests.append(messages)
+            reply = valid_reply(messages, **kwargs)
+            raw = json.loads(reply['message']['content'])
+            raw.update(decisions=[{'action': 'rest', 'intensity': 'tempo'}], evidence_refs=['foreign'],
+                       change_proposal={'evidence_refs': ['activity:123']})
+            reply['message']['content'] = json.dumps(raw)
+            return reply
+        with redirect_stdout(io.StringIO()), self.assertRaises(CoachValidationError) as caught:
+            generate_validated('mañana', compact, generate=generate, now=NOW)
+        self.assertTrue(caught.exception.fatal)
+        self.assertEqual(caught.exception.issues[0].code, 'UNAUTHORIZED_CHANGE_PROPOSAL')
+        self.assertEqual(len(requests), 1)

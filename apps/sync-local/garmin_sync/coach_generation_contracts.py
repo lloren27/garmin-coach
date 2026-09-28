@@ -120,7 +120,7 @@ class CoachGenerationResponse(StrictModel):
     schema_version: Literal['1']
     context_snapshot_id: Ref
     response_type: ResponseType
-    decisions: list[GenerationDecision] = Field(max_length=7)
+    decisions: list[GenerationDecision] = Field(min_length=1, max_length=7)
     conclusions: list[Conclusion] = Field(max_length=4)
     evidence_refs: Refs
     change_proposal: GenerationChangeProposal | None = None

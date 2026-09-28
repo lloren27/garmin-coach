@@ -5,7 +5,7 @@ import json
 from zoneinfo import ZoneInfo
 from .coach_generation_context import build_snapshot, generation_schema
 from .coach_generation_contracts import parse_generation, normalize_generation
-from .coach_generation_resolver import resolve_generation, fail
+from .coach_generation_resolver import resolve_generation, fail, check_authority
 from .coach_generation_renderer import render_generation
 from .coach_validation import CoachValidationError, ValidationIssue, ValidationCode as Code, ValidationPhase as Phase
 
@@ -18,6 +18,11 @@ planificadas del ámbito solicitado; no reproduzcas duración, ritmo, fecha o in
 Rest solo admite rest/recovery y ningún objetivo de entrenamiento. Si propones actividad, sus objetivos
 son una recomendación puntual: nunca una modificación aplicada. Usa evidencia concreta para recomendar.
 Si la fecha es ambigua, faltan datos o no puedes fundamentar la decisión, usa ask_user o information_only.
+Decisions debe contener al menos una acción. Sin datos, devuelve ask_user con code=DATA_MISSING.
+Conclusions puede ser []. No rellenes conclusiones por obligación: PLAN_SESSION requiere referencias
+de tipo plan; OBSERVED_ACTIVITY de tipo activity; OBSERVED_WELLNESS de tipo wellness.
+DATA_STALE solo cuando freshness=stale. DATA_MISSING solo sin evidencias disponibles.
+RECOVERY_RECOMMENDATION solo con una decisión rest/recovery. CHANGE_REQUESTED solo con propuesta.
 Para análisis selecciona hechos y conclusiones soportadas. No inventes diagnósticos o umbrales.
 change_proposal solo puede ser no nulo cuando change_proposal_allowed_now es true. Sus operaciones
 usan IDs del plan, fuentes autorizadas y campos compatibles con la operación. Nunca concedas permisos.
@@ -44,11 +49,7 @@ def generate_validated(question, compact, *, generate, job_id=None, now=None,
                 rejected = raw
             except (ValueError, TypeError): raw = None
             if isinstance(raw, dict):
-                # Fatal authority violations win even when other fields are malformed.
-                if raw.get('change_proposal') is not None and not snapshot.proposal_allowed:
-                    fail(Code.UNAUTHORIZED_CHANGE_PROPOSAL, Phase.AUTHORIZATION, 'change_proposal', fatal=True)
-                if 'context_snapshot_id' in raw and raw['context_snapshot_id'] != snapshot.id:
-                    fail(Code.CONTEXT_SNAPSHOT_MISMATCH, Phase.REFERENCE, 'context_snapshot_id', fatal=True)
+                check_authority(raw, snapshot)
                 _, normalizations = normalize_generation(raw)
                 for issue in normalizations:
                     _event('coach_normalization', snapshot, job_id, attempt, issue)

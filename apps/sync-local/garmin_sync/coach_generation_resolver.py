@@ -1,6 +1,7 @@
 """Resolve model choices against Python-owned authority, never model-supplied copies."""
 from dataclasses import dataclass
 from datetime import date
+import re
 from pydantic import ValidationError
 from .ai_contracts import CoachDecision, CoachEvidence, StructuredChangeProposal
 from .coach_generation_contracts import CoachGenerationResponse, Conclusion
@@ -41,7 +42,32 @@ def evidence_wire(record: EvidenceRecord) -> CoachEvidence:
     return CoachEvidence(source=source, fact=f'{record.source}: {facts}'[:250], date=record.date)
 
 
+def check_authority(raw, snapshot):
+    """Inspect fatal violations before parsing unrelated model fields."""
+    if raw.get('context_snapshot_id') not in (None, snapshot.id):
+        fail(Code.CONTEXT_SNAPSHOT_MISMATCH, Phase.REFERENCE, 'context_snapshot_id', fatal=True)
+    proposal = raw.get('change_proposal')
+    if proposal is None:
+        return
+    if not snapshot.proposal_allowed:
+        fail(Code.UNAUTHORIZED_CHANGE_PROPOSAL, Phase.AUTHORIZATION, 'change_proposal', fatal=True)
+    if isinstance(proposal, dict) and isinstance(proposal.get('evidence_refs'), list):
+        for ref in proposal['evidence_refs']:
+            record = snapshot.evidence.get(ref) if isinstance(ref, str) else None
+            if record and evidence_wire(record).source not in snapshot.proposal_sources:
+                fail(Code.UNAUTHORIZED_CHANGE_PROPOSAL, Phase.AUTHORIZATION, 'change_proposal.evidence_refs', fatal=True)
+
+
+def validate_resolved_targets(decision, *, fatal, path):
+    if decision.target_pace and (decision.sport != 'running' or not re.fullmatch(
+            r'\d{1,2}:[0-5]\d(?:\s*[-–]\s*\d{1,2}:[0-5]\d)?(?:\s*min/km)?', decision.target_pace)):
+        fail(Code.INVALID_PACE_FORMAT, Phase.DOMAIN, path + '.target_pace', fatal=fatal)
+    if decision.target_power_w is not None and decision.sport != 'cycling':
+        fail(Code.INVALID_DECISION, Phase.DOMAIN, path + '.target_power_w', fatal=fatal)
+
+
 def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnapshot) -> ResolvedGeneration:
+    check_authority(response.model_dump(mode='json'), snapshot)
     if response.context_snapshot_id != snapshot.id:
         fail(Code.CONTEXT_SNAPSHOT_MISMATCH, Phase.REFERENCE, 'context_snapshot_id', fatal=True)
     if response.change_proposal is not None and not snapshot.proposal_allowed:
@@ -61,14 +87,19 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             if (not session or session.get('status') not in (None, 'planned')
                 or session.get('completed_activity_id') or item.session_id in seen):
                 fail(Code.UNKNOWN_PLAN_SESSION, Phase.RESOLUTION, path + '.session_id')
-            if any(session.get(k) is None for k in ('sport', 'session_type', 'intensity', 'duration_min')) or session.get('intensity') == 'unknown':
+            if any(session.get(k) is None for k in ('sport', 'session_type', 'intensity')) or session.get('intensity') == 'unknown':
                 fail(Code.INVALID_CONTEXT, Phase.RESOLUTION, path, fatal=True)
             seen.add(item.session_id)
             if session.get('date') not in snapshot.target_dates:
                 fail(Code.PLAN_DATE_MISMATCH, Phase.RESOLUTION, path + '.date', hint=RepairHint(allowed_values=snapshot.target_dates))
             data = {k: v for k, v in session.items() if k in {'date', 'sport', 'session_type',
                     'intensity', 'duration_min', 'distance_km', 'target_pace', 'target_power_w'}}
-            data.update(action='keep_plan', source='training_plan', reason=REASONS['PLAN_SESSION'],
+            reason = REASONS['PLAN_SESSION']
+            if session.get('optional') is True:
+                reason += ' Esta sesión es opcional.'
+            if session.get('has_plan_detail') or session.get('session_type') in {'quality', 'easy_progressions', 'long_run'}:
+                reason += ' Consulta los bloques y condiciones del plan antes de realizarla; el ritmo solo corresponde a los bloques previstos.'
+            data.update(action='keep_plan', source='training_plan', reason=reason,
                         duration_max_min=session.get('duration_max'))
         else:
             if item.action not in {'ask_user', 'information_only'} and not item.evidence_refs:
@@ -77,6 +108,9 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             if item.action in {'ask_user', 'information_only'}:
                 data['reason'] = REASONS[item.code]
             else:
+                if not snapshot.target_dates:
+                    fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, path + '.date', hint=RepairHint(
+                        rule='The question does not identify a date. Use ask_user; do not choose a date.'))
                 data['reason'] = REASONS['RECOVERY_RECOMMENDATION'] if item.action in {'rest', 'recovery'} else 'Recomendación puntual; el plan persistido no se ha modificado.'
                 if item.date is None:
                     if len(snapshot.target_dates) != 1:
@@ -90,6 +124,7 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
         if decision.date and (decision.date < snapshot.now.date() or
                 (snapshot.target_dates and str(decision.date) not in snapshot.target_dates)):
             fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, path + '.date')
+        validate_resolved_targets(decision, fatal=item.action == 'keep_plan', path=path)
         decisions.append(decision)
     if seen:
         expected = {k for k, s in snapshot.sessions.items() if s.get('status') in (None, 'planned')
@@ -99,13 +134,20 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
     rests = {d.date for d in decisions if d.action == 'rest'}
     if any(d.date in rests and d.action not in {'rest', 'ask_user', 'information_only'} for d in decisions):
         fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions')
+    if response.response_type == 'weekly_plan' and any(d.date for d in decisions):
+        if {str(d.date) for d in decisions if d.date} != set(snapshot.target_dates):
+            fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, 'decisions', hint=RepairHint(
+                rule='Cover every requested date, or ask for clarification without prescribing a partial week.',
+                allowed_values=snapshot.target_dates))
     if not decisions and not response.conclusions and not refs:
         fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions')
     for index, conclusion in enumerate(response.conclusions):
         kinds = {snapshot.evidence[r].kind for r in conclusion.evidence_refs}
         required = {'OBSERVED_ACTIVITY': 'activity', 'OBSERVED_WELLNESS': 'wellness', 'PLAN_SESSION': 'plan'}
         if conclusion.code in required and required[conclusion.code] not in kinds:
-            fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]')
+            fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]', hint=RepairHint(
+                rule='This conclusion requires references of the matching evidence kind; otherwise omit it.',
+                allowed_refs=tuple(r for r, e in snapshot.evidence.items() if e.kind == required[conclusion.code])))
         if conclusion.code == 'DATA_STALE' and snapshot.freshness != 'stale':
             fail(Code.INVALID_DECISION, Phase.DOMAIN, f'conclusions[{index}]')
         if conclusion.code == 'RECOVERY_RECOMMENDATION' and not any(d.action in {'rest', 'recovery'} for d in decisions):

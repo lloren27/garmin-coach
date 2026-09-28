@@ -17,6 +17,10 @@ def payload(**updates):
 
 
 class GenerationContractTests(unittest.TestCase):
+    def test_empty_decision_cannot_silently_answer_unknown_question(self):
+        with self.assertRaises(CoachValidationError):
+            parse_generation(json.dumps(payload(decisions=[])))
+
     def test_rest_rejects_training_intensity_and_targets(self):
         for extra in ({'intensity': 'easy'}, {'intensity': 'threshold'}, {'intensity': 'unknown'},
                       {'target_pace': '5:00'}, {'target_power_w': 100}, {'distance_km': 1},

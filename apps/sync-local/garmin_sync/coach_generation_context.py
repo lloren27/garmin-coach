@@ -62,9 +62,15 @@ FACT_FIELDS = frozenset({'distance_km', 'duration_s', 'duration_min', 'duration_
     'max_hr', 'avg_power', 'target_power_w', 'total_minutes', 'score', 'resting_hr', 'steps',
     'atl', 'ctl', 'tsb', 'trimp', 'sport_load', 'recovery_factor', 'stress_avg', 'deep_minutes', 'rem_minutes', 'light_minutes', 'awake_minutes', 'age', 'weight_kg',
     'height_cm', 'ftp', 'ftp_w', 'vo2max', 'km_28d', 'km_56d', 'km_7d', 'runs_count_28d',
-    'avg_weekly_km_8w', 'tss', 'if', 'vi', 'pain', 'soreness'})
+    'avg_weekly_km_8w', 'tss', 'if', 'vi', 'pain', 'soreness',
+    'intensity_factor', 'variability_index', 'moving_min', 'avg_power_w', 'vt1_hr', 'vt2_hr',
+    'lactate_hr', 'sessions_7d', 'sessions_28d', 'sets_7d', 'volume_kg_7d', 'load_score_7d',
+    'lower_sets_7d', 'hard_lower_sets_7d', 'today_sessions', 'today_sets', 'today_load_score',
+    'acute_chronic_ratio', 'load_ratio', 'acute_load', 'sleep_seconds', 'deep_seconds',
+    'light_seconds', 'rem_seconds', 'awake_seconds', 'last_night_avg', 'weekly_avg',
+    'baseline_low', 'baseline_high', 'charged', 'drained', 'current'})
 SESSION_FIELDS = frozenset({'id', 'date', 'status', 'sport', 'session_type', 'intensity',
-    'duration_min', 'duration_max', 'distance_km', 'target_pace', 'target_power_w', 'completed_activity_id', 'owner_id', 'training_plan_id'})
+    'duration_min', 'duration_max', 'distance_km', 'target_pace', 'target_power_w', 'optional', 'completed_activity_id', 'owner_id', 'training_plan_id'})
 
 
 def _facts(row):
@@ -91,6 +97,7 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         if identifier in sessions:
             raise CoachValidationError([ValidationIssue(Code.INVALID_CONTEXT, Phase.RESOLUTION, 'sessions', Severity.FATAL)])
         sessions[identifier] = {k: v for k, v in row.items() if k in SESSION_FIELDS}
+        sessions[identifier]['has_plan_detail'] = bool(row.get('description'))
     def add(kind, row, index, source, stamp=None):
         if not isinstance(row, Mapping) or row.get('status') in ('unavailable', 'error'): return
         row = dict(row)
@@ -98,6 +105,11 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
             row['distance_km'] = row['km']
         if kind == 'wellness' and 'value' in row:
             row[str(index)] = row.pop('value')
+        if kind == 'checkin':
+            for field in ('pain', 'soreness'):
+                value = row.get(field)
+                if isinstance(value, str) and value.strip():
+                    row[field] = value.strip().lower() not in {'no', 'sin dolor', 'sin molestias', 'ninguno', 'ninguna'}
         facts = _facts(row)
         if not facts: return
         origin = row.get('source', source)
@@ -108,7 +120,7 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         if key in evidence or len(key) > 160:
             raise CoachValidationError([ValidationIssue(Code.INVALID_CONTEXT, Phase.REFERENCE, 'evidence', Severity.FATAL)])
         evidence[key] = EvidenceRecord(key, kind, origin,
-            _date(row.get('date') or row.get('started_at') or row.get('start') or row.get('created_at') or stamp), freeze(facts))
+            _date(row.get('date') or row.get('started_at') or row.get('start') or row.get('created_at') or row.get('observed_at') or row.get('reference_date') or row.get('effective_date') or stamp), freeze(facts))
     for i, row in enumerate(extra.get('recent_activities') or []): add('activity', row, i, 'garmin')
     wellness = extra.get('wellness') or {}
     effective = wellness.get('effective', wellness)
@@ -122,17 +134,18 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
     for kind, field, source in [('profile', 'profile', 'profile'), ('checkin', 'checkins', 'checkin'),
         ('lab_test', 'applied_lab_tests', 'lab_test'), ('strength', 'strength_manual', 'strength'),
         ('strength', 'strength_manual_current', 'strength'), ('wattwise', 'wattwise_snapshot', 'wattwise'),
-        ('wattwise', 'wattwise_live', 'wattwise'), ('backend', 'summary', 'backend')]:
+        ('wattwise', 'wattwise_live', 'wattwise'), ('backend', 'summary', 'backend'), ('history', 'history', 'garmin'), ('physiology', 'physiology', 'garmin')]:
         rows = extra.get(field) or []
         if isinstance(rows, Mapping): rows = [rows]
         def walk(row, index, stamp=None, depth=0):
             if not isinstance(row, Mapping) or depth > 4 or row.get('status') in ('unavailable', 'error'):
                 return
-            stamp = row.get('date') or row.get('created_at') or row.get('generated_at') or stamp
+            stamp = row.get('date') or row.get('created_at') or row.get('generated_at') or row.get('reference_date') or row.get('effective_date') or row.get('observed_at') or stamp
             add(kind, row, index, source, stamp)
             # Only known containers; notes and arbitrary keys are not traversed.
             for key in ('summary', 'metrics', 'payload', 'profile', 'checkin', 'result', 'results',
-                        'thresholds', 'physiology', 'today', 'week', 'fatigue', 'running_load', 'sessions'):
+                        'thresholds', 'physiology', 'today', 'week', 'fatigue', 'running_load', 'sessions',
+                        'extracted', 'recent_activities', 'cycling_power_metrics', 'fitness_signature', 'latest_load'):
                 nested = row.get(key)
                 if isinstance(nested, Mapping): walk(nested, f'{index}:{key}', stamp, depth+1)
                 elif isinstance(nested, (list, tuple)):
@@ -166,5 +179,22 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
 def generation_schema(snapshot: ContextSnapshot) -> dict:
     schema = CoachGenerationResponse.model_json_schema()
     schema['properties']['context_snapshot_id']['const'] = snapshot.id
-    if not snapshot.proposal_allowed: schema['properties']['change_proposal'] = {'type': 'null', 'default': None}
+    if not snapshot.proposal_allowed:
+        schema['properties']['change_proposal'] = {'type': 'null', 'default': None}
+    refs = list(snapshot.evidence)
+    for definition in [schema, *schema.get('$defs', {}).values()]:
+        properties = definition.get('properties', {})
+        if 'evidence_refs' in properties:
+            if refs:
+                properties['evidence_refs']['items']['enum'] = refs
+            else:
+                properties['evidence_refs']['maxItems'] = 0
+    sessions = [key for key, s in snapshot.sessions.items() if s.get('date') in snapshot.target_dates
+                and s.get('status') in (None, 'planned') and not s.get('completed_activity_id')]
+    if sessions:
+        schema['$defs']['KeepPlanDecision']['properties']['session_id']['enum'] = sessions
+    else:
+        items = schema['properties']['decisions']['items']
+        items['oneOf'] = [v for v in items['oneOf'] if v.get('$ref') != '#/$defs/KeepPlanDecision']
+        items['discriminator']['mapping'].pop('keep_plan', None)
     return schema

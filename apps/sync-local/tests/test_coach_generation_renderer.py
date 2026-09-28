@@ -60,3 +60,23 @@ class RendererTests(unittest.TestCase):
         self.snapshot = build_snapshot('mañana', compact, now=NOW)
         wire = self.render([{'action': 'ask_user'}])
         self.assertEqual(wire.answer.count('actualiza'), 1)
+
+    def test_optional_plan_session_remains_optional_in_text_and_wire(self):
+        compact = compact_fixture()
+        compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26',
+            sport='strength', session_type='full_body_a', intensity='easy', duration_min=30, optional=True)]
+        self.snapshot = build_snapshot('mañana', compact, now=NOW)
+        wire = self.render([{'action': 'keep_plan', 'session_id': 'run'}])
+        self.assertIn('opcional', wire.answer.lower())
+        self.assertIn('opcional', wire.decisions[0].reason.lower())
+
+    def test_complex_plan_does_not_invent_missing_dose_or_apply_pace_to_whole_run(self):
+        compact = compact_fixture()
+        compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26',
+            sport='running', session_type='quality', intensity='marathon_pace', target_pace='5:00',
+            description='2 km + 3 x 2 km. arbitrary prose')]
+        self.snapshot = build_snapshot('mañana', compact, now=NOW)
+        wire = self.render([{'action': 'keep_plan', 'session_id': 'run'}])
+        self.assertIn('bloques', wire.answer)
+        self.assertNotIn('arbitrary', wire.answer)
+        self.assertNotIn('minutos', wire.answer)

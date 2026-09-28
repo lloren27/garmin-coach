@@ -32,6 +32,23 @@ METRICS = {
     'stress_avg': ('estrés medio del proveedor', ''), 'pain': ('dolor comunicado', ''),
     'soreness': ('molestias comunicadas', ''),
 }
+METRICS.update({
+    'intensity_factor': ('factor de intensidad', ''), 'variability_index': ('índice de variabilidad', ''),
+    'moving_min': ('duración en movimiento', 'minutos'), 'avg_power_w': ('potencia media', 'W'),
+    'vt1_hr': ('pulso del primer umbral', 'lpm'), 'vt2_hr': ('pulso del segundo umbral', 'lpm'),
+    'lactate_hr': ('pulso del umbral de lactato', 'lpm'), 'sessions_7d': ('sesiones de fuerza en 7 días', ''),
+    'sessions_28d': ('sesiones de fuerza en 28 días', ''), 'sets_7d': ('series de fuerza en 7 días', ''),
+    'volume_kg_7d': ('volumen de fuerza en 7 días', 'kg'), 'load_score_7d': ('carga muscular en 7 días', ''),
+    'lower_sets_7d': ('series de tren inferior en 7 días', ''), 'hard_lower_sets_7d': ('series intensas de tren inferior en 7 días', ''),
+    'today_sessions': ('sesiones de fuerza en la fecha indicada', ''), 'today_sets': ('series en la fecha indicada', ''),
+    'today_load_score': ('carga muscular en la fecha indicada', ''), 'acute_chronic_ratio': ('relación de carga aguda y crónica', ''),
+    'load_ratio': ('relación de carga del proveedor', ''), 'acute_load': ('carga aguda del proveedor', ''),
+    'sleep_seconds': ('sueño', 's'), 'deep_seconds': ('sueño profundo', 's'), 'light_seconds': ('sueño ligero', 's'),
+    'rem_seconds': ('sueño REM', 's'), 'awake_seconds': ('vigilia', 's'), 'last_night_avg': ('VFC nocturna', 'ms'),
+    'weekly_avg': ('VFC semanal', 'ms'), 'baseline_low': ('referencia inferior VFC', 'ms'),
+    'baseline_high': ('referencia superior VFC', 'ms'), 'charged': ('Body Battery recargada', ''),
+    'drained': ('Body Battery consumida', ''), 'current': ('Body Battery', ''),
+})
 SOURCES = {'zepp': 'Zepp', 'garmin': 'Garmin', 'wattwise': 'Wattwise', 'backend': 'cálculos del sistema',
            'profile': 'perfil', 'training_plan': 'plan', 'checkin': 'check-in', 'strength': 'fuerza registrada', 'lab_test': 'prueba aplicada'}
 
@@ -55,7 +72,10 @@ def decision_text(decision):
     if decision.distance_km is not None: parts.append(f'{number(decision.distance_km)} km')
     if decision.target_pace: parts.append(f'ritmo {decision.target_pace}')
     if decision.target_power_w is not None: parts.append(f'{decision.target_power_w} W')
-    return ', '.join(parts) + '.'
+    text = ', '.join(parts) + '.'
+    if decision.source == 'training_plan':
+        text += ' ' + decision.reason
+    return text
 
 
 def render_generation(result: ResolvedGeneration, snapshot: ContextSnapshot, *, max_chars: int) -> CoachStructuredResponse:

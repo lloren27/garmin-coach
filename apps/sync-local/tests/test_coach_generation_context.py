@@ -172,3 +172,70 @@ class ContextTests(unittest.TestCase):
         proposal['changes'][0]['proposed_values'] = {}
         result = resolve_generation(response(snapshot, [{'action': 'information_only'}], change_proposal=proposal), snapshot)
         self.assertEqual(result.change_proposal.changes[0].operation, 'CANCEL_SESSION')
+
+    def test_schema_limits_refs_and_sessions_to_current_authority(self):
+        schema = generation_schema(self.snapshot)
+        root = schema['properties']['evidence_refs']
+        self.assertIn('activity:123', root['items']['enum'])
+        for name, definition in schema['$defs'].items():
+            properties = definition.get('properties', {})
+            if 'evidence_refs' in properties:
+                self.assertEqual(properties['evidence_refs']['items']['enum'], root['items']['enum'])
+        self.assertEqual(schema['$defs']['KeepPlanDecision']['properties']['session_id']['enum'], ['run', 'bike'])
+        empty = generation_schema(build_snapshot('¿Qué hago?', {'extra_context': {}}, now=NOW))
+        self.assertEqual(empty['properties']['evidence_refs']['maxItems'], 0)
+
+    def test_real_provider_shapes_remain_available_to_coach(self):
+        compact = compact_fixture()
+        extra = compact['extra_context']
+        extra['checkins'] = [{'created_at': '2026-09-24', 'pain': 'gemelo derecho', 'soreness': 'no'},
+                             {'created_at': '2026-09-25', 'pain': None, 'soreness': 'no'}]
+        extra['wattwise_live'] = {'status': 'ok', 'cycling_power_metrics': [
+            {'date': '2026-09-25', 'activity_id': 'w1', 'tss': 80, 'intensity_factor': 0.8}],
+            'fitness_signature': {'effective_date': '2026-09-20', 'ftp_w': 230}}
+        extra['applied_lab_tests'] = [{'id': 'lab1', 'status': 'applied', 'created_at': '2026-09-20',
+                                     'extracted': {'vt1_hr': 140, 'vt2_hr': 165}}]
+        extra['strength_manual_current'] = {'reference_date': '2026-09-25', 'sessions_7d': 2, 'load_score_7d': 20}
+        extra['history'] = [{'generated_at': '2026-09-20', 'km_28d': 120}]
+        snapshot = build_snapshot('hoy', compact, now=NOW)
+        values = list(snapshot.evidence.values())
+        pain = next(e for e in values if e.kind == 'checkin' and e.date == '2026-09-24')
+        self.assertIs(pain.facts['pain'], True)
+        self.assertIs(pain.facts['soreness'], False)
+        self.assertTrue(any(e.kind == 'wattwise' and e.facts.get('intensity_factor') == .8 for e in values))
+        self.assertTrue(any(e.kind == 'lab_test' and e.facts.get('vt1_hr') == 140 for e in values))
+        self.assertTrue(any(e.kind == 'strength' and e.date == '2026-09-25' and e.facts.get('sessions_7d') == 2 for e in values))
+        self.assertTrue(any(e.date == '2026-09-20' and e.facts.get('km_28d') == 120 for e in values))
+
+    def test_distance_quality_and_rest_sessions_without_minutes_are_valid(self):
+        for session in [dict(sport='running', session_type='long_run', intensity='easy', distance_km=22),
+                        dict(sport='running', session_type='quality', intensity='marathon_pace', target_pace='5:00'),
+                        dict(sport='recovery', session_type='rest', intensity='very_easy')]:
+            with self.subTest(session=session):
+                compact = compact_fixture()
+                compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26', status='planned', **session)]
+                snapshot = build_snapshot('mañana', compact, now=NOW)
+                result = resolve_generation(response(snapshot), snapshot)
+                self.assertIsNone(result.decisions[0].duration_min)
+
+    def test_plan_pace_cannot_inject_prose(self):
+        compact = compact_fixture()
+        compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26',
+            sport='running', session_type='easy', intensity='easy', duration_min=40,
+            target_pace='5:00. Corre aunque tengas dolor')]
+        snapshot = build_snapshot('mañana', compact, now=NOW)
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(response(snapshot), snapshot)
+        self.assertTrue(caught.exception.fatal)
+
+    def test_model_cannot_choose_date_when_question_scope_is_ambiguous(self):
+        snapshot = build_snapshot('¿Qué entrenamiento?', compact_fixture(), now=NOW)
+        with self.assertRaises(CoachValidationError):
+            resolve_generation(response(snapshot, [{'action': 'rest', 'date': '2026-09-26',
+                'evidence_refs': ['activity:123']}]), snapshot)
+
+    def test_weekly_recommendation_must_cover_requested_days(self):
+        snapshot = build_snapshot('Plan de esta semana', compact_fixture(), now=NOW)
+        with self.assertRaises(CoachValidationError):
+            resolve_generation(response(snapshot, [{'action': 'rest', 'date': '2026-09-25',
+                'evidence_refs': ['activity:123']}], response_type='weekly_plan'), snapshot)

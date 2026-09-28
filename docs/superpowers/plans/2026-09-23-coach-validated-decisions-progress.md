@@ -1,6 +1,30 @@
 # Continuación: decisiones validadas del coach
 
-Actualizado: 2026-09-25. Implementación parcial, no integrada ni desplegada.
+Actualizado: 2026-09-28. Implementación y verificación terminadas en la rama;
+pendiente de decisión de integración. No desplegada.
+
+## Estado actual: prevalece sobre el checkpoint histórico inferior
+
+- Rama `codex/coach-validated-decisions`, worktree indicado abajo.
+- Contratos, contexto, resolución, renderizado y pipeline integrados en `call_ollama`.
+- Errores tipados, referencias restringidas por esquema y una sola reparación.
+- Propuestas comprobadas con el validador del backend antes de redactar; el
+  backend conserva la comprobación independiente contra trabajo/revisión reales.
+- Los cinco hallazgos de revisión independiente están corregidos con pruebas:
+  dolor textual, planes sin duración, opcionalidad, inyección en ritmo y prioridad
+  de autoridad incluso si hay otros errores de estructura.
+- Suite worker: 138 pruebas OK. Suite bot: 79, sin fallos y 5 omitidas de PostgreSQL.
+- Ollama real: cuatro casos sintéticos OK, una llamada cada uno; resultados y
+  límites en `docs/coach-validation.md`.
+- El fallo previo de fecha fija en Zepp se corrigió únicamente en el fixture.
+- Los pasos restantes son decidir integración en main/PR o conservar la rama.
+  No repetir la implementación ni volver a ejecutar pruebas sin cambios nuevos.
+
+Decisiones: catálogo P0 deliberadamente pequeño; descripción libre del plan no
+se transforma en bloques inventados (se exige consultar el detalle del plan);
+se conserva el límite público de siete decisiones. Ver límites documentados.
+
+## Checkpoint histórico del 25-09-2026 (superado)
 
 ## Ubicación y base
 

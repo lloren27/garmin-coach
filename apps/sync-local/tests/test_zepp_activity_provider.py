@@ -22,6 +22,22 @@ RAW_RUN = {
     "exercise_load": 92,
 }
 
+RAW_STRENGTH = {
+    "trackid": "strength-52",
+    "source": "run.zepp.com",
+    "sport_title": "",
+    "sport_mode": 0,
+    "type": 52,
+    "strength_training_group": '[{"actionType": 0, "count": 10}]',
+    "end_time": "2026-09-28T19:18:00+02:00",
+    "run_time": "3182",
+    "dis": "0.0",
+    "avg_heart_rate": "118",
+    "max_heart_rate": 142,
+    "calorie": "286",
+    "exercise_load": 51,
+}
+
 
 def response(payload: dict, status_code: int = 200) -> Mock:
     result = Mock()
@@ -31,6 +47,20 @@ def response(payload: dict, status_code: int = 200) -> Mock:
 
 
 class ZeppActivityProviderTests(TestCase):
+    @patch("garmin_sync.zepp_activity_provider.requests.get")
+    def test_normalizes_zero_distance_strength_session_without_pace(self, get: Mock) -> None:
+        get.return_value = response({"code": 1, "data": {"summary": [RAW_STRENGTH]}})
+
+        activities, status = ZeppActivityProvider("secret", "42").fetch_activities(date(2026, 9, 28), date(2026, 9, 28))
+
+        self.assertEqual(status, {"status": "ok", "records_received": 1})
+        self.assertEqual(activities[0]["name"], "Entrenamiento de fuerza")
+        self.assertEqual(activities[0]["sport"], "strength")
+        self.assertEqual(activities[0]["km"], 0.0)
+        self.assertEqual(activities[0]["duration_s"], 3182)
+        self.assertNotIn("pace", activities[0])
+        self.assertNotIn("avg_speed_kmh", activities[0])
+
     @patch("garmin_sync.zepp_activity_provider.requests.get")
     def test_fetch_activities_uses_web_headers_and_normalizes_a_run(self, get: Mock) -> None:
         get.return_value = response({"code": 1, "data": {"summary": [RAW_RUN]}})

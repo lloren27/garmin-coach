@@ -76,18 +76,24 @@ def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[
     track_id = _text(record.get("trackid"))
     source_id = _text(record.get("source"))
     duration_s = _positive_number(record.get("run_time"))
-    distance_m = _positive_number(record.get("dis"))
+    distance_m = _nonnegative_number(record.get("dis"))
     ended_at = _timestamp(record.get("end_time"), local_timezone)
-    if not track_id or not source_id or duration_s is None or distance_m is None or ended_at is None:
+    is_strength = _is_strength_record(record)
+    if (
+        not track_id
+        or not source_id
+        or duration_s is None
+        or distance_m is None
+        or ended_at is None
+        or (distance_m == 0 and not is_strength)
+    ):
         return None
 
     started_at = ended_at.timestamp() - duration_s
     start = datetime.fromtimestamp(started_at, tz=local_timezone)
     distance_km = round(distance_m / 1000, 2)
-    if distance_km <= 0:
-        return None
 
-    title = _text(record.get("sport_title")) or "Actividad Zepp"
+    title = _text(record.get("sport_title")) or ("Entrenamiento de fuerza" if is_strength else "Actividad Zepp")
     activity: dict[str, Any] = {
         "id": f"zepp:{source_id}:{track_id}",
         "source": "zepp",
@@ -95,14 +101,15 @@ def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[
         "date": start.date().isoformat(),
         "started_at": start.isoformat(),
         "name": title,
-        "sport": _sport(title),
+        "sport": "strength" if is_strength else _sport(title),
         "type": _text(record.get("sport_mode")) or "other",
         "km": distance_km,
         "duration_s": round(duration_s),
         "hours": round(duration_s / 3600, 2),
-        "pace": _pace(distance_km, duration_s),
-        "avg_speed_kmh": round(distance_km / (duration_s / 3600), 1),
     }
+    if distance_km > 0:
+        activity["pace"] = _pace(distance_km, duration_s)
+        activity["avg_speed_kmh"] = round(distance_km / (duration_s / 3600), 1)
     for output, raw_key in {
         "avg_hr": "avg_heart_rate",
         "max_hr": "max_heart_rate",
@@ -147,6 +154,10 @@ def _sport(title: str) -> str:
     if "fuerza" in lowered or "strength" in lowered:
         return "strength"
     return "other"
+
+
+def _is_strength_record(record: dict[str, Any]) -> bool:
+    return _number(record.get("type")) == 52 or bool(_text(record.get("strength_training_group")))
 
 
 def _pace(distance_km: float, duration_s: float) -> str:

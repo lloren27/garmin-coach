@@ -8,6 +8,56 @@ from garmin_sync.coach_validation import CoachValidationError
 
 
 class RendererTests(unittest.TestCase):
+    def daily_analysis(self, rows):
+        compact = compact_fixture()
+        compact['extra_context']['recent_activities'] = rows
+        self.snapshot = build_snapshot('analiza el entrenamiento de hoy', compact, now=NOW)
+        return self.render([{'action': 'information_only'}], response_type='analysis',
+            evidence_refs=[f"activity:{r['id']}" for r in rows])
+
+    def test_daily_analysis_explains_two_sports_without_generic_limitation(self):
+        wire = self.daily_analysis([
+            dict(id='run', date='2026-09-25', sport='running', duration_s=3631,
+                 distance_km=12.01, avg_hr=133, max_hr=166),
+            dict(id='bike', date='2026-09-25', sport='cycling', duration_s=3777,
+                 distance_km=23.15, avg_hr=86, max_hr=120, avg_power=143)])
+        for text in ('carrera', 'bicicleta', '1 h 00 min 31 s', '5:02 min/km', '22,1 km/h', '143 W'):
+            self.assertIn(text, wire.answer)
+        self.assertNotIn('no permite una conclusión adicional', wire.answer)
+        self.assertNotIn('no permite una conclusión adicional', wire.decisions[0].reason)
+        self.assertIn('zonas', wire.answer)
+        CoachStructuredResponse.model_validate(wire.model_dump(mode='json'))
+
+    def test_unknown_sport_or_zero_distance_never_invents_pace(self):
+        for sport, distance in [('unknown', 12.01), ('running', 0)]:
+            with self.subTest(sport=sport):
+                wire = self.daily_analysis([dict(id='a', date='2026-09-25', sport=sport,
+                    duration_s=3631, distance_km=distance)])
+                self.assertIn('1 h 00 min 31 s', wire.answer)
+                self.assertNotIn('min/km', wire.answer)
+                self.assertNotIn('km/h', wire.answer)
+
+    def test_previous_activity_is_comparison_not_today_and_different_sport_not_compared(self):
+        wire = self.daily_analysis([
+            dict(id='now', date='2026-09-25', sport='running', duration_s=3600, distance_km=12),
+            dict(id='past', date='2026-09-24', sport='running', duration_s=3000, distance_km=10),
+            dict(id='bike', date='2026-09-24', sport='cycling', duration_s=7000, distance_km=45)])
+        self.assertIn('10 min', wire.answer)
+        self.assertIn('2026-09-24', wire.answer)
+        self.assertNotIn('45 km', wire.answer)
+        self.assertNotIn('mejora', wire.answer)
+
+    def test_analysis_stale_data_keeps_warning_and_rejects_too_short_output(self):
+        self.daily_analysis([dict(id='a', date='2026-09-25', sport='running',
+            duration_s=3600, distance_km=12)])
+        from dataclasses import replace
+        self.snapshot = replace(self.snapshot, freshness='stale')
+        resolved = resolve_generation(response(self.snapshot, [{'action': 'information_only'}],
+            response_type='analysis', evidence_refs=['activity:a']), self.snapshot)
+        self.assertIn('actualiza', render_generation(resolved, self.snapshot, max_chars=3200).answer)
+        with self.assertRaises(CoachValidationError):
+            render_generation(resolved, self.snapshot, max_chars=40)
+
     def setUp(self):
         self.snapshot = build_snapshot('mañana', compact_fixture(), now=NOW)
 

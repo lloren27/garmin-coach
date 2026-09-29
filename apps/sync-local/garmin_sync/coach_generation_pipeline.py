@@ -24,6 +24,10 @@ de tipo plan; OBSERVED_ACTIVITY de tipo activity; OBSERVED_WELLNESS de tipo well
 DATA_STALE solo cuando freshness=stale. DATA_MISSING solo sin evidencias disponibles.
 RECOVERY_RECOMMENDATION solo con una decisión rest/recovery. CHANGE_REQUESTED solo con propuesta.
 Para análisis selecciona hechos y conclusiones soportadas. No inventes diagnósticos o umbrales.
+Para analizar actividades realizadas usa response_type=analysis e information_only; esto no significa
+que no existan observaciones útiles. Selecciona primero las actividades del ámbito solicitado y después,
+si cabe, una actividad anterior del mismo deporte y proveedor como referencia de volumen.
+No sustituyas las actividades solicitadas por métricas de bienestar. Python calculará las observaciones.
 change_proposal solo puede ser no nulo cuando change_proposal_allowed_now es true. Sus operaciones
 usan IDs del plan, fuentes autorizadas y campos compatibles con la operación. Nunca concedas permisos.
 En semana cubre todos los días solicitados con día y fecha exacta en las decisiones, sin omitir sesiones.

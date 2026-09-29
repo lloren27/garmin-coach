@@ -78,8 +78,59 @@ def decision_text(decision):
     return text
 
 
+def elapsed(seconds):
+    hours, remainder = divmod(round(seconds), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return (f'{hours} h {minutes:02d} min {seconds:02d} s' if hours
+            else f'{minutes} min {seconds:02d} s')
+
+
+def activity_analysis(result, snapshot):
+    """Describe selected, dated observations; never infer physiological intensity."""
+    if result.response_type != 'analysis' or not all(d.action == 'information_only' for d in result.decisions):
+        return []
+    rows = [e for e in result.evidence if e.kind == 'activity' and e.date
+            and (not snapshot.target_dates or e.date in snapshot.target_dates)]
+    lines = []
+    for row in rows:
+        facts = row.facts
+        duration, distance = facts.get('duration_s'), facts.get('distance_km')
+        details = []
+        if duration is not None and duration > 0: details.append(elapsed(duration))
+        if distance is not None and distance >= 0: details.append(f'{number(distance)} km')
+        if duration and duration > 0 and distance and distance > 0:
+            if row.sport == 'running':
+                minutes, seconds = divmod(round(duration / distance), 60)
+                details.append(f'ritmo calculado: {minutes}:{seconds:02d} min/km')
+            elif row.sport == 'cycling':
+                details.append(f'velocidad calculada: {number(round(distance * 3600 / duration, 1))} km/h')
+        for key in ('avg_hr', 'max_hr', 'avg_power'):
+            if key in facts:
+                label, unit = METRICS[key]
+                details.append(f'{label}: {number(facts[key])} {unit}')
+        if not details: continue
+        sport = SPORTS.get(row.sport, {'swimming': 'natación', 'walking': 'caminata'}.get(row.sport, 'actividad'))
+        lines.append(f'{row.date} — {sport} ({SOURCES[row.source]}): ' + '; '.join(details) + '.')
+        previous = [e for e in result.evidence if e.kind == 'activity' and e.date and e.date < row.date
+                    and row.sport and e.sport == row.sport and e.source == row.source
+                    and e.facts.get('duration_s', 0) > 0]
+        if duration and duration > 0 and previous:
+            reference = max(previous, key=lambda e: e.date)
+            delta = duration - reference.facts['duration_s']
+            lines.append(f'Frente a la sesión de {reference.date} del mismo deporte y proveedor, '
+                         + (f'la duración aumentó {elapsed(delta)}.' if delta > 0 else
+                            f'la duración disminuyó {elapsed(-delta)}.' if delta < 0 else 'la duración fue igual.')
+                         + ' Es una comparación de volumen, sin equiparar recorrido ni condiciones.')
+    if lines:
+        lines.append('El ritmo y la velocidad calculados usan la duración registrada; pueden incluir pausas. '
+                     'El pulso medio y máximo por sí solos no determinan tus zonas ni la intensidad de la sesión. '
+                     'Para valorar el esfuerzo se necesitan referencias personales vinculadas al deporte y tiempo en zonas o sensaciones.')
+    return lines
+
+
 def render_generation(result: ResolvedGeneration, snapshot: ContextSnapshot, *, max_chars: int) -> CoachStructuredResponse:
-    required = [decision_text(d) for d in result.decisions]
+    analysis = activity_analysis(result, snapshot)
+    required = analysis or [decision_text(d) for d in result.decisions]
     warnings = []
     if snapshot.freshness != 'current':
         warnings.append('Los datos no confirman tu estado actual; actualiza la sincronización antes de decidir la carga.')
@@ -110,8 +161,11 @@ def render_generation(result: ResolvedGeneration, snapshot: ContextSnapshot, *, 
     answer = '\n'.join(required)
     if len(answer) > min(max_chars, 3500):
         fail(Code.RENDERING_FAILED, Phase.RENDERING, 'answer', fatal=True)
-    optional = [REASONS[c.code] for c in result.conclusions if c.code != 'DATA_STALE']
+    suppressed = {'DATA_STALE'} | ({'OBSERVED_ACTIVITY', 'OBSERVED_WELLNESS', 'ANALYSIS_LIMITED'} if analysis else set())
+    optional = [REASONS[c.code] for c in result.conclusions if c.code not in suppressed]
     for record in result.evidence[:4]:
+        if analysis:
+            continue  # The analysis already presents the relevant observations with their dates.
         facts = []
         for key, value in record.facts.items():
             if key in METRICS:
@@ -124,6 +178,8 @@ def render_generation(result: ResolvedGeneration, snapshot: ContextSnapshot, *, 
         if sentence not in required and len(answer) + len(sentence) + 1 <= min(max_chars, 3500):
             answer += '\n' + sentence
     return CoachStructuredResponse(response_type=result.response_type, answer=answer,
-        decisions=list(result.decisions), evidence=[evidence_wire(e) for e in result.evidence[:4]],
+        decisions=[d.model_copy(update={'reason': 'Análisis descriptivo de las actividades registradas.'})
+                   if analysis else d for d in result.decisions],
+        evidence=[evidence_wire(e) for e in result.evidence[:4]],
         warnings=warnings, missing_data=[d.reason for d in result.decisions if d.action == 'ask_user'][:4],
         change_proposal=result.change_proposal)

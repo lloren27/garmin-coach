@@ -32,6 +32,7 @@ class EvidenceRecord:
     source: str
     date: str | None
     facts: Mapping
+    sport: str | None = None
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ class ContextSnapshot:
                 'available_sessions': [thaw(s) for s in self.sessions.values()
                     if s.get('status') in (None, 'planned') and s.get('date') in self.target_dates],
                 'available_evidence': [{'id': e.id, 'kind': e.kind, 'source': e.source,
-                    'date': e.date, 'facts': thaw(e.facts)} for e in self.evidence.values()],
+                    'date': e.date, 'sport': e.sport, 'facts': thaw(e.facts)} for e in self.evidence.values()],
                 'change_proposal_allowed_now': self.proposal_allowed,
                 'proposal_evidence_sources': list(self.proposal_sources), 'freshness': self.freshness}
 
@@ -119,8 +120,11 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         # IDs repeated by separate sources must not silently replace a fact.
         if key in evidence or len(key) > 160:
             raise CoachValidationError([ValidationIssue(Code.INVALID_CONTEXT, Phase.REFERENCE, 'evidence', Severity.FATAL)])
+        sport = row.get('sport')
+        if sport not in ('running', 'cycling', 'strength', 'mobility', 'swimming', 'walking'):
+            sport = None
         evidence[key] = EvidenceRecord(key, kind, origin,
-            _date(row.get('date') or row.get('started_at') or row.get('start') or row.get('created_at') or row.get('observed_at') or row.get('reference_date') or row.get('effective_date') or stamp), freeze(facts))
+            _date(row.get('date') or row.get('started_at') or row.get('start') or row.get('created_at') or row.get('observed_at') or row.get('reference_date') or row.get('effective_date') or stamp), freeze(facts), sport)
     for i, row in enumerate(extra.get('recent_activities') or []): add('activity', row, i, 'garmin')
     wellness = extra.get('wellness') or {}
     effective = wellness.get('effective', wellness)

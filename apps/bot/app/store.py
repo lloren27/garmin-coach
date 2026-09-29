@@ -25,7 +25,7 @@ WELLNESS_HISTORY_FILE = DATA_DIR / "wellness_history.json"
 TRAINING_PLAN_STATE_FILE = DATA_DIR / "training_plan_state.json"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-VALID_SYNC_MODES = {"full", "zepp_activities"}
+VALID_SYNC_MODES = {"full", "zepp_activities", "strava_activities"}
 STRENGTH_STATE_KEY = "strength_sessions"
 WELLNESS_DAILY_DDL = """
 create table if not exists wellness_daily (

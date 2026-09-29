@@ -141,6 +141,29 @@ Cloud before the Mac can import it. Then send `/sync zepp` to Telegram. The Mac
 watcher runs one complete local sync (it also refreshes Garmin and wellness),
 and the imported session appears as `[Zepp]` in `/hoy`, `/ultima` and `/feedback`.
 
+### CMF Watch 3 Pro activities through Strava
+
+On iPhone, connect Nothing X to Strava and confirm that the CMF workout appears
+in Strava. Add `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` to the root `.env`,
+set `localhost` as the authorization callback domain in the Strava API settings,
+then run:
+
+```bash
+./configure_strava.command
+```
+
+The local authorization requests `activity:read_all` and stores rotating OAuth
+tokens outside the repository in `~/Library/Application Support/Garmin
+Coach/strava-tokens.json` with file mode `600`. Do not paste Strava tokens into
+chat or configure them in Railway.
+
+`/sync cmf` requests the same complete local sync while making the CMF/Strava
+intent explicit. The initial Strava lookback is 60 days, configurable with
+`STRAVA_ACTIVITY_SYNC_LOOKBACK_DAYS`. Garmin remains preferred for proven
+duplicates, followed by Zepp and then Strava. Activities are labelled
+`[CMF vía Strava]` when Strava supplies a CMF/Nothing device name, otherwise
+`[Strava]`.
+
 Logs:
 
 ```text
@@ -338,6 +361,7 @@ The local bridge renews Wattwise's short-lived access token automatically using
 - `/coach`
 - `/sync`
 - `/sync zepp` (request a complete sync that includes recent Zepp activities)
+- `/sync cmf` (request a complete sync that includes recent Strava activities)
 - `/perfil`
 - `/prueba_esfuerzo`
 - `/pruebas`
@@ -372,6 +396,7 @@ Adjunta un PDF o DOCX con /prueba_esfuerzo en el comentario del archivo
 /descartar_prueba
 /sync
 /sync zepp
+/sync cmf
 /salud
 /perfil sexo hombre edad 44 altura 176 peso 72 fcmax 178 fcreposo 52 fcumbral 162 ftp 230 ritmo_umbral 4:50 objetivo_maraton 3:40 marca_maraton 3:40
 /perfil peso 71.5 ftp 235
@@ -410,7 +435,8 @@ with `/descartar_prueba`, and apply it to the athlete profile with
 `/aplicar_prueba`.
 `/sync` requests a complete local sync from Telegram. `/sync zepp` is useful
 after recording a workout with the Helio Strap: it requests the same complete
-sync while making the Zepp-activity intent explicit. In both cases the Railway
+sync while making the Zepp-activity intent explicit. `/sync cmf` does the same
+for CMF activities published by Nothing X to Strava. In all cases the Railway
 bot stores one request and the local Mac watcher executes it while the Mac is awake.
 All coaching questions now follow one flow: text, `/coach`, coaching commands
 (such as `/feedback`, `/semana`, `/ajustar`, and `/fuerza` without arguments),

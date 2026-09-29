@@ -82,6 +82,18 @@ class ActivityMergeTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in merged], ["zepp:run:42", "zepp:run:43"])
 
+    def test_strava_copy_of_garmin_is_removed_but_cmf_only_activity_is_retained(self) -> None:
+        merged = merge_activities(
+            [activity("garmin-1", "garmin", "2026-08-24T07:25:00+02:00", 8.02, 2518)],
+            [],
+            [
+                activity("strava:duplicate", "strava", "2026-08-24T07:27:00+02:00", 8.10, 2500),
+                activity("strava:cmf", "strava", "2026-08-24T18:25:00+02:00", 5.00, 1600),
+            ],
+        )
+
+        self.assertEqual([item["id"] for item in merged], ["garmin-1", "strava:cmf"])
+
     def test_zepp_run_enters_common_summary_when_garmin_is_absent(self) -> None:
         from garmin_sync.sync import TODAY
         summary = summarize_normalized(

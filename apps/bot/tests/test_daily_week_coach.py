@@ -166,6 +166,24 @@ class DailyFeedbackTests(unittest.TestCase):
         self.assertIn("[Zepp]", format_feedback(sync))
         self.assertNotIn("[Zepp]", format_latest(DAILY_SYNC))
 
+    def test_latest_strava_activity_uses_cmf_device_label_when_available(self) -> None:
+        sync = deepcopy(DAILY_SYNC)
+        sync["payload"]["summary"]["activities"] = [
+            {
+                "id": "strava:123456",
+                "source": "strava",
+                "source_device": "CMF Watch 3 Pro",
+                "date": "2026-09-09",
+                "name": "Morning Run",
+                "sport": "running",
+                "km": 8.02,
+                "duration_s": 2518,
+                "pace": "5:14/km",
+            }
+        ]
+
+        self.assertIn("[CMF vía Strava]", format_latest(sync))
+
     def test_today_labels_effective_zepp_health_but_keeps_garmin_activities(self) -> None:
         answer = format_today(ZEPPCENTRIC_SYNC)
 

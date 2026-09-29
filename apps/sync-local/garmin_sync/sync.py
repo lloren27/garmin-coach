@@ -15,6 +15,7 @@ from garminconnect import Garmin
 
 from .activity_merge import merge_activities
 from .running_analytics import enrich_running_load
+from .strava_activity_provider import StravaActivityProvider, StravaTokenStore
 from .wellness_resolver import resolve_wellness
 from .zepp_activity_provider import ZeppActivityProvider
 from .zepp_provider import ZeppProvider
@@ -23,6 +24,12 @@ from .zepp_provider import ZeppProvider
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 TOKENSTORE = Path(os.getenv("GARMINTOKENS", "~/.garminconnect")).expanduser()
+STRAVA_TOKENSTORE = Path(
+    os.getenv(
+        "STRAVA_TOKEN_FILE",
+        "~/Library/Application Support/Garmin Coach/strava-tokens.json",
+    )
+).expanduser()
 API_URL = os.getenv("GARMIN_COACH_API_URL", "http://127.0.0.1:8000").rstrip("/")
 SYNC_SECRET = os.getenv("SYNC_SECRET", "")
 MADRID_TZ = ZoneInfo("Europe/Madrid")
@@ -887,7 +894,20 @@ def build_payload() -> dict[str, Any]:
         timezone_name=timezone_name,
     )
     zepp_activities, activity_status = zepp_activity_provider.fetch_activities(activity_start, activity_end)
-    activities = merge_activities(normalize_activities(get_activities(client)), zepp_activities)
+    strava_activity_provider = StravaActivityProvider(
+        client_id=os.getenv("STRAVA_CLIENT_ID", ""),
+        client_secret=os.getenv("STRAVA_CLIENT_SECRET", ""),
+        token_store=StravaTokenStore(STRAVA_TOKENSTORE),
+        timezone_name=timezone_name,
+    )
+    strava_activities, strava_activity_status = strava_activity_provider.fetch_activities(
+        *_strava_activity_date_range()
+    )
+    activities = merge_activities(
+        normalize_activities(get_activities(client)),
+        zepp_activities,
+        strava_activities,
+    )
     summary = summarize_normalized(activities, profile)
     wellness_dates = _wellness_dates()
     zepp_provider = ZeppProvider(
@@ -899,7 +919,10 @@ def build_payload() -> dict[str, Any]:
     return {
         "generated_at": datetime.now(MADRID_TZ).isoformat(timespec="seconds"),
         "summary": summary,
-        "activity_provider_status": {"zepp": activity_status},
+        "activity_provider_status": {
+            "zepp": activity_status,
+            "strava": strava_activity_status,
+        },
         "wellness": collect_wellness_history(client, wellness_dates, zepp_provider, timezone_name),
         "physiology": compact_physiology(client),
         "plan_level": choose_plan_level(summary),
@@ -927,6 +950,14 @@ def _activity_date_range() -> tuple[date, date]:
         lookback = int(os.getenv("ZEPP_ACTIVITY_SYNC_LOOKBACK_DAYS", "3"))
     except ValueError:
         lookback = 3
+    return TODAY - timedelta(days=max(0, lookback)), TODAY
+
+
+def _strava_activity_date_range() -> tuple[date, date]:
+    try:
+        lookback = int(os.getenv("STRAVA_ACTIVITY_SYNC_LOOKBACK_DAYS", "60"))
+    except ValueError:
+        lookback = 60
     return TODAY - timedelta(days=max(0, lookback)), TODAY
 
 

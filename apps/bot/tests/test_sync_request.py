@@ -27,15 +27,18 @@ class SyncRequestTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         self.client = TestClient(main.app)
 
-    def test_api_accepts_full_and_zepp_activity_modes(self) -> None:
+    def test_api_accepts_full_zepp_and_strava_activity_modes(self) -> None:
         full = self.client.post("/sync/request", json={"mode": "full"})
         zepp = self.client.post("/sync/request", json={"mode": "zepp_activities"})
+        strava = self.client.post("/sync/request", json={"mode": "strava_activities"})
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["request"]["mode"], "full")
         self.assertEqual(zepp.status_code, 200)
         self.assertEqual(zepp.json()["request"]["mode"], "zepp_activities")
-        self.assertEqual(store.load_sync_request()["mode"], "zepp_activities")
+        self.assertEqual(strava.status_code, 200)
+        self.assertEqual(strava.json()["request"]["mode"], "strava_activities")
+        self.assertEqual(store.load_sync_request()["mode"], "strava_activities")
 
     def test_api_rejects_unknown_mode(self) -> None:
         for mode in ("partial", ["zepp_activities"]):

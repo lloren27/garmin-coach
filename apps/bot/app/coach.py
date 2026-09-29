@@ -72,7 +72,7 @@ def format_help() -> str:
         "/tendencia - evolucion semanal\n"
         "/feedback - conclusion de todas las actividades del dia\n"
         "/coach - pregunta libre al entrenador local\n"
-        "/sync - solicita sincronizacion desde el Mac\n"
+        "/sync - solicita sincronizacion desde el Mac; usa /sync cmf para Strava\n"
         "/perfil - guarda sexo, edad, peso, altura, FC, FTP y objetivos\n"
         "/prueba_esfuerzo - sube PDF/DOCX de prueba deportiva\n"
         "/pruebas - historico de pruebas de esfuerzo\n"
@@ -133,6 +133,8 @@ def format_sync_requested(document: dict[str, Any], sync: dict[str, Any] | None 
     ]
     if document.get("mode") == "zepp_activities":
         lines.append("Modo: actividades Zepp recientes")
+    if document.get("mode") == "strava_activities":
+        lines.append("Modo: actividades CMF via Strava")
     if sync:
         lines.append(f"Ultimos datos actuales: {_format_datetime_es(sync.get('received_at'))} hora Espana")
     lines.append("TrAIner la ejecutara en cuanto este despierto y el watcher local la detecte.")
@@ -2346,11 +2348,27 @@ def _activity_line(activity: dict[str, Any]) -> str:
 
 
 def _activity_source_suffix(activity: dict[str, Any]) -> str:
-    return " [Zepp]" if activity.get("source") == "zepp" else ""
+    label = _activity_source_label(activity)
+    return f" [{label}]" if label else ""
 
 
 def _today_activity_source_suffix(activities: list[dict[str, Any]]) -> str:
-    return " [Zepp]" if any(activity.get("source") == "zepp" for activity in activities) else ""
+    labels = []
+    for activity in activities:
+        label = _activity_source_label(activity)
+        if label and label not in labels:
+            labels.append(label)
+    return f" [{' + '.join(labels)}]" if labels else ""
+
+
+def _activity_source_label(activity: dict[str, Any]) -> str:
+    source = activity.get("source")
+    if source == "zepp":
+        return "Zepp"
+    if source == "strava":
+        device = str(activity.get("source_device") or "").lower()
+        return "CMF vía Strava" if "cmf" in device or "nothing" in device else "Strava"
+    return ""
 
 
 def _daily_activity_line(activity: dict[str, Any]) -> str:

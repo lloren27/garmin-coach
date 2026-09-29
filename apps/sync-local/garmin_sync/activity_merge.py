@@ -4,12 +4,25 @@ from datetime import datetime
 from typing import Any
 
 
-def merge_activities(garmin: list[dict[str, Any]], zepp: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Combine normalized provider records, preserving Garmin for proven duplicates."""
+def merge_activities(
+    garmin: list[dict[str, Any]],
+    zepp: list[dict[str, Any]],
+    strava: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Combine normalized records in provider-priority order."""
 
-    unique_garmin = _unique_by_id(garmin)
-    kept_zepp = [item for item in _unique_by_id(zepp) if not any(_is_duplicate(garmin_item, item) for garmin_item in unique_garmin)]
-    return sorted(unique_garmin + kept_zepp, key=lambda item: (str(item.get("started_at") or item.get("date") or ""), str(item.get("id") or "")))
+    merged: list[dict[str, Any]] = []
+    for provider_activities in (garmin, zepp, strava or []):
+        for item in _unique_by_id(provider_activities):
+            if not any(_is_duplicate(existing, item) for existing in merged):
+                merged.append(item)
+    return sorted(
+        merged,
+        key=lambda item: (
+            str(item.get("started_at") or item.get("date") or ""),
+            str(item.get("id") or ""),
+        ),
+    )
 
 
 def _unique_by_id(activities: list[dict[str, Any]]) -> list[dict[str, Any]]:

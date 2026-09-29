@@ -489,8 +489,10 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
             mode = "full"
         elif args.lower() == "zepp":
             mode = "zepp_activities"
+        elif args.lower() == "cmf":
+            mode = "strava_activities"
         else:
-            return "Uso: /sync o /sync zepp"
+            return "Uso: /sync, /sync zepp o /sync cmf"
         document = save_sync_request(user_id, mode=mode)
         return format_sync_requested(document, sync)
     if command == "/perfil":

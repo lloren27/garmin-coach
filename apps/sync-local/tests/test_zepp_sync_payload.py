@@ -103,6 +103,24 @@ ZEPPRUN = {
     "avg_hr": 151,
 }
 
+STRAVARUN = {
+    "id": "strava:123456",
+    "source": "strava",
+    "source_activity_id": "123456",
+    "source_device": "CMF Watch 3 Pro",
+    "date": "2026-08-24",
+    "started_at": "2026-08-24T07:25:00+02:00",
+    "name": "Morning Run",
+    "sport": "running",
+    "type": "Run",
+    "km": 8.02,
+    "duration_s": 2518,
+    "hours": 0.7,
+    "pace": "5:14/km",
+    "avg_speed_kmh": 11.5,
+    "avg_hr": 151,
+}
+
 GARMINRUN = {
     "activityId": "garmin-activity-1",
     "activityName": "Carrera Garmin",
@@ -120,6 +138,10 @@ class FakeZeppActivityProvider:
 
     def fetch_activities(self, _start_day: date, _end_day: date):
         return self.activities, self.status
+
+
+class FakeStravaActivityProvider(FakeZeppActivityProvider):
+    pass
 
 
 class ZeppSyncPayloadTests(unittest.TestCase):
@@ -158,6 +180,7 @@ class ZeppSyncPayloadTests(unittest.TestCase):
             patch.object(sync, "compact_physiology", return_value={}),
             patch.object(sync, "ZeppProvider", return_value=FakeZeppProvider()),
             patch.object(sync, "ZeppActivityProvider", return_value=FakeZeppActivityProvider([ZEPPRUN])),
+            patch.object(sync, "StravaActivityProvider", return_value=FakeStravaActivityProvider()),
             patch.object(sync, "TODAY", date(2026, 9, 24)),
         ):
             payload = sync.build_payload()
@@ -174,6 +197,7 @@ class ZeppSyncPayloadTests(unittest.TestCase):
             patch.object(sync, "compact_physiology", return_value={}),
             patch.object(sync, "ZeppProvider", return_value=FakeZeppProvider()),
             patch.object(sync, "ZeppActivityProvider", return_value=FakeZeppActivityProvider()),
+            patch.object(sync, "StravaActivityProvider", return_value=FakeStravaActivityProvider()),
             patch.object(sync, "TODAY", date(2026, 9, 22)),
         ):
             payload = sync.build_payload()
@@ -196,6 +220,7 @@ class ZeppSyncPayloadTests(unittest.TestCase):
                 "ZeppActivityProvider",
                 return_value=FakeZeppActivityProvider(status={"status": "auth_error", "records_received": 0}),
             ),
+            patch.object(sync, "StravaActivityProvider", return_value=FakeStravaActivityProvider()),
             patch.object(sync, "TODAY", date(2026, 9, 22)),
         ):
             payload = sync.build_payload()
@@ -205,6 +230,25 @@ class ZeppSyncPayloadTests(unittest.TestCase):
         self.assertEqual(payload["activity_provider_status"]["zepp"]["status"], "auth_error")
         self.assertEqual(payload["wellness"]["effective"]["sleep"]["source"], "garmin")
         self.assertNotIn("stress", payload["wellness"]["effective"])
+
+    def test_build_payload_imports_strava_activity_from_sixty_day_window(self) -> None:
+        fake_client = FakeGarmin()
+        strava = FakeStravaActivityProvider([STRAVARUN])
+        with (
+            patch.object(sync, "Garmin", return_value=fake_client),
+            patch.object(sync, "get_activities", return_value=[]),
+            patch.object(sync, "load_remote_profile", return_value={}),
+            patch.object(sync, "compact_physiology", return_value={}),
+            patch.object(sync, "ZeppProvider", return_value=FakeZeppProvider()),
+            patch.object(sync, "ZeppActivityProvider", return_value=FakeZeppActivityProvider()),
+            patch.object(sync, "StravaActivityProvider", return_value=strava),
+            patch.object(sync, "TODAY", date(2026, 9, 29)),
+        ):
+            payload = sync.build_payload()
+
+        self.assertEqual(payload["summary"]["activities"][-1]["id"], "strava:123456")
+        self.assertEqual(payload["activity_provider_status"]["strava"]["status"], "ok")
+        self.assertEqual(sync._strava_activity_date_range(), (date(2026, 7, 31), date(2026, 9, 29)))
 
 
 if __name__ == "__main__":

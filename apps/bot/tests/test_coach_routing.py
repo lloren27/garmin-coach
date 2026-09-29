@@ -91,7 +91,15 @@ class CoachRoutingTests(unittest.TestCase):
             response = main.route_message("/sync zepp ahora", "user", "chat")
 
         save.assert_not_called()
-        self.assertEqual(response, "Uso: /sync o /sync zepp")
+        self.assertEqual(response, "Uso: /sync, /sync zepp o /sync cmf")
+
+    def test_sync_cmf_command_persists_strava_activity_mode(self) -> None:
+        document = {"requested_at": "2026-09-29T07:00:00+00:00", "mode": "strava_activities"}
+        with patch.object(main, "save_sync_request", return_value=document) as save:
+            response = main.route_message("/sync cmf", "user", "chat")
+
+        save.assert_called_once_with("user", mode="strava_activities")
+        self.assertIn("actividades CMF via Strava", response)
 
     def test_strength_logging_stays_transactional(self) -> None:
         with patch.object(main, "handle_strength_command", return_value=("Guardado", {"sessions": []}, True)) as handle, patch.object(main, "save_strength_state") as save:

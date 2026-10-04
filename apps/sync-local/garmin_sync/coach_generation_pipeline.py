@@ -7,6 +7,9 @@ from .coach_generation_context import build_snapshot, generation_schema
 from .coach_generation_contracts import parse_generation, normalize_generation
 from .coach_generation_resolver import resolve_generation, fail, check_authority
 from .coach_generation_renderer import render_generation
+from .coach_intent import (CoachIntent, ClarificationCode, clarification_prompt,
+                           intent_enforcement_enabled)
+from .ai_contracts import CoachDecision, CoachStructuredResponse
 from .coach_validation import CoachValidationError, ValidationIssue, ValidationCode as Code, ValidationPhase as Phase
 
 SYSTEM = '''Eres un entrenador que selecciona decisiones estructuradas, no redacta la respuesta final.
@@ -33,13 +36,41 @@ usan IDs del plan, fuentes autorizadas y campos compatibles con la operación. N
 En semana cubre todos los días solicitados con día y fecha exacta en las decisiones, sin omitir sesiones.
 No incluyas answer, prosa libre, Markdown ni razonamiento. El texto final lo construye Python.'''
 
+SYSTEM_INTENT = '''
+El contexto incluye componentes de intención indexados. En modo de alcance por intención, toda decisión
+debe copiar component_index y usar solo una fecha perteneciente a ese componente. Análisis usa únicamente
+information_only o ask_user y fechas observadas; no prescribas ni conserves sesiones del plan. Consulta
+del plan puede usar keep_plan solo en fechas futuras/presentes de advice_dates; fechas pasadas son solo
+informativas. Consejo permite acciones prescriptivas únicamente en sus advice_dates. Una paráfrasis no
+resuelta solo admite information_only o ask_user. Una solicitud de cambio solo puede originar change_proposal
+si change_proposal_allowed_now es true y pertenece al componente request_change; nunca aplica cambios.'''
+
 
 def generate_validated(question, compact, *, generate, job_id=None, now=None,
                        max_chars=3200, timeout_seconds=600, num_predict=1400):
     snapshot = build_snapshot(question, compact, now=now or datetime.now(ZoneInfo('Europe/Madrid')))
-    messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': json.dumps(
+    enforce_intent = intent_enforcement_enabled()
+    if enforce_intent:
+        fixed_codes = {ClarificationCode.NO_SCOPE, ClarificationCode.CONTRADICTORY_OPERATION,
+            ClarificationCode.INVALID_DATE, ClarificationCode.MISSING_ADVICE_DATE,
+            ClarificationCode.PAST_CHANGE_DATE, ClarificationCode.CONFLICTING_SCOPE}
+        for component in snapshot.intent.components:
+            if component.intent is CoachIntent.REQUEST_CHANGE and not snapshot.proposal_allowed:
+                code = ClarificationCode.CHANGE_NOT_AUTHORIZED
+                break
+            if component.clarification_code in fixed_codes:
+                code = component.clarification_code
+                break
+        else:
+            code = None
+        if code is not None:
+            prompt = clarification_prompt(code)
+            decision = CoachDecision(action='ask_user', reason=prompt)
+            return CoachStructuredResponse(response_type='information', decisions=[decision], answer=prompt)
+    system_prompt = SYSTEM + (SYSTEM_INTENT if enforce_intent else '')
+    messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': json.dumps(
         {'question': question, 'context': snapshot.public_context()}, ensure_ascii=False)}]
-    schema = generation_schema(snapshot)
+    schema = generation_schema(snapshot, enforce_intent=enforce_intent)
     for attempt in (1, 2):
         result = generate(messages, think=False, timeout_seconds=timeout_seconds,
                           num_predict=num_predict, response_schema=schema)
@@ -53,12 +84,12 @@ def generate_validated(question, compact, *, generate, job_id=None, now=None,
                 rejected = raw
             except (ValueError, TypeError): raw = None
             if isinstance(raw, dict):
-                check_authority(raw, snapshot)
+                check_authority(raw, snapshot, enforce_intent=enforce_intent)
                 _, normalizations = normalize_generation(raw)
                 for issue in normalizations:
                     _event('coach_normalization', snapshot, job_id, attempt, issue)
             response = parse_generation(content)
-            resolved = resolve_generation(response, snapshot)
+            resolved = resolve_generation(response, snapshot, enforce_intent=enforce_intent)
             wire = render_generation(resolved, snapshot, max_chars=max_chars)
         except CoachValidationError as error:
             for issue in error.issues:

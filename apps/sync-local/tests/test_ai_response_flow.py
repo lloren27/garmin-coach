@@ -15,6 +15,8 @@ from unittest.mock import Mock, patch
 import httpx
 from garmin_sync import ai_worker as worker
 
+JOB_CREATED_AT = '2026-10-03T21:50:00+00:00'
+
 
 def structured_response(
     answer: str,
@@ -57,7 +59,7 @@ class ResponseFlowTests(unittest.TestCase):
         answer = "Hoy te recomiendo un rodaje suave para facilitar la recuperación. " * 20
         captured = []
         with patch.object(worker, "call_ollama", return_value=ollama_result(answer)) as model, patch.object(worker, "deterministic_answer") as direct, patch.object(worker, "download_telegram_audio", return_value=Path("audio.ogg")), patch.object(worker, "transcribe_audio", return_value="¿Qué hago mañana?"), patch.object(worker, "synthesize_voice", return_value=Path("voice.ogg")) as synth, patch.object(worker, "send_telegram_voice"):
-            for job in ({"id": "text", "text": "¿Qué hago mañana?"}, {"id": "voice", "audio_file_id": "audio", "response_mode": "voice", "chat_id": "chat"}):
+            for job in ({"id": "text", "text": "¿Qué hago mañana?", "created_at": JOB_CREATED_AT}, {"id": "voice", "audio_file_id": "audio", "response_mode": "voice", "chat_id": "chat", "created_at": JOB_CREATED_AT}):
                 worker.process_job(job, {})
                 captured.append(self.post.call_args.args[1])
             self.assertEqual(model.call_count, 2)
@@ -71,7 +73,7 @@ class ResponseFlowTests(unittest.TestCase):
 
     def test_model_unavailable_returns_labelled_basic_reading(self) -> None:
         with patch.object(worker, "call_ollama", side_effect=httpx.ConnectError("offline")), patch.object(worker, "deterministic_answer", return_value="Hoy mantén la carga suave."):
-            worker.process_job({"id": "text", "text": "¿Qué hago mañana?"}, {})
+            worker.process_job({"id": "text", "text": "¿Qué hago mañana?", "created_at": JOB_CREATED_AT}, {})
             payload = self.post.call_args.args[1]
             self.assertEqual(payload["status"], "completed")
             self.assertIn("lectura básica", payload["answer"])
@@ -81,7 +83,7 @@ class ResponseFlowTests(unittest.TestCase):
         answer = "Hoy te recomiendo descansar para recuperar. " * 30
         for result in (None, RuntimeError("Piper unavailable")):
             with self.subTest(result=result), patch.object(worker, "call_ollama", return_value=ollama_result(answer)), patch.object(worker, "synthesize_voice", side_effect=result if isinstance(result, Exception) else None, return_value=None):
-                worker.process_job({"id": "voice", "text": "¿Qué hago?", "response_mode": "voice", "chat_id": "chat"}, {})
+                worker.process_job({"id": "voice", "text": "¿Qué hago?", "response_mode": "voice", "chat_id": "chat", "created_at": JOB_CREATED_AT}, {})
                 payload = self.post.call_args.args[1]
                 self.assertEqual(payload["answer"], answer)
                 self.assertEqual(payload["response_mode"], "text")
@@ -99,7 +101,7 @@ class ResponseFlowTests(unittest.TestCase):
             return ollama_result("Hoy descansa.")
 
         with patch.object(worker, "TELEGRAM_BOT_TOKEN", "token"), patch.object(worker, "TELEGRAM_ACTION_INTERVAL_SECONDS", 0.01, create=True), patch.object(worker, "telegram_api", side_effect=fake_telegram), patch.object(worker, "call_ollama", side_effect=slow_answer):
-            worker.process_job({"id": "text", "chat_id": "chat", "text": "¿Qué hago?"}, {})
+            worker.process_job({"id": "text", "chat_id": "chat", "text": "¿Qué hago?", "created_at": JOB_CREATED_AT}, {})
             count_after_stop = len(calls)
             time.sleep(0.03)
 
@@ -179,11 +181,25 @@ class ResponseFlowTests(unittest.TestCase):
                            response_type='information', decisions=[{'action': 'ask_user'}], conclusions=[], evidence_refs=[])
                 return {'message': {'content': json.dumps(raw)}}
             generate.side_effect = answer
-            worker.process_job({'id': 'job', 'text': '¿Qué hago?'}, {})
+            worker.process_job({'id': 'job', 'text': '¿Qué hago?', 'created_at': '2026-10-03T21:50:00+00:00'}, {})
         payload = self.post.call_args.args[1]
         self.assertEqual(payload['output_source'], 'ollama')
         self.assertEqual(payload['answer'], payload['structured_output']['answer'])
         self.assertEqual(payload['structured_output']['decisions'][0]['action'], 'ask_user')
+
+    def test_process_job_uses_enqueue_timestamp_instead_of_worker_time(self):
+        enqueued = '2026-10-03T21:50:00+00:00'
+        with patch.object(worker, 'call_ollama', return_value=ollama_result('respuesta')) as model:
+            worker.process_job({'id': 'job', 'text': '¿Qué hago mañana?', 'created_at': enqueued}, {})
+
+        self.assertEqual(model.call_args.kwargs['now'], datetime.fromisoformat(enqueued))
+
+    def test_process_job_without_trusted_enqueue_timestamp_fails_closed(self):
+        with patch.object(worker, 'call_ollama') as model, self.assertRaises(ValueError):
+            worker.process_job({'id': 'job', 'text': '¿Qué hago mañana?'}, {})
+
+        model.assert_not_called()
+        self.assertEqual(self.post.call_args.args[1]['status'], 'failed')
 
     def test_http_failure_is_not_retried_as_a_validation_repair(self) -> None:
         with patch.object(worker.httpx, "post", side_effect=httpx.ConnectError("offline")) as post:
@@ -196,7 +212,7 @@ class ResponseFlowTests(unittest.TestCase):
         for content, reason in (("Hoy reduce la carga si", "length"), ("", "stop")):
             draft = {"message": {"content": content, "thinking": "secret"}, "done_reason": reason}
             with self.subTest(reason=reason), patch.object(worker, "ollama_generate", return_value=draft):
-                worker.process_job({"id": "job", "text": "¿Qué hago mañana?"}, {})
+                worker.process_job({"id": "job", "text": "¿Qué hago mañana?", "created_at": JOB_CREATED_AT}, {})
                 payload = self.post.call_args.args[1]
                 self.assertIn("lectura básica", payload["answer"])
                 self.assertIsNone(payload["structured_output"])
@@ -205,7 +221,7 @@ class ResponseFlowTests(unittest.TestCase):
     def test_incomplete_single_draft_is_not_sent(self) -> None:
         draft = {"message": {"content": "Hoy corre si", "thinking": "private"}, "done_reason": "length"}
         with patch.object(worker, "ollama_generate", return_value=draft) as generate:
-            worker.process_job({"id": "job", "text": "¿Qué hago mañana?"}, {})
+            worker.process_job({"id": "job", "text": "¿Qué hago mañana?", "created_at": JOB_CREATED_AT}, {})
             self.assertEqual(generate.call_count, 2)
             payload = self.post.call_args.args[1]
             self.assertIn("lectura básica", payload["answer"])

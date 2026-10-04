@@ -224,6 +224,19 @@ class IntentClassificationTests(unittest.TestCase):
         self.assertEqual(recommendation.primary_intent, CoachIntent.RECOMMEND_NEXT)
         self.assertEqual(recommendation.advice_dates, (date(2026, 10, 5),))
 
+    def test_what_do_i_do_tomorrow_is_dated_advice(self):
+        result = self.resolve("¿Qué hago mañana?")
+        self.assertEqual(result.primary_intent, CoachIntent.RECOMMEND_NEXT)
+        self.assertEqual(result.advice_dates, (date(2026, 10, 5),))
+
+    def test_next_seven_days_phrase_keeps_legacy_plan_scope(self):
+        result = resolve_intent(
+            "Plan para los próximos siete días",
+            now=datetime(2026, 10, 4, 12, tzinfo=timezone.utc),
+        )
+        self.assertEqual(result.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(result.advice_dates, tuple(date(2026, 10, day) for day in range(4, 11)))
+
     def test_past_plan_question_uses_observed_dates(self):
         result = self.resolve("qué tocaba ayer")
         self.assertEqual(result.primary_intent, CoachIntent.CONSULT_PLAN)
@@ -352,7 +365,7 @@ class ClarificationTests(unittest.TestCase):
             ClarificationCode.PAST_CHANGE_DATE: "cambia la sesión de ayer",
             ClarificationCode.CONFLICTING_SCOPE: "analiza mi última actividad de ayer",
         }
-        self.assertEqual(set(questions), set(ClarificationCode))
+        self.assertEqual(set(questions), set(ClarificationCode) - {ClarificationCode.CHANGE_NOT_AUTHORIZED})
 
         for code, question in questions.items():
             with self.subTest(code=code):
@@ -364,6 +377,8 @@ class ClarificationTests(unittest.TestCase):
                 self.assertTrue(prompt)
                 if question:
                     self.assertNotIn(question, prompt)
+
+        self.assertIn('autorización', clarification_prompt(ClarificationCode.CHANGE_NOT_AUTHORIZED).lower())
 
     def test_templates_reject_unknown_codes(self):
         with self.assertRaises((TypeError, ValueError)):

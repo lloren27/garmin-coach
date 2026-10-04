@@ -59,7 +59,7 @@ class RendererTests(unittest.TestCase):
             render_generation(resolved, self.snapshot, max_chars=40)
 
     def setUp(self):
-        self.snapshot = build_snapshot('mañana', compact_fixture(), now=NOW)
+        self.snapshot = build_snapshot('qué toca mañana', compact_fixture(), now=NOW)
 
     def render(self, decisions, **updates):
         resolved = resolve_generation(response(self.snapshot, decisions, **updates), self.snapshot)
@@ -107,7 +107,7 @@ class RendererTests(unittest.TestCase):
 
     def test_stale_notice_is_required_once(self):
         compact = compact_fixture(); compact['extra_context']['data_freshness']['status'] = 'stale'
-        self.snapshot = build_snapshot('mañana', compact, now=NOW)
+        self.snapshot = build_snapshot('qué toca mañana', compact, now=NOW)
         wire = self.render([{'action': 'ask_user'}])
         self.assertEqual(wire.answer.count('actualiza'), 1)
 
@@ -115,7 +115,7 @@ class RendererTests(unittest.TestCase):
         compact = compact_fixture()
         compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26',
             sport='strength', session_type='full_body_a', intensity='easy', duration_min=30, optional=True)]
-        self.snapshot = build_snapshot('mañana', compact, now=NOW)
+        self.snapshot = build_snapshot('qué toca mañana', compact, now=NOW)
         wire = self.render([{'action': 'keep_plan', 'session_id': 'run'}])
         self.assertIn('opcional', wire.answer.lower())
         self.assertIn('opcional', wire.decisions[0].reason.lower())
@@ -125,7 +125,7 @@ class RendererTests(unittest.TestCase):
         compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26',
             sport='running', session_type='quality', intensity='marathon_pace', target_pace='5:00',
             description='2 km + 3 x 2 km. arbitrary prose')]
-        self.snapshot = build_snapshot('mañana', compact, now=NOW)
+        self.snapshot = build_snapshot('qué toca mañana', compact, now=NOW)
         wire = self.render([{'action': 'keep_plan', 'session_id': 'run'}])
         self.assertIn('bloques', wire.answer)
         self.assertNotIn('arbitrary', wire.answer)

@@ -61,6 +61,7 @@ class CoachDecision(BaseModel):
     action: DecisionAction
     source: DecisionSource = "ollama"
     sport: Sport = "none"
+    component_index: int | None = Field(default=None, ge=0, le=6)
 
     date: Date | None = None
     session_type: str | None = Field(default=None, max_length=80)
@@ -169,6 +170,7 @@ class SessionChange(BaseModel):
 class StructuredChangeProposal(BaseModel):
     model_config = ConfigDict(extra='forbid')
     reason: str = Field(min_length=8, max_length=500)
+    component_index: int | None = Field(default=None, ge=0, le=6)
     confidence: float = Field(strict=True, ge=0, le=1, allow_inf_nan=False)
     evidence: list[CoachEvidence] = Field(max_length=4)
     changes: list[SessionChange] = Field(min_length=1, max_length=14)

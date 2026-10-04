@@ -17,7 +17,7 @@ class ProposalBoundaryTests(unittest.TestCase):
              patch.object(worker, 'fetch_wattwise_context', return_value=None), \
              patch.object(worker, 'call_ollama', return_value=worker.CoachRunResult('Respuesta de análisis completa.', None, 'deterministic_fallback')):
             with self.assertRaises(httpx.ReadTimeout):
-                worker.process_job({'id': 'job', 'text': 'Ajusta mañana'}, {})
+                worker.process_job({'id': 'job', 'text': 'Ajusta mañana', 'created_at': '2026-10-03T21:50:00+00:00'}, {})
         self.assertEqual(len(seen), 3)
         self.assertTrue(all(item['status'] == 'completed' for item in seen))
 

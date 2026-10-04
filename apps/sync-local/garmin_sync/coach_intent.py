@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
+import os
 import re
 import unicodedata
 from types import MappingProxyType
@@ -34,6 +35,7 @@ class ClarificationCode(str, Enum):
     MISSING_ADVICE_DATE = "missing_advice_date"
     PAST_CHANGE_DATE = "past_change_date"
     CONFLICTING_SCOPE = "conflicting_scope"
+    CHANGE_NOT_AUTHORIZED = "change_not_authorized"
 
 
 CLARIFICATION_TEMPLATES = MappingProxyType({
@@ -44,6 +46,7 @@ CLARIFICATION_TEMPLATES = MappingProxyType({
     ClarificationCode.MISSING_ADVICE_DATE: "¿Para qué día quieres una recomendación?",
     ClarificationCode.PAST_CHANGE_DATE: "Esa sesión ya pasó. ¿Quieres consultar esa fecha o pedir un cambio futuro?",
     ClarificationCode.CONFLICTING_SCOPE: "¿Quieres consultar la última actividad o las actividades de una fecha concreta?",
+    ClarificationCode.CHANGE_NOT_AUTHORIZED: "Para cambiar el plan hace falta autorización. No se ha aplicado ningún cambio.",
 })
 
 
@@ -62,6 +65,10 @@ class DateResolutionScope(str, Enum):
 
 class InvalidDateError(ValueError):
     """Raised when a date explicitly written by the user is impossible."""
+
+
+def intent_enforcement_enabled() -> bool:
+    return os.getenv("COACH_INTENT_ENFORCEMENT", "").strip().lower() in {"1", "true", "on"}
 
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -158,6 +165,11 @@ def resolve_dates(
 
     consume(month_pattern, named_month)
 
+    def next_seven_days(_match):
+        return [today + timedelta(days=offset) for offset in range(7)]
+
+    consume(r"\b(?:(?:los\s+)?proximos?\s+)?(?:siete|7)\s+dias\b", next_seven_days)
+
     def week_dates(match):
         phrase = match.group(0)
         monday = today - timedelta(days=today.weekday())
@@ -223,7 +235,7 @@ _INTENT_SIGNAL_PATTERNS = (
     ("analysis_command", r"\b(?:analiza|analizar|analices|revisa|revisar|repasa|repasar|valora|valorar)\b"),
     ("retrospective_question", r"\b(?:como\s+(?:fue|me\s+fue|salio|me\s+salio)|que\s+tal|que\s+hice|he\s+completado|estoy\s+(?:mejor|peor)\s+recuperado)\b"),
     ("plan_question", r"\bque\s+(?:me\s+)?(?:toca|tocaba|tocara|corresponde)\b|\bsesion\s+prevista\b"),
-    ("recommendation", r"\b(?:que\s+(?:hago|debo\s+|deberia\s+|puedo\s+)?hacer|dime\s+que\s+(?:hacer|hago)|como\s+entreno|que\s+me\s+recomiendas|deberia\s+cambiar|que\s+implica)\b"),
+    ("recommendation", r"\b(?:que\s+hago|que\s+(?:debo\s+|deberia\s+|puedo\s+)?hacer|dime\s+que\s+(?:hacer|hago)|como\s+entreno|que\s+me\s+recomiendas|deberia\s+cambiar|que\s+implica)\b"),
 )
 _PLAN_OBJECT = re.compile(r"\b(?:plan|sesion|entrenamiento|entreno|tirada|carrera)\b")
 _NEGATED_CHANGE = re.compile(r"\bno\s+(?:cambies|modifiques|muevas|quites|anadas|canceles|reprogrames)\b")
@@ -244,6 +256,7 @@ _RECOGNIZED_CLAUSE_STARTS = (
     re.compile(r"^(?:no\s+)?(?:analiza|analizar|analices|revisa|revisar|repasa|repasar|valora|valorar)\b"),
     re.compile(r"^(?:no\s+)?(?:dime|consulta|revisa)\b"),
     re.compile(r"^(?:no\s+)?que\s+(?:me\s+)?(?:toca|tocaba|tocara|debo|deberia|puedo)\b"),
+    re.compile(r"^(?:no\s+)?que\s+hago\b"),
     re.compile(r"^(?:no\s+)?(?:como\s+(?:fue|me\s+fue)|que\s+tal|que\s+hice)\b"),
     re.compile(r"^(?:no\s+)?(?:que\s+implica|he\s+completado|estoy\s+(?:mejor|peor)\s+recuperado)\b"),
     re.compile(r"^(?:deberia|debo|conviene)\b"),

@@ -1,0 +1,217 @@
+EEEEE....................................................E...EEE...........EEE
+======================================================================
+ERROR: test_activity_merge (unittest.loader._FailedTest.test_activity_merge)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_activity_merge
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_activity_merge.py", line 6, in <module>
+    from garmin_sync.sync import normalize_activities, summarize_normalized
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+======================================================================
+ERROR: test_ai_checkin_context (unittest.loader._FailedTest.test_ai_checkin_context)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_ai_checkin_context
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_ai_checkin_context.py", line 5, in <module>
+    from garmin_sync.ai_worker import _compact_injury_checkins, compact_context, prepare_text_for_tts
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/ai_worker.py", line 23, in <module>
+    from .sync import API_URL, SYNC_SECRET
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+======================================================================
+ERROR: test_ai_contracts (unittest.loader._FailedTest.test_ai_contracts)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_ai_contracts
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_ai_contracts.py", line 10, in <module>
+    from garmin_sync.ai_worker import compact_context, validate_coach_decisions
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/ai_worker.py", line 23, in <module>
+    from .sync import API_URL, SYNC_SECRET
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+======================================================================
+ERROR: test_ai_response_flow (unittest.loader._FailedTest.test_ai_response_flow)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_ai_response_flow
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_ai_response_flow.py", line 16, in <module>
+    from garmin_sync import ai_worker as worker
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/ai_worker.py", line 23, in <module>
+    from .sync import API_URL, SYNC_SECRET
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+======================================================================
+ERROR: test_change_proposal_flow (unittest.loader._FailedTest.test_change_proposal_flow)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_change_proposal_flow
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_change_proposal_flow.py", line 5, in <module>
+    from garmin_sync import ai_worker as worker
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/ai_worker.py", line 23, in <module>
+    from .sync import API_URL, SYNC_SECRET
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+======================================================================
+ERROR: test_requested_sync (unittest.loader._FailedTest.test_requested_sync)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_requested_sync
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_requested_sync.py", line 6, in <module>
+    from garmin_sync import requested_sync
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/requested_sync.py", line 10, in <module>
+    from .sync import API_URL, SYNC_SECRET, main as run_full_sync
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+======================================================================
+ERROR: test_strava_activity_provider (unittest.loader._FailedTest.test_strava_activity_provider)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_strava_activity_provider
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_strava_activity_provider.py", line 10, in <module>
+    from garmin_sync.strava_activity_provider import StravaActivityProvider, StravaTokenStore
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/strava_activity_provider.py", line 13, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+
+
+======================================================================
+ERROR: test_strava_oauth (unittest.loader._FailedTest.test_strava_oauth)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_strava_oauth
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_strava_oauth.py", line 10, in <module>
+    from garmin_sync.strava_activity_provider import StravaTokenStore
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/strava_activity_provider.py", line 13, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+
+
+======================================================================
+ERROR: test_sync_running_recommendation (unittest.loader._FailedTest.test_sync_running_recommendation)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_sync_running_recommendation
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_sync_running_recommendation.py", line 5, in <module>
+    from garmin_sync.sync import TODAY, recommend_next_workout
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+======================================================================
+ERROR: test_zepp_activity_provider (unittest.loader._FailedTest.test_zepp_activity_provider)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_zepp_activity_provider
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_zepp_activity_provider.py", line 7, in <module>
+    from garmin_sync.zepp_activity_provider import ZeppActivityProvider
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/zepp_activity_provider.py", line 7, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+
+
+======================================================================
+ERROR: test_zepp_provider (unittest.loader._FailedTest.test_zepp_provider)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_zepp_provider
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_zepp_provider.py", line 7, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+
+
+======================================================================
+ERROR: test_zepp_sync_payload (unittest.loader._FailedTest.test_zepp_sync_payload)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_zepp_sync_payload
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_zepp_sync_payload.py", line 7, in <module>
+    from garmin_sync import sync
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/garmin_sync/sync.py", line 14, in <module>
+    from garminconnect import Garmin
+ModuleNotFoundError: No module named 'garminconnect'
+
+
+----------------------------------------------------------------------
+Ran 78 tests in 0.063s
+
+FAILED (errors=12)

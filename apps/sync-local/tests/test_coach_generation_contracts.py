@@ -65,6 +65,8 @@ class GenerationContractTests(unittest.TestCase):
                 parse_generation(json.dumps(payload(decisions=[dict(base, **fields)])))
         parsed = parse_generation(json.dumps(payload(decisions=[dict(base, target_pace='5:00–5:30 min/km')])))
         self.assertEqual(parsed.decisions[0].duration_max_min, 50)
+        parsed = parse_generation(json.dumps(payload(decisions=[dict(base, target_pace='5:13/km')])))
+        self.assertEqual(parsed.decisions[0].target_pace, '5:13/km')
         with self.assertRaises(CoachValidationError):
             parse_generation(json.dumps(payload(decisions=[{'action': 'information_only', 'duration_min': 30}])))
 

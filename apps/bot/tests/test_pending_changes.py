@@ -84,6 +84,7 @@ class PendingChangesTests(unittest.TestCase):
     def test_valid_operations_and_unavailable_evidence(self):
         for operation, values in [('RESCHEDULE', {'date': self.date}),
                                   ('ADJUST_INTENSITY', {'intensity': 'recovery'}),
+                                  ('ADJUST_INTENSITY', {'intensity': 'marathon_pace', 'target_pace': '5:13/km'}),
                                   ('CANCEL_SESSION', {})]:
             job = store.create_ai_job('owner', '/ajustar mañana')
             store.prepare_proposal_context(job, {'training_plan'})

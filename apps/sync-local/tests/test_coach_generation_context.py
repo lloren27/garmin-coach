@@ -52,6 +52,16 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(result.decisions[1].source, 'training_plan')
         self.assertEqual(str(result.decisions[1].date), '2026-09-26')
 
+    def test_keep_plan_accepts_plan_pace_with_km_suffix(self):
+        compact = compact_fixture()
+        compact['extra_context']['training_plan']['sessions'] = [
+            compact['extra_context']['training_plan']['sessions'][0]
+        ]
+        compact['extra_context']['training_plan']['sessions'][0]['target_pace'] = '5:13/km'
+        snapshot = build_snapshot('¿Qué hago mañana?', compact, now=NOW)
+        result = resolve_generation(response(snapshot), snapshot)
+        self.assertEqual(result.decisions[0].target_pace, '5:13/km')
+
     def test_wrong_snapshot_fatal_even_with_valid_references(self):
         with self.assertRaises(CoachValidationError) as caught:
             resolve_generation(response(self.snapshot, context_snapshot_id='other'), self.snapshot)

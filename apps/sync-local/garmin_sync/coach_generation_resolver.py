@@ -60,7 +60,7 @@ def check_authority(raw, snapshot):
 
 def validate_resolved_targets(decision, *, fatal, path):
     if decision.target_pace and (decision.sport != 'running' or not re.fullmatch(
-            r'\d{1,2}:[0-5]\d(?:\s*[-–]\s*\d{1,2}:[0-5]\d)?(?:\s*min/km)?', decision.target_pace)):
+            r'\d{1,2}:[0-5]\d(?:\s*[-–]\s*\d{1,2}:[0-5]\d)?(?:\s*(?:min)?/km)?', decision.target_pace)):
         fail(Code.INVALID_PACE_FORMAT, Phase.DOMAIN, path + '.target_pace', fatal=fatal)
     if decision.target_power_w is not None and decision.sport != 'cycling':
         fail(Code.INVALID_DECISION, Phase.DOMAIN, path + '.target_power_w', fatal=fatal)

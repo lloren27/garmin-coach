@@ -131,7 +131,7 @@ class PendingChangeValidator:
             pace = candidate.get('target_pace')
             if pace:
                 import re
-                if sport != 'running' or not re.fullmatch(r'\d{1,2}:[0-5]\d(?:\s*(?:-|–)\s*\d{1,2}:[0-5]\d)?(?:\s*min/km)?', pace):
+                if sport != 'running' or not re.fullmatch(r'\d{1,2}:[0-5]\d(?:\s*(?:-|–)\s*\d{1,2}:[0-5]\d)?(?:\s*(?:min)?/km)?', pace):
                     fail('invalid_running_pace', i, 'target_pace')
         for evidence in proposal.evidence:
             if evidence.source not in job.get('proposal_evidence_sources', []):

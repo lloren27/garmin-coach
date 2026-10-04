@@ -55,7 +55,7 @@ class ActivityDecision(DecisionBase):
     duration_max_min: int | None = Field(default=None, strict=True, ge=1, le=600)
     distance_km: float | None = Field(default=None, ge=0, le=350, allow_inf_nan=False)
     target_pace: str | None = Field(default=None, max_length=40,
-        pattern=r'^\d{1,2}:[0-5]\d(?:\s*[-–]\s*\d{1,2}:[0-5]\d)?(?:\s*min/km)?$')
+        pattern=r'^\d{1,2}:[0-5]\d(?:\s*[-–]\s*\d{1,2}:[0-5]\d)?(?:\s*(?:min)?/km)?$')
     target_power_w: int | None = Field(default=None, strict=True, ge=1, le=1500)
 
     @model_validator(mode='after')

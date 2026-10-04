@@ -50,6 +50,7 @@ METRICS.update({
     'drained': ('Body Battery consumida', ''), 'current': ('Body Battery', ''),
 })
 SOURCES = {'zepp': 'Zepp', 'garmin': 'Garmin', 'wattwise': 'Wattwise', 'backend': 'cálculos del sistema',
+           'strava': 'Strava', 'unknown': 'origen desconocido',
            'profile': 'perfil', 'training_plan': 'plan', 'checkin': 'check-in', 'strength': 'fuerza registrada', 'lab_test': 'prueba aplicada'}
 
 
@@ -132,6 +133,12 @@ def render_generation(result: ResolvedGeneration, snapshot: ContextSnapshot, *, 
     analysis = activity_analysis(result, snapshot)
     required = analysis or [decision_text(d) for d in result.decisions]
     warnings = []
+    labels = {'provider_error':'error del proveedor', 'not_configured':'no configurado',
+              'stale':'datos antiguos', 'partial':'cobertura parcial', 'no_activity':'sin actividad en el periodo consultado'}
+    status_lines = [f"{provider}: {labels[status['state']]}. Último intento: {status.get('last_attempt_at') or 'desconocido'}."
+                    for provider, status in result_statuses(snapshot)]
+    if status_lines:
+        warnings.append(' '.join(status_lines))
     if snapshot.freshness != 'current':
         warnings.append('Los datos no confirman tu estado actual; actualiza la sincronización antes de decidir la carga.')
     if any(d.source != 'training_plan' and d.action not in {'ask_user', 'information_only'} for d in result.decisions):
@@ -183,3 +190,8 @@ def render_generation(result: ResolvedGeneration, snapshot: ContextSnapshot, *, 
         evidence=[evidence_wire(e) for e in result.evidence[:4]],
         warnings=warnings, missing_data=[d.reason for d in result.decisions if d.action == 'ask_user'][:4],
         change_proposal=result.change_proposal)
+
+
+def result_statuses(snapshot):
+    return [(key, value) for key, value in snapshot.provider_status.items()
+            if value['state'] in {'provider_error', 'not_configured', 'stale', 'partial', 'no_activity'}]

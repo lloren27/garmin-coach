@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .DS_Store
 data/
+backup-audit/
 *.sqlite
 *.db
 garmin_connection_status.json

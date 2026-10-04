@@ -37,9 +37,10 @@ def fail(code, phase, path, *, fatal=False, hint=None):
 
 
 def evidence_wire(record: EvidenceRecord) -> CoachEvidence:
-    source = 'backend' if record.source == 'zepp' else record.source
+    source = record.source
     facts = ', '.join(f'{k}={v}' for k, v in record.facts.items())
-    return CoachEvidence(source=source, fact=f'{record.source}: {facts}'[:250], date=record.date)
+    return CoachEvidence(source=source, fact=f'{record.source}: {facts}'[:250], date=record.date,
+                         source_device=record.source_device, source_records=thaw(record.source_records))
 
 
 def check_authority(raw, snapshot):

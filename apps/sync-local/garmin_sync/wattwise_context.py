@@ -24,10 +24,11 @@ _runtime_access_token = WATTWISE_ACCESS_TOKEN
 
 
 def fetch_wattwise_context() -> dict[str, Any] | None:
+    observed = datetime.now(MADRID_TZ).isoformat(timespec='seconds')
     if WATTWISE_AI_CONTEXT.strip().lower() in {"0", "false", "no", "off"}:
-        return None
-    if not WATTWISE_ACCESS_TOKEN:
-        return None
+        return {'status':'disabled', 'observed_at':observed, 'reason':'disabled_by_config'}
+    if not WATTWISE_ACCESS_TOKEN and not WATTWISE_OWNER_SECRET:
+        return {'status':'not_configured', 'observed_at':observed, 'reason':'missing_credentials'}
 
     end = datetime.now(MADRID_TZ).date()
     start = end - timedelta(days=max(WATTWISE_AI_LOOKBACK_DAYS - 1, 0))
@@ -39,7 +40,8 @@ def fetch_wattwise_context() -> dict[str, Any] | None:
             load = _get_json(client, f"/v1/performance/load-fitness?{query}")
             athlete = _get_json(client, "/v1/athlete")
     except Exception as exc:
-        return {"status": "unavailable", "error": str(exc)[:180]}
+        return {"status": "unavailable", "observed_at":observed, "reason":type(exc).__name__,
+                "period_start":start.isoformat(), "period_end":end.isoformat()}
 
     cycling_metrics = []
     for item in coggan.get("items", []):
@@ -61,6 +63,10 @@ def fetch_wattwise_context() -> dict[str, Any] | None:
     signature = athlete.get("fitness_signature") or {}
     return {
         "status": "ok",
+        "observed_at": observed,
+        "last_success_at": observed,
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
         "source": "local_wattwise_core",
         "generated_at": datetime.now(MADRID_TZ).isoformat(timespec="seconds"),
         "lookback_days": WATTWISE_AI_LOOKBACK_DAYS,

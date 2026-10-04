@@ -86,12 +86,12 @@ def deterministic(c):
         snap=pub(c)
         if id=='E06':
             expected=initial['extra_context']['provider_status']['zepp']
-            actual=snap.get('provider_status',{}).get('zepp')
-            ok=actual==expected
+            actual=snap.get('provider_status',{}).get('zepp.wellness',{})
+            ok=actual.get('status')==expected.get('status') and actual.get('state')=='provider_error'
         else:
             expected=initial['extra_context']['wattwise_live']['status']
-            actual=(snap.get('wattwise_live') or {}).get('status')
-            ok=actual==expected
+            actual=snap.get('provider_status',{}).get('wattwise',{})
+            ok=actual.get('status')==expected and actual.get('state')=='provider_error'
         return result(ok,{'snapshot':snap,'expected_status':expected,'actual_status':actual},'Se exige el estado explícito, no una mención del nombre del proveedor; no se evalúa aquí lenguaje natural.')
     if id=='E11':
         main,store=store_setup();plan={'start_date':'2026-10-03','end_date':'2026-10-03','sessions':[initial['plan']]}

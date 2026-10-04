@@ -1,6 +1,7 @@
 """Immutable per-generation authority, detached from mutable worker context."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from .provider_state import context_provider_states
 from datetime import datetime, timedelta, date
 from types import MappingProxyType
 from collections.abc import Mapping
@@ -33,6 +34,11 @@ class EvidenceRecord:
     date: str | None
     facts: Mapping
     sport: str | None = None
+    source_device: str | None = None
+    source_records: tuple = ()
+    collected_at: str | None = None
+    freshness: str = 'unknown'
+    duplicate_candidates: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,7 @@ class ContextSnapshot:
     proposal_sources: tuple[str, ...]
     freshness: str
     plan: Mapping
+    provider_status: Mapping = field(default_factory=dict)
 
     def public_context(self):
         return {'schema_version': '1', 'context_snapshot_id': self.id,
@@ -53,7 +60,11 @@ class ContextSnapshot:
                 'available_sessions': [thaw(s) for s in self.sessions.values()
                     if s.get('status') in (None, 'planned') and s.get('date') in self.target_dates],
                 'available_evidence': [{'id': e.id, 'kind': e.kind, 'source': e.source,
-                    'date': e.date, 'sport': e.sport, 'facts': thaw(e.facts)} for e in self.evidence.values()],
+                    'date': e.date, 'sport': e.sport, 'facts': thaw(e.facts),
+                    'source_device': e.source_device, 'source_records': thaw(e.source_records),
+                    'duplicate_candidates': thaw(e.duplicate_candidates),
+                    'collected_at': e.collected_at, 'freshness': e.freshness} for e in self.evidence.values()],
+                'provider_status': thaw(self.provider_status),
                 'change_proposal_allowed_now': self.proposal_allowed,
                 'proposal_evidence_sources': list(self.proposal_sources), 'freshness': self.freshness}
 
@@ -80,7 +91,13 @@ def _facts(row):
 
 
 def _date(value):
-    try: return date.fromisoformat(str(value)[:10]).isoformat()
+    try:
+        text = str(value)
+        if 'T' in text:
+            instant = datetime.fromisoformat(text.replace('Z', '+00:00'))
+            if instant.tzinfo is not None:
+                return instant.astimezone(ZoneInfo('Europe/Madrid')).date().isoformat()
+        return date.fromisoformat(text[:10]).isoformat()
     except ValueError: return None
 
 
@@ -114,8 +131,8 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         facts = _facts(row)
         if not facts: return
         origin = row.get('source', source)
-        if origin not in {'garmin', 'zepp', 'backend', 'profile', 'training_plan', 'checkin', 'strength', 'wattwise', 'lab_test'}:
-            origin = source
+        if origin not in {'garmin', 'zepp', 'strava', 'unknown', 'backend', 'profile', 'training_plan', 'checkin', 'strength', 'wattwise', 'lab_test'}:
+            origin = 'unknown'
         key = f'{kind}:{row.get("id") or index}'
         # IDs repeated by separate sources must not silently replace a fact.
         if key in evidence or len(key) > 160:
@@ -123,9 +140,15 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         sport = row.get('sport')
         if sport not in ('running', 'cycling', 'strength', 'mobility', 'swimming', 'walking'):
             sport = None
-        evidence[key] = EvidenceRecord(key, kind, origin,
-            _date(row.get('date') or row.get('started_at') or row.get('start') or row.get('created_at') or row.get('observed_at') or row.get('reference_date') or row.get('effective_date') or stamp), freeze(facts), sport)
-    for i, row in enumerate(extra.get('recent_activities') or []): add('activity', row, i, 'garmin')
+        observed = _date(row.get('date') or row.get('started_at') or row.get('end') or row.get('start') or row.get('created_at') or row.get('observed_at') or row.get('reference_date') or row.get('effective_date') or stamp)
+        freshness = ('current' if observed == now.date().isoformat() else 'stale') if observed else 'unknown'
+        origins = row.get('source_records') or ([dict(source=origin,
+            source_activity_id=str(row.get('source_activity_id') or row.get('id') or index),
+            source_device=row.get('source_device'))] if kind == 'activity' else [])
+        evidence[key] = EvidenceRecord(key, kind, origin, observed, freeze(facts), sport,
+            row.get('source_device'), freeze(origins), row.get('collected_at') or extra.get('generated_at'), freshness,
+            freeze(row.get('duplicate_candidates') or []))
+    for i, row in enumerate(extra.get('recent_activities') or []): add('activity', row, i, 'unknown')
     wellness = extra.get('wellness') or {}
     effective = wellness.get('effective', wellness)
     if isinstance(effective, Mapping):
@@ -174,10 +197,15 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         candidates = sorted(s['date'] for s in sessions.values() if s.get('status') in (None, 'planned')
             and _date(s.get('date')) and s['date'] >= today.isoformat())
         if candidates: dates = (candidates[0],)
+    provider_status = context_provider_states(extra, now)
+    freshness = (extra.get('data_freshness') or {}).get('status', 'unknown')
+    if any(e.kind == 'wellness' and e.freshness != 'current' for e in evidence.values()):
+        freshness = 'partial'
+    if any(s['state'] in {'provider_error', 'partial', 'stale'} for s in provider_status.values()):
+        freshness = 'partial'
     return ContextSnapshot('ctx_' + uuid4().hex, now, freeze(sessions), freeze(evidence), dates,
         extra.get('change_proposal_allowed_now') is True, tuple(extra.get('proposal_evidence_sources') or []),
-        (extra.get('data_freshness') or {}).get('status', 'unknown'),
-        freeze(extra.get('training_plan') or {}))
+        freshness, freeze(extra.get('training_plan') or {}), freeze(provider_status))
 
 
 def generation_schema(snapshot: ContextSnapshot) -> dict:

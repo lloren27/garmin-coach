@@ -57,7 +57,7 @@ class CoachRoutingTests(unittest.TestCase):
             patch.object(main, "build_week_plan", return_value=plan) as build,
             patch.object(main, "save_training_plan") as save,
         ):
-            for command in ("/plan_semana", "/plan"):
+            for command in ("/plan_semana nuevo", "/plan nuevo"):
                 with self.subTest(command=command):
                     self.queue.reset_mock()
                     build.reset_mock()
@@ -74,6 +74,18 @@ class CoachRoutingTests(unittest.TestCase):
                     save.assert_called_once_with(plan, "chat")
                     self.queue.assert_not_called()
                     self.assertIn("Plan 7 dias", response)
+
+    def test_plan_read_is_not_a_creation_even_without_sync(self):
+        plan = {'id':'stable', 'revision':3, 'start_date':'2026-10-04', 'end_date':'2026-10-10', 'sessions':[]}
+        with patch.object(main, 'load_active_training_plan', return_value=plan) as load, \
+             patch.object(main, 'build_week_plan') as build, patch.object(main, 'save_training_plan') as save:
+            for command in ('/plan','/plan_semana','/plan@bot'):
+                self.assertIn('Plan 7 dias', main.route_message(command,'user','chat'))
+            load.assert_called_with('chat')
+            build.assert_not_called()
+            save.assert_not_called()
+        with patch.object(main, 'load_active_training_plan', return_value=None):
+            self.assertIn('/plan nuevo', main.route_message('/plan','user','chat'))
 
     def test_command_arguments_survive_and_bot_suffix_is_supported(self) -> None:
         main.route_message("/coach@MyBot dolor gemelo derecho", "user", "chat")

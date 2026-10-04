@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import httpx
+import os
+import re
 from .pending_changes import ProposalError, ProposalConflict
 from .store import VALID_SYNC_MODES, prepare_proposal_context
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -86,6 +88,12 @@ app = FastAPI(title="Garmin Coach")
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get('/version')
+def version() -> dict:
+    commit = os.getenv('RAILWAY_GIT_COMMIT_SHA', '')
+    return {'commit': commit.lower() if re.fullmatch(r'[0-9a-fA-F]{40}', commit) else None}
 
 
 @app.post("/sync")
@@ -192,6 +200,15 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
             sources.add(name)
     if job.get('plan_id'):
         sources.add('training_plan')
+    payload = (sync or {}).get('payload') or {}
+    for activity in (payload.get('summary') or {}).get('activities') or []:
+        origin = activity.get('source') or 'unknown'
+        if origin in {'garmin', 'zepp', 'strava', 'unknown'}:
+            sources.add(origin)
+    wellness = payload.get('wellness') or {}
+    for metric in (wellness.get('effective') or {}).values():
+        if isinstance(metric, dict) and metric.get('source') in {'garmin', 'zepp'}:
+            sources.add(metric['source'])
     lab_tests = [
         {key: item.get(key) for key in ('id', 'created_at', 'status', 'extracted')}
         for item in load_lab_tests(100) if item.get('status') == 'applied'
@@ -428,6 +445,11 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
         return format_help()
     
     if command in {"/plan_semana", "/plan"}:
+        if not args:
+            plan = load_active_training_plan(owner_id)
+            return format_training_plan(plan) if plan else "No hay un plan vigente. Usa /plan nuevo para crearlo."
+        if args.lower() != 'nuevo':
+            return "Usa /plan para consultar o /plan nuevo para crear un plan."
         if not sync:
             return (
                 "Necesito una sincronizacion Garmin antes de crear "

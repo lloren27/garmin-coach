@@ -120,6 +120,9 @@ class CoachEvidence(BaseModel):
 
     source: Literal[
         "garmin",
+        "strava",
+        "zepp",
+        "unknown",
         "wattwise",
         "training_plan",
         "profile",
@@ -131,6 +134,8 @@ class CoachEvidence(BaseModel):
 
     fact: str = Field(min_length=3, max_length=250)
     date: str | None = Field(default=None, max_length=40)
+    source_device: str | None = Field(default=None, max_length=160)
+    source_records: list[dict[str, str | None]] = Field(default_factory=list, max_length=20)
 
 
 class ChangeOperation(StrEnum):

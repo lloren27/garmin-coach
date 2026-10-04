@@ -248,7 +248,7 @@ class ZeppSyncPayloadTests(unittest.TestCase):
 
         self.assertEqual(payload["summary"]["activities"][-1]["id"], "strava:123456")
         self.assertEqual(payload["activity_provider_status"]["strava"]["status"], "ok")
-        self.assertEqual(sync._strava_activity_date_range(), (date(2026, 7, 31), date(2026, 9, 29)))
+        self.assertEqual(sync._strava_activity_date_range(today=date(2026, 9, 29)), (date(2026, 7, 31), date(2026, 9, 29)))
 
 
 if __name__ == "__main__":

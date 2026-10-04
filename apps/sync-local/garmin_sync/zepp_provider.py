@@ -136,11 +136,18 @@ class ZeppProvider:
             total = value.get("sleep_minutes")
         if not isinstance(start, str) or not isinstance(end, str) or not isinstance(total, (int, float)):
             return None
+        try:
+            start, end = self._offset_timestamp(start), self._offset_timestamp(end)
+            elapsed = (datetime.fromisoformat(end).timestamp() - datetime.fromisoformat(start).timestamp()) / 60
+            if not 0 <= total <= elapsed or elapsed <= 0:
+                return None
+        except (ValueError, OverflowError):
+            return None
         stage_minutes = _stage_minutes(value.get("stages"))
         return NormalizedSleep(
             source_id=_string(value.get("id") or value.get("sleep_id")),
-            start=self._offset_timestamp(start),
-            end=self._offset_timestamp(end),
+            start=start,
+            end=end,
             total_minutes=round(total),
             deep_minutes=_integer(value.get("deep_minutes")),
             light_minutes=_integer(value.get("light_minutes")),
@@ -148,11 +155,15 @@ class ZeppProvider:
             awake_minutes=_integer(value.get("awake_minutes")) or stage_minutes.get("awake"),
             score=_integer(value.get("sleep_score") or value.get("score")),
             resting_hr=_integer(value.get("resting_hr")),
+            timezone=self._timezone.key,
         )
 
     def _offset_timestamp(self, timestamp: str) -> str:
         parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
+            # A repeated or nonexistent wall time does not identify an instant.
+            if parsed.replace(tzinfo=self._timezone, fold=0).utcoffset() != parsed.replace(tzinfo=self._timezone, fold=1).utcoffset():
+                raise ValueError('Sleep timestamp requires an explicit offset at DST transition')
             parsed = parsed.replace(tzinfo=self._timezone)
         return parsed.astimezone(self._timezone).isoformat()
 
@@ -256,7 +267,8 @@ class ZeppProvider:
             sleep = NormalizedSleep(
                 start=start_at.isoformat(),
                 end=end_at.isoformat(),
-                total_minutes=round((end_at - start_at).total_seconds() / 60),
+                total_minutes=round((end - start) / 60),
+                timezone=self._timezone.key,
                 deep_minutes=stage_minutes["deep"] or _integer(record.get("dp")),
                 light_minutes=stage_minutes["light"] or _integer(record.get("lt")),
                 rem_minutes=stage_minutes["rem"] or None,

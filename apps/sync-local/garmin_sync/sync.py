@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextvars import ContextVar
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -39,6 +40,17 @@ LAST_7 = TODAY - timedelta(days=6)
 LAST_28 = TODAY - timedelta(days=27)
 LAST_56 = TODAY - timedelta(days=55)
 MARATHON_DATE = date(2026, 11, 8)
+_INITIAL_TODAY = TODAY
+_SYNC_NOW = ContextVar('sync_now', default=None)
+
+
+def _now() -> datetime:
+    return _SYNC_NOW.get() or datetime.now(MADRID_TZ)
+
+
+def _today() -> date:
+    # Keep old test/consumer overrides compatible, without freezing long-lived workers.
+    return _SYNC_NOW.get().date() if _SYNC_NOW.get() else (TODAY if TODAY != _INITIAL_TODAY else _now().date())
 
 
 def parse_date(value: str | None) -> date | None:
@@ -108,7 +120,7 @@ def get_activities(client: Garmin) -> list[dict[str, Any]]:
             break
         activities.extend(chunk)
         oldest = parse_date(chunk[-1].get("startTimeLocal") or chunk[-1].get("startTimeGMT"))
-        if len(chunk) < limit or (oldest and oldest < START_DATE):
+        if len(chunk) < limit or (oldest and oldest < (_today() - timedelta(days=120))):
             break
         start += limit
     return activities
@@ -184,7 +196,7 @@ def summarize(activities: list[dict[str, Any]], profile: dict[str, Any] | None =
 
 def summarize_normalized(activities: list[dict[str, Any]], profile: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized = list(activities)
-    normalized, running_load = enrich_running_load(normalized, profile, TODAY)
+    normalized, running_load = enrich_running_load(normalized, profile, _today())
     runs = [activity for activity in normalized if activity["sport"] == "running" and activity["km"] >= 1]
 
     by_week: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -193,8 +205,8 @@ def summarize_normalized(activities: list[dict[str, Any]], profile: dict[str, An
         monday = day - timedelta(days=day.weekday())
         by_week[monday.isoformat()].append(run)
 
-    runs_28 = [run for run in runs if date.fromisoformat(run["date"]) >= LAST_28]
-    runs_56 = [run for run in runs if date.fromisoformat(run["date"]) >= LAST_56]
+    runs_28 = [run for run in runs if date.fromisoformat(run["date"]) >= (_today() - timedelta(days=27))]
+    runs_56 = [run for run in runs if date.fromisoformat(run["date"]) >= (_today() - timedelta(days=55))]
     longest = sorted(runs, key=lambda run: run["km"], reverse=True)[:8]
 
     return {
@@ -229,9 +241,9 @@ def summarize_normalized(activities: list[dict[str, Any]], profile: dict[str, An
 
 
 def summarize_today(activities: list[dict[str, Any]]) -> dict[str, Any]:
-    todays = [activity for activity in activities if activity["date"] == TODAY.isoformat()]
+    todays = [activity for activity in activities if activity["date"] == _today().isoformat()]
     return {
-        "date": TODAY.isoformat(),
+        "date": _today().isoformat(),
         "activities": todays,
         "training_minutes": round(sum(activity["duration_s"] for activity in todays) / 60),
         "km": round(sum(activity["km"] for activity in todays), 1),
@@ -239,7 +251,7 @@ def summarize_today(activities: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def summarize_current_week(activities: list[dict[str, Any]]) -> dict[str, Any]:
-    monday = TODAY - timedelta(days=TODAY.weekday())
+    monday = _today() - timedelta(days=_today().weekday())
     current = [activity for activity in activities if date.fromisoformat(activity["date"]) >= monday]
     by_sport: dict[str, dict[str, Any]] = {}
     for name in ("running", "cycling", "strength"):
@@ -260,8 +272,8 @@ def summarize_current_week(activities: list[dict[str, Any]]) -> dict[str, Any]:
 
 def summarize_sport(activities: list[dict[str, Any]], sport_name: str) -> dict[str, Any]:
     items = [activity for activity in activities if activity["sport"] == sport_name]
-    recent_7 = [activity for activity in items if date.fromisoformat(activity["date"]) >= LAST_7]
-    recent_28 = [activity for activity in items if date.fromisoformat(activity["date"]) >= LAST_28]
+    recent_7 = [activity for activity in items if date.fromisoformat(activity["date"]) >= (_today() - timedelta(days=6))]
+    recent_28 = [activity for activity in items if date.fromisoformat(activity["date"]) >= (_today() - timedelta(days=27))]
     latest = items[-1] if items else None
     longest = max(items, key=lambda activity: activity["km"], default=None)
     return {
@@ -278,8 +290,8 @@ def summarize_sport(activities: list[dict[str, Any]], sport_name: str) -> dict[s
 
 
 def summarize_fatigue(activities: list[dict[str, Any]]) -> dict[str, Any]:
-    recent_7 = [activity for activity in activities if date.fromisoformat(activity["date"]) >= LAST_7]
-    recent_28 = [activity for activity in activities if date.fromisoformat(activity["date"]) >= LAST_28]
+    recent_7 = [activity for activity in activities if date.fromisoformat(activity["date"]) >= (_today() - timedelta(days=6))]
+    recent_28 = [activity for activity in activities if date.fromisoformat(activity["date"]) >= (_today() - timedelta(days=27))]
     hours_7 = sum(activity["duration_s"] for activity in recent_7) / 3600
     weekly_avg_28 = (sum(activity["duration_s"] for activity in recent_28) / 3600) / 4
     ratio = round(hours_7 / weekly_avg_28, 2) if weekly_avg_28 else 0
@@ -290,7 +302,7 @@ def summarize_fatigue(activities: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     active_dates = {activity["date"] for activity in recent_7}
     days_since_rest = 0
-    day = TODAY
+    day = _today()
     while day.isoformat() in active_dates:
         days_since_rest += 1
         day -= timedelta(days=1)
@@ -319,7 +331,7 @@ def recommend_next_workout(
     latest_running = running_load.get("latest") or {}
     latest_load = number(latest_running.get("load")) or 0
     if running_load.get("acwr_status") == "pico_alto" or (
-        latest_running.get("date") == TODAY.isoformat() and latest_load >= 120
+        latest_running.get("date") == _today().isoformat() and latest_load >= 120
     ):
         return {
             "title": "Descanso o rodaje regenerativo",
@@ -332,7 +344,7 @@ def recommend_next_workout(
             "details": "40-55 min muy comodos, sin convertirlo en tempo.",
             "reason": "La carga running de 7 dias ha subido frente a la base de 28 dias.",
         }
-    weekday = TODAY.weekday()
+    weekday = _today().weekday()
     if fatigue["level"] == "alta":
         return {
             "title": "Rodaje regenerativo o descanso",
@@ -371,25 +383,25 @@ def recommend_next_workout(
 
 
 def compact_wellness(client: Garmin) -> dict[str, Any]:
-    daily = safe_call("daily_summary", client.get_user_summary, TODAY.isoformat())
-    sleep = safe_call("sleep", client.get_sleep_data, TODAY.isoformat())
-    hrv = safe_call("hrv", client.get_hrv_data, TODAY.isoformat())
-    readiness = safe_call("training_readiness", client.get_training_readiness, TODAY.isoformat())
-    training_status = safe_call("training_status", client.get_training_status, TODAY.isoformat())
-    body_battery = safe_call("body_battery", client.get_body_battery, TODAY.isoformat(), TODAY.isoformat())
-    body_battery_events = safe_call("body_battery_events", client.get_body_battery_events, TODAY.isoformat())
-    calories = safe_call("calories", client.get_calories_daily, LAST_7.isoformat(), TODAY.isoformat())
-    stress = safe_call("stress", client.get_stress_data, TODAY.isoformat())
-    all_day_stress = safe_call("all_day_stress", client.get_all_day_stress, TODAY.isoformat())
-    respiration = safe_call("respiration", client.get_respiration_data, TODAY.isoformat())
-    spo2 = safe_call("spo2", client.get_spo2_data, TODAY.isoformat())
-    rhr = safe_call("resting_hr", client.get_rhr_day, TODAY.isoformat())
-    rhr_range = safe_call("resting_hr_range", client.get_rhr_daily, LAST_7.isoformat(), TODAY.isoformat())
-    intensity = safe_call("intensity_minutes", client.get_intensity_minutes_data, TODAY.isoformat())
-    weekly_intensity = safe_call("weekly_intensity_minutes", client.get_weekly_intensity_minutes, LAST_7.isoformat(), TODAY.isoformat())
-    stats = safe_call("stats", client.get_stats, TODAY.isoformat())
-    stats_body = safe_call("stats_and_body", client.get_stats_and_body, TODAY.isoformat())
-    body_composition = safe_call("body_composition", client.get_body_composition, LAST_28.isoformat(), TODAY.isoformat())
+    daily = safe_call("daily_summary", client.get_user_summary, _today().isoformat())
+    sleep = safe_call("sleep", client.get_sleep_data, _today().isoformat())
+    hrv = safe_call("hrv", client.get_hrv_data, _today().isoformat())
+    readiness = safe_call("training_readiness", client.get_training_readiness, _today().isoformat())
+    training_status = safe_call("training_status", client.get_training_status, _today().isoformat())
+    body_battery = safe_call("body_battery", client.get_body_battery, _today().isoformat(), _today().isoformat())
+    body_battery_events = safe_call("body_battery_events", client.get_body_battery_events, _today().isoformat())
+    calories = safe_call("calories", client.get_calories_daily, (_today() - timedelta(days=6)).isoformat(), _today().isoformat())
+    stress = safe_call("stress", client.get_stress_data, _today().isoformat())
+    all_day_stress = safe_call("all_day_stress", client.get_all_day_stress, _today().isoformat())
+    respiration = safe_call("respiration", client.get_respiration_data, _today().isoformat())
+    spo2 = safe_call("spo2", client.get_spo2_data, _today().isoformat())
+    rhr = safe_call("resting_hr", client.get_rhr_day, _today().isoformat())
+    rhr_range = safe_call("resting_hr_range", client.get_rhr_daily, (_today() - timedelta(days=6)).isoformat(), _today().isoformat())
+    intensity = safe_call("intensity_minutes", client.get_intensity_minutes_data, _today().isoformat())
+    weekly_intensity = safe_call("weekly_intensity_minutes", client.get_weekly_intensity_minutes, (_today() - timedelta(days=6)).isoformat(), _today().isoformat())
+    stats = safe_call("stats", client.get_stats, _today().isoformat())
+    stats_body = safe_call("stats_and_body", client.get_stats_and_body, _today().isoformat())
+    body_composition = safe_call("body_composition", client.get_body_composition, (_today() - timedelta(days=27)).isoformat(), _today().isoformat())
     user_profile = safe_call("user_profile", client.get_user_profile)
 
     return {
@@ -422,7 +434,10 @@ def collect_wellness_history(
         day.isoformat(): compact_garmin_wellness(client, day, timezone_name)
         for day in ordered_dates
     }
-    zepp_results, provider_status = zepp_provider.fetch_days(ordered_dates)
+    try:
+        zepp_results, provider_status = zepp_provider.fetch_days(ordered_dates)
+    except Exception:
+        zepp_results, provider_status = {}, {'status': 'api_error'}
     zepp_days = {
         day.isoformat(): _zepp_result_data(zepp_results.get(day.isoformat()))
         for day in ordered_dates
@@ -434,6 +449,12 @@ def collect_wellness_history(
         for day_text in garmin_days
     }
     today = ordered_dates[-1].isoformat()
+    garmin_errors = {day: value.pop('_fetch_errors') for day, value in garmin_days.items() if '_fetch_errors' in value}
+    zepp_status = dict(provider_status, records_received=sum(bool(v) and any(v.values()) for v in zepp_days.values()))
+    garmin_status = {'status': 'api_error' if isinstance(client, _UnavailableGarmin)
+                    else ('partial' if garmin_errors else 'ok'),
+                    'records_received': sum(bool(v) for v in garmin_days.values()),
+                    'failed_dates': sorted(garmin_errors)}
     return {
         "schema_version": 2,
         "timezone": timezone_name,
@@ -441,7 +462,10 @@ def collect_wellness_history(
         "zepp": zepp_days,
         "history": history,
         "effective": history[today]["effective"],
-        "provider_status": {"zepp": provider_status},
+        "provider_status": {
+            "zepp": _stamp_status(zepp_status, ordered_dates[0], ordered_dates[-1]),
+            "garmin": _stamp_status(garmin_status, ordered_dates[0], ordered_dates[-1]),
+        },
     }
 
 
@@ -470,6 +494,10 @@ def compact_garmin_wellness(client: Garmin, wellness_date: date, timezone_name: 
     normalized_stress = compact_garmin_stress(stress, all_day_stress, day)
     if normalized_stress:
         result["stress"] = normalized_stress
+    failures = [v['_unavailable'] for v in (daily, sleep, rhr, stress, all_day_stress)
+                if isinstance(v, dict) and '_unavailable' in v]
+    if failures:
+        result['_fetch_errors'] = failures
     return result
 
 
@@ -749,9 +777,9 @@ def compact_physiology(client: Garmin) -> dict[str, Any]:
     lactate = safe_call("lactate_threshold", client.get_lactate_threshold)
     cycling_ftp = safe_call("cycling_ftp", client.get_cycling_ftp)
     race_predictions = safe_call("race_predictions", client.get_race_predictions)
-    endurance_score = safe_call("endurance_score", client.get_endurance_score, LAST_28.isoformat(), TODAY.isoformat())
-    hill_score = safe_call("hill_score", client.get_hill_score, LAST_28.isoformat(), TODAY.isoformat())
-    max_metrics = safe_call("max_metrics", client.get_max_metrics, TODAY.isoformat())
+    endurance_score = safe_call("endurance_score", client.get_endurance_score, (_today() - timedelta(days=27)).isoformat(), _today().isoformat())
+    hill_score = safe_call("hill_score", client.get_hill_score, (_today() - timedelta(days=27)).isoformat(), _today().isoformat())
+    max_metrics = safe_call("max_metrics", client.get_max_metrics, _today().isoformat())
 
     return {
         "lactate_threshold": compact_lactate_threshold(lactate),
@@ -881,9 +909,31 @@ def load_remote_profile() -> dict[str, Any]:
         return {}
 
 
-def build_payload() -> dict[str, Any]:
-    client = Garmin()
-    client.login(str(TOKENSTORE))
+def build_payload(*, now: datetime | None = None) -> dict[str, Any]:
+    instant = now or _now()
+    if instant.tzinfo is None:
+        raise ValueError('Sync clock must include timezone')
+    # Legacy callers may patch TODAY; explicit now always wins.
+    if now is None and TODAY != _INITIAL_TODAY:
+        instant = instant.replace(year=TODAY.year, month=TODAY.month, day=TODAY.day)
+    token = _SYNC_NOW.set(instant.astimezone(MADRID_TZ))
+    try:
+        return _build_payload()
+    finally:
+        _SYNC_NOW.reset(token)
+
+
+def _build_payload() -> dict[str, Any]:
+    garmin_status = {'status':'ok'}
+    try:
+        client = Garmin()
+        client.login(str(TOKENSTORE))
+        garmin_activities = normalize_activities(get_activities(client))
+        garmin_status['records_received'] = len(garmin_activities)
+    except Exception:
+        garmin_status = {'status':'api_error'}
+        garmin_activities = []
+        client = _UnavailableGarmin()
     profile = load_remote_profile()
     timezone_name = os.getenv("GARMIN_COACH_TIMEZONE", "Europe/Madrid")
     activity_start, activity_end = _activity_date_range()
@@ -893,18 +943,18 @@ def build_payload() -> dict[str, Any]:
         base_url=os.getenv("ZEPP_BASE_URL") or None,
         timezone_name=timezone_name,
     )
-    zepp_activities, activity_status = zepp_activity_provider.fetch_activities(activity_start, activity_end)
+    zepp_activities, activity_status = _fetch_provider_activities(zepp_activity_provider, activity_start, activity_end)
     strava_activity_provider = StravaActivityProvider(
         client_id=os.getenv("STRAVA_CLIENT_ID", ""),
         client_secret=os.getenv("STRAVA_CLIENT_SECRET", ""),
         token_store=StravaTokenStore(STRAVA_TOKENSTORE),
         timezone_name=timezone_name,
     )
-    strava_activities, strava_activity_status = strava_activity_provider.fetch_activities(
-        *_strava_activity_date_range()
+    strava_activities, strava_activity_status = _fetch_provider_activities(
+        strava_activity_provider, *_strava_activity_date_range()
     )
     activities = merge_activities(
-        normalize_activities(get_activities(client)),
+        garmin_activities,
         zepp_activities,
         strava_activities,
     )
@@ -917,11 +967,12 @@ def build_payload() -> dict[str, Any]:
         timezone_name=timezone_name,
     )
     return {
-        "generated_at": datetime.now(MADRID_TZ).isoformat(timespec="seconds"),
+        "generated_at": _now().isoformat(timespec="seconds"),
         "summary": summary,
         "activity_provider_status": {
-            "zepp": activity_status,
-            "strava": strava_activity_status,
+            "garmin": _stamp_status(garmin_status, _today()-timedelta(days=120), _today()),
+            "zepp": _stamp_status(activity_status, activity_start, activity_end),
+            "strava": _stamp_status(strava_activity_status, *_strava_activity_date_range()),
         },
         "wellness": collect_wellness_history(client, wellness_dates, zepp_provider, timezone_name),
         "physiology": compact_physiology(client),
@@ -929,11 +980,34 @@ def build_payload() -> dict[str, Any]:
         "race": {
             "name": "Maraton de Malaga",
             "date": MARATHON_DATE.isoformat(),
-            "days_until": (MARATHON_DATE - TODAY).days,
+            "days_until": (MARATHON_DATE - _today()).days,
             "target": "3:40:00",
             "target_pace": "5:13/km",
         },
     }
+
+
+class _UnavailableGarmin:
+    def __getattr__(self, name):
+        def unavailable(*args, **kwargs):
+            raise RuntimeError('Garmin unavailable')
+        return unavailable
+
+
+def _fetch_provider_activities(provider, start, end):
+    try:
+        return provider.fetch_activities(start, end)
+    except Exception:
+        return [], {'status': 'api_error'}
+
+
+def _stamp_status(value, start, end):
+    result = dict(value)
+    stamp = _now().isoformat(timespec='seconds')
+    result.update(last_attempt_at=stamp, period_start=start.isoformat(), period_end=end.isoformat())
+    if result.get('status') == 'ok':
+        result['last_success_at'] = stamp
+    return result
 
 
 def _wellness_dates() -> list[date]:
@@ -942,7 +1016,7 @@ def _wellness_dates() -> list[date]:
     except ValueError:
         lookback = 2
     lookback = max(0, lookback)
-    return [TODAY - timedelta(days=offset) for offset in range(lookback, -1, -1)]
+    return [_today() - timedelta(days=offset) for offset in range(lookback, -1, -1)]
 
 
 def _activity_date_range() -> tuple[date, date]:
@@ -950,15 +1024,16 @@ def _activity_date_range() -> tuple[date, date]:
         lookback = int(os.getenv("ZEPP_ACTIVITY_SYNC_LOOKBACK_DAYS", "3"))
     except ValueError:
         lookback = 3
-    return TODAY - timedelta(days=max(0, lookback)), TODAY
+    return _today() - timedelta(days=max(0, lookback)), _today()
 
 
-def _strava_activity_date_range() -> tuple[date, date]:
+def _strava_activity_date_range(*, today: date | None = None) -> tuple[date, date]:
+    today = today or _today()
     try:
         lookback = int(os.getenv("STRAVA_ACTIVITY_SYNC_LOOKBACK_DAYS", "60"))
     except ValueError:
         lookback = 60
-    return TODAY - timedelta(days=max(0, lookback)), TODAY
+    return today - timedelta(days=max(0, lookback)), today
 
 
 def main() -> int:

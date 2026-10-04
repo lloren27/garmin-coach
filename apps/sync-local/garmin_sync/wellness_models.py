@@ -30,6 +30,7 @@ class NormalizedSleep:
     score: int | None = None
     resting_hr: int | None = None
     source: str = "zepp"
+    timezone: str = 'Europe/Madrid'
 
     def identity(self) -> tuple[str, ...]:
         if self.source_id:
@@ -49,6 +50,9 @@ class NormalizedSleep:
             "score": self.score,
             "resting_hr": self.resting_hr,
             "source": self.source,
+            "timezone": self.timezone,
+            "elapsed_minutes": round((datetime.fromisoformat(self.end.replace('Z','+00:00')).timestamp()
+                                      - datetime.fromisoformat(self.start.replace('Z','+00:00')).timestamp()) / 60),
         }
         return {key: value for key, value in values.items() if value is not None}
 

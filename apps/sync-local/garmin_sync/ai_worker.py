@@ -1082,7 +1082,8 @@ def fallback_answer(question: str, compact: dict[str, Any]) -> str:
     return "\n".join(lines[:14])
 
 
-def compact_context(context: dict[str, Any]) -> dict[str, Any]:
+def compact_context(context: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    now = now or datetime.now(ZoneInfo('Europe/Madrid'))
     sync = context.get("sync") or {}
     payload = sync.get("payload") or {}
     summary = payload.get("summary") or {}
@@ -1093,8 +1094,9 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
     extra_context = {
         'change_proposal_allowed_now': context.get('change_proposal_allowed_now') is True,
         'proposal_evidence_sources': context.get('proposal_evidence_sources', []),
-        "current_time": datetime.now(ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds"),
-        "data_freshness": sync_freshness(sync),
+        "current_time": now.isoformat(timespec="seconds"),
+        "data_freshness": sync_freshness(sync, now=now),
+        "activity_provider_status": payload.get('activity_provider_status') or {},
         "last_sync": sync.get("received_at"),
         "generated_at": payload.get("generated_at"),
         "race": payload.get("race"),
@@ -1139,6 +1141,7 @@ def compact_context(context: dict[str, Any]) -> dict[str, Any]:
 def _compact_activities(activities: list[Any]) -> list[dict[str, Any]]:
     allowed = {
         "id", "source", "source_activity_id", "date", "started_at", "name", "sport", "type",
+        "source_device", "source_records", "duplicate_candidates",
         "km", "duration_s", "hours", "pace", "avg_speed_kmh", "avg_hr", "max_hr",
         "training_effect", "anaerobic_training_effect", "training_load", "provider_exercise_load",
         "calories", "elevation_gain_m", "avg_power", "normalized_power", "running_load",
@@ -1163,6 +1166,7 @@ def _compact_wellness(value: Any) -> dict[str, Any]:
         "schema_version": 2,
         "timezone": value.get("timezone"),
         "effective": effective if isinstance(effective, dict) else {},
+        "provider_status": value.get('provider_status') or {},
     }
 
 

@@ -40,6 +40,20 @@ create table if not exists wellness_daily (
 
 
 def save_sync(payload: dict[str, Any]) -> dict[str, Any]:
+    # Carry availability metadata, never re-date historical measurements.
+    import copy
+    payload = copy.deepcopy(payload)
+    previous = (load_sync() or {}).get('payload') or {}
+    for new_states, old_states in (
+        (payload.get('activity_provider_status') or {}, previous.get('activity_provider_status') or {}),
+        ((payload.get('wellness') or {}).get('provider_status') or {},
+         (previous.get('wellness') or {}).get('provider_status') or {}),
+    ):
+        for provider, status in new_states.items():
+            if not status.get('last_success_at'):
+                prior = (old_states.get(provider) or {}).get('last_success_at')
+                if prior:
+                    status['last_success_at'] = prior
     document = {
         "received_at": datetime.now(timezone.utc).isoformat(),
         "payload": payload,

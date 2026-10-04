@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+from copy import deepcopy
+import math
 from typing import Any
 
 
@@ -13,8 +15,30 @@ def merge_activities(
 
     merged: list[dict[str, Any]] = []
     for provider_activities in (garmin, zepp, strava or []):
-        for item in _unique_by_id(provider_activities):
-            if not any(_is_duplicate(existing, item) for existing in merged):
+        batch = _unique_by_id(provider_activities)
+        # A fuzzy match must be one-to-one in both directions within a provider.
+        # Otherwise the arrival order would decide which real session disappears.
+        candidate_map = {}
+        for original in batch:
+            exact = [i for i, row in enumerate(merged) if _identities(row) & _identities(original)]
+            candidate_map[id(original)] = exact or [i for i, row in enumerate(merged)
+                if not ({r['source'] for r in _origins(row)} & {r['source'] for r in _origins(original)})
+                and _is_duplicate(row, original)]
+        counts = {}
+        for candidates in candidate_map.values():
+            for i in candidates:
+                counts[i] = counts.get(i, 0) + 1
+        for original in batch:
+            item = deepcopy(original)
+            item['source_records'] = _origins(item)
+            candidates = candidate_map[id(original)]
+            if len(candidates) == 1 and counts[candidates[0]] == 1:
+                row = merged[candidates[0]]
+                row['source_records'] = _origins(row, item)
+            else:
+                if candidates:
+                    item['duplicate_candidates'] = [
+                        {'source': merged[i].get('source', 'unknown'), 'id': merged[i]['id']} for i in candidates]
                 merged.append(item)
     return sorted(
         merged,
@@ -23,6 +47,22 @@ def merge_activities(
             str(item.get("id") or ""),
         ),
     )
+
+
+def _origins(*rows):
+    records = {}
+    for row in rows:
+        own = dict(source=row.get('source') or 'unknown',
+                   source_activity_id=str(row.get('source_activity_id') or row.get('id') or ''),
+                   source_device=row.get('source_device'))
+        for record in [own, *(row.get('source_records') or [])]:
+            key = (record.get('source'), str(record.get('source_activity_id') or ''))
+            records[key] = deepcopy(record)
+    return list(records.values())
+
+
+def _identities(row):
+    return {(r['source'], r['source_activity_id']) for r in _origins(row) if r['source_activity_id']}
 
 
 def _unique_by_id(activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -39,11 +79,17 @@ def _unique_by_id(activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _is_duplicate(garmin: dict[str, Any], zepp: dict[str, Any]) -> bool:
     return (
-        garmin.get("sport") == zepp.get("sport")
+        bool(garmin.get("sport")) and garmin.get("sport") == zepp.get("sport")
         and _start_difference_seconds(garmin, zepp) < 600
         and _overlap_fraction(garmin, zepp) >= 0.70
+        and _duration_matches(garmin, zepp)
         and _distance_matches_when_available(garmin, zepp)
     )
+
+
+def _duration_matches(left, right):
+    a, b = _positive_number(left.get('duration_s')), _positive_number(right.get('duration_s'))
+    return a is not None and b is not None and abs(a - b) / max(a, b) <= 0.20
 
 
 def _start_difference_seconds(left: dict[str, Any], right: dict[str, Any]) -> float:
@@ -51,7 +97,7 @@ def _start_difference_seconds(left: dict[str, Any], right: dict[str, Any]) -> fl
     right_start = _started_at(right)
     if left_start is None or right_start is None:
         return float("inf")
-    return abs((left_start - right_start).total_seconds())
+    return abs(left_start.timestamp() - right_start.timestamp())
 
 
 def _overlap_fraction(left: dict[str, Any], right: dict[str, Any]) -> float:
@@ -80,7 +126,8 @@ def _started_at(activity: dict[str, Any]) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return result if result.tzinfo is not None else None
     except ValueError:
         return None
 
@@ -92,4 +139,4 @@ def _positive_number(value: Any) -> float | None:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    return number if number > 0 else None
+    return number if math.isfinite(number) and number > 0 else None

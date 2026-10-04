@@ -173,7 +173,7 @@ class ContextTests(unittest.TestCase):
         plan.update(id='p1', owner_id='o1', status='active', revision=2,
                     start_date='2026-09-25', end_date='2026-10-01')
         for s in plan['sessions']: s.update(owner_id='o1', training_plan_id='p1')
-        compact['extra_context'].update(change_proposal_allowed_now=True, proposal_evidence_sources=['backend'])
+        compact['extra_context'].update(change_proposal_allowed_now=True, proposal_evidence_sources=['zepp'])
         snapshot = build_snapshot('mañana', compact, now=NOW)
         proposal = dict(confidence=0.8, evidence_refs=['activity:123'], changes=[{
             'operation': 'CANCEL_SESSION', 'session_id': 'run', 'proposed_values': {'duration_min': 30}}])

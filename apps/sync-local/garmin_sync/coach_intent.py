@@ -31,6 +31,7 @@ class ClarificationCode(str, Enum):
     UNSUPPORTED_PARAPHRASE = "unsupported_paraphrase"
     INVALID_DATE = "invalid_date"
     MISSING_ADVICE_DATE = "missing_advice_date"
+    PAST_CHANGE_DATE = "past_change_date"
 
 
 class DateResolutionScope(str, Enum):
@@ -140,7 +141,7 @@ def resolve_dates(
     def week_dates(match):
         phrase = match.group(0)
         monday = today - timedelta(days=today.weekday())
-        if phrase in {"esta semana", "esta semana"}:
+        if phrase == "esta semana":
             if scope is DateResolutionScope.OBSERVED:
                 start, end = monday, today
             elif scope is DateResolutionScope.ADVICE:
@@ -161,8 +162,10 @@ def resolve_dates(
         token = match.group(1)
         if token == "manana":
             prefix = "".join(remaining[max(0, match.start() - 12):match.start()])
-            if re.search(r"(?:esta\s+|por\s+la\s+)$", prefix):
+            if re.search(r"por\s+la\s+$", prefix):
                 return []
+            if re.search(r"esta\s+$", prefix):
+                return [today]
             return [today + timedelta(days=1)]
         if token == "ayer":
             return [today - timedelta(days=1)]
@@ -193,6 +196,168 @@ def resolve_dates(
     return tuple(sorted(set(found)))
 
 
+# Ordered, reviewable language signals. These provide intent hints; unknown
+# phrasings deliberately flow to clarification instead of widening permission.
+_INTENT_SIGNAL_PATTERNS = (
+    ("explicit_change", r"\b(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b"),
+    ("analysis_command", r"\b(?:analiza|analizar|analices|revisa|revisar|repasa|repasar)\b"),
+    ("retrospective_question", r"\b(?:como\s+(?:fue|me\s+fue|salio)|que\s+tal|que\s+hice)\b"),
+    ("plan_question", r"\bque\s+(?:me\s+)?(?:toca|tocaba|tocara|corresponde)\b|\bsesion\s+prevista\b"),
+    ("recommendation", r"\b(?:que\s+(?:debo\s+|deberia\s+|puedo\s+)?hacer|dime\s+que\s+hacer|como\s+entreno|que\s+me\s+recomiendas|deberia\s+cambiar)\b"),
+)
+_PLAN_OBJECT = re.compile(r"\b(?:plan|sesion|entrenamiento|entreno|tirada|carrera)\b")
+_NEGATED_CHANGE = re.compile(r"\bno\s+(?:cambies|modifiques|muevas|quites|anadas|canceles|reprogrames)\b")
+_NEGATED_ANALYSIS = re.compile(r"\bno\s+(?:analices|revises|repases)\b")
+_POSITIVE_CHANGE = re.compile(
+    r"\b(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b|"
+    r"\b(?:quiero|necesito)\s+(?:cambiar|modificar|mover|quitar|anadir|cancelar|reprogramar)\b"
+)
+_ADVICE_MODAL = re.compile(r"\b(?:deberia|debo|conviene)\b")
+_ANALYSIS_VERB = re.compile(r"\b(?:analiza|analizar|revisa|revisar|repasa|repasar)\b")
+_RETROSPECTIVE_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[2][1])
+_PLAN_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[3][1])
+_RECOMMENDATION = re.compile(_INTENT_SIGNAL_PATTERNS[4][1])
+_LATEST_ACTIVITY = re.compile(r"\b(?:ultima\s+actividad|actividad\s+mas\s+reciente)\b")
+_LATEST_TRAINING_DAY = re.compile(r"\b(?:ultimo\s+dia\s+de\s+entrenamiento|ultimo\s+dia\s+que\s+entrene)\b")
+_CHANGE_START = re.compile(r"^(?:no\s+)?(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b")
+_RECOGNIZED_CLAUSE_STARTS = (
+    re.compile(r"^(?:no\s+)?(?:analiza|analizar|analices|revisa|revisar|repasa|repasar)\b"),
+    re.compile(r"^(?:no\s+)?(?:dime|consulta|revisa)\b"),
+    re.compile(r"^(?:no\s+)?que\s+(?:me\s+)?(?:toca|tocaba|tocara|debo|deberia|puedo)\b"),
+    re.compile(r"^(?:no\s+)?(?:como\s+(?:fue|me\s+fue)|que\s+tal|que\s+hice)\b"),
+    _CHANGE_START,
+)
+
+
+def _starts_recognized_clause(text: str) -> bool:
+    return any(pattern.search(text.lstrip()) for pattern in _RECOGNIZED_CLAUSE_STARTS)
+
+
+def _split_intent_clauses(text: str) -> tuple[str, ...]:
+    """Split at comma/y only if the following segment starts an intent cue."""
+    separators = list(re.finditer(r",|\by\b", text))
+    clauses: list[str] = []
+    start = 0
+    for separator in separators:
+        right = text[separator.end():].strip()
+        if right and _starts_recognized_clause(right):
+            left = text[start:separator.start()].strip()
+            if left:
+                clauses.append(left)
+            start = separator.end()
+    tail = text[start:].strip()
+    if tail:
+        clauses.append(tail)
+    return tuple(clauses or (text.strip(),))
+
+
+def _clarify(code: ClarificationCode) -> IntentComponent:
+    return IntentComponent(CoachIntent.CLARIFY, DateSelector.BY_DATE, clarification_code=code)
+
+
+def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: DateSelector = DateSelector.BY_DATE) -> IntentComponent:
+    if selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
+        return IntentComponent(intent, selector)
+
+    normalized = _normalize(clause)
+    has_past_cue = bool(re.search(r"\b(?:ayer|pasado|pasada|semana pasada|tocaba)\b", normalized))
+    if intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY):
+        scope = DateResolutionScope.OBSERVED
+    elif intent is CoachIntent.CONSULT_PLAN and has_past_cue:
+        scope = DateResolutionScope.OBSERVED
+    elif intent is CoachIntent.CONSULT_PLAN and re.search(r"\besta semana\b", normalized):
+        scope = DateResolutionScope.PLAN
+    elif intent in (CoachIntent.CONSULT_PLAN, CoachIntent.RECOMMEND_NEXT, CoachIntent.REQUEST_CHANGE):
+        scope = DateResolutionScope.ADVICE
+    else:
+        scope = DateResolutionScope.OBSERVED
+
+    try:
+        dates = resolve_dates(clause, now=now, scope=scope)
+    except InvalidDateError:
+        return _clarify(ClarificationCode.INVALID_DATE)
+
+    if intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY):
+        if not dates:
+            return _clarify(ClarificationCode.NO_SCOPE)
+        return IntentComponent(intent, selector, observed_dates=dates)
+
+    if intent is CoachIntent.RECOMMEND_NEXT and not dates:
+        return _clarify(ClarificationCode.MISSING_ADVICE_DATE)
+    if intent is CoachIntent.CONSULT_PLAN and not dates:
+        return _clarify(ClarificationCode.NO_SCOPE)
+    if intent is CoachIntent.REQUEST_CHANGE and any(day < now.astimezone(_MADRID).date() for day in dates):
+        return _clarify(ClarificationCode.PAST_CHANGE_DATE)
+
+    today = now.astimezone(_MADRID).date()
+    observed = tuple(day for day in dates if day < today)
+    advice = tuple(day for day in dates if day >= today)
+    return IntentComponent(intent, selector, observed_dates=observed, advice_dates=advice)
+
+
+def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
+    normalized = _normalize(clause)
+    negative_change = bool(_NEGATED_CHANGE.search(normalized))
+    positive_change = bool(_POSITIVE_CHANGE.search(normalized))
+    has_plan_object = bool(_PLAN_OBJECT.search(normalized))
+
+    if negative_change and positive_change and has_plan_object:
+        return _clarify(ClarificationCode.CONTRADICTORY_OPERATION)
+
+    if _NEGATED_ANALYSIS.search(normalized) and not _ANALYSIS_VERB.search(normalized):
+        return None
+
+    if negative_change and not positive_change:
+        # A local negation cancels the mutation signal only in this clause.
+        if not _ANALYSIS_VERB.search(normalized) and not _PLAN_QUESTION.search(normalized):
+            return None
+
+    selector = DateSelector.BY_DATE
+    if _LATEST_ACTIVITY.search(normalized):
+        selector = DateSelector.LATEST_ACTIVITY
+        return _make_component(CoachIntent.ANALYZE_ACTIVITY, clause, now, selector)
+    if _LATEST_TRAINING_DAY.search(normalized):
+        selector = DateSelector.LATEST_TRAINING_DAY
+        return _make_component(CoachIntent.ANALYZE_DAY, clause, now, selector)
+
+    if positive_change and has_plan_object and not _ADVICE_MODAL.search(normalized):
+        return _make_component(CoachIntent.REQUEST_CHANGE, clause, now)
+
+    try:
+        dates_for_hint = resolve_dates(clause, now=now, scope=DateResolutionScope.OBSERVED)
+    except InvalidDateError:
+        return _clarify(ClarificationCode.INVALID_DATE)
+    today = now.astimezone(_MADRID).date()
+    retrospective_dates = any(day <= today for day in dates_for_hint)
+    if _ANALYSIS_VERB.search(normalized) or (_RETROSPECTIVE_QUESTION.search(normalized) and retrospective_dates):
+        return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
+    if _PLAN_QUESTION.search(normalized) or re.search(r"\b(?:plan|sesion\s+prevista)\b", normalized):
+        return _make_component(CoachIntent.CONSULT_PLAN, clause, now)
+    if _RECOMMENDATION.search(normalized) or (_ADVICE_MODAL.search(normalized) and positive_change):
+        return _make_component(CoachIntent.RECOMMEND_NEXT, clause, now)
+
+    if dates_for_hint:
+        return _clarify(ClarificationCode.UNSUPPORTED_PARAPHRASE)
+    if normalized:
+        return _clarify(ClarificationCode.UNSUPPORTED_PARAPHRASE)
+    return _clarify(ClarificationCode.NO_SCOPE)
+
+
+def resolve_intent(question: str, *, now: datetime) -> IntentResolution:
+    """Resolve date scope and conservative permission signals for a question."""
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    normalized = _normalize(question)
+    components = []
+    for clause in _split_intent_clauses(normalized):
+        component = _classify_clause(clause, now)
+        if component is not None:
+            components.append(component)
+    if not components:
+        components = [_clarify(ClarificationCode.NO_SCOPE)]
+    return IntentResolution(tuple(components))
+
+
 @dataclass(frozen=True)
 class IntentComponent:
     intent: CoachIntent
@@ -202,6 +367,12 @@ class IntentComponent:
     clarification_code: ClarificationCode | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.intent, CoachIntent) or self.intent is CoachIntent.MIXED:
+            raise ValueError("components require one atomic CoachIntent")
+        if not isinstance(self.selector, DateSelector):
+            raise TypeError("selector must be a DateSelector")
+        if self.clarification_code is not None and not isinstance(self.clarification_code, ClarificationCode):
+            raise TypeError("clarification_code must be a ClarificationCode")
         if (self.intent is CoachIntent.CLARIFY) != (self.clarification_code is not None):
             raise ValueError("CLARIFY components require exactly one clarification code")
         if self.selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):

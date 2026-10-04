@@ -10,6 +10,7 @@ from garmin_sync.coach_intent import (
     DateResolutionScope,
     InvalidDateError,
     resolve_dates,
+    resolve_intent,
 )
 
 
@@ -64,6 +65,10 @@ class IntentContractTests(unittest.TestCase):
             CoachIntent.ANALYZE_DAY,
         )
 
+    def test_mixed_is_derived_and_cannot_be_a_component_intent(self):
+        with self.assertRaises(ValueError):
+            IntentComponent(CoachIntent.MIXED, DateSelector.BY_DATE)
+
     def test_clarify_requires_a_code_and_other_intents_forbid_one(self):
         with self.assertRaises(ValueError):
             IntentComponent(CoachIntent.CLARIFY, DateSelector.BY_DATE)
@@ -105,7 +110,7 @@ class DateResolutionTests(unittest.TestCase):
         )
 
     def test_morning_time_expression_is_not_tomorrow(self):
-        self.assertEqual(self.dates("esta mañana"), ())
+        self.assertEqual(self.dates("esta mañana"), (date(2026, 10, 4),))
         self.assertEqual(self.dates("por la mañana"), ())
 
     def test_explicit_iso_and_spanish_numeric_dates(self):
@@ -171,6 +176,135 @@ class DateResolutionTests(unittest.TestCase):
             self.dates("mañana", DateResolutionScope.ADVICE, dst_start),
             (date(2026, 10, 26),),
         )
+
+
+class IntentClassificationTests(unittest.TestCase):
+    NOW = datetime(2026, 10, 3, 22, 30, tzinfo=timezone.utc)
+
+    def resolve(self, question):
+        return resolve_intent(question, now=self.NOW)
+
+    def test_analysis_today_is_one_component(self):
+        result = self.resolve("analiza hoy")
+        self.assertEqual(result.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(len(result.components), 1)
+        self.assertEqual(result.observed_dates, (date(2026, 10, 4),))
+        self.assertEqual(result.advice_dates, ())
+
+    def test_two_dates_joined_by_y_remain_one_analysis_component(self):
+        result = self.resolve("analiza ayer y hoy")
+        self.assertEqual(len(result.components), 1)
+        self.assertEqual(result.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(result.observed_dates, (date(2026, 10, 3), date(2026, 10, 4)))
+
+    def test_latest_activity_and_latest_training_day_selectors(self):
+        activity = self.resolve("analiza mi última actividad")
+        training_day = self.resolve("analiza mi último día de entrenamiento")
+        self.assertEqual(activity.selector, DateSelector.LATEST_ACTIVITY)
+        self.assertEqual(training_day.selector, DateSelector.LATEST_TRAINING_DAY)
+
+    def test_plan_query_and_future_advice_have_distinct_date_scope(self):
+        plan = self.resolve("qué toca mañana")
+        recommendation = self.resolve("dime qué hacer mañana")
+        self.assertEqual(plan.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(plan.advice_dates, (date(2026, 10, 5),))
+        self.assertEqual(recommendation.primary_intent, CoachIntent.RECOMMEND_NEXT)
+        self.assertEqual(recommendation.advice_dates, (date(2026, 10, 5),))
+
+    def test_past_plan_question_uses_observed_dates(self):
+        result = self.resolve("qué tocaba ayer")
+        self.assertEqual(result.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(result.observed_dates, (date(2026, 10, 3),))
+        self.assertEqual(result.advice_dates, ())
+
+    def test_advice_without_date_is_clarified(self):
+        result = self.resolve("dime qué hacer")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(result.components[0].clarification_code, ClarificationCode.MISSING_ADVICE_DATE)
+
+    def test_mixed_analysis_and_advice_keep_dates_in_their_own_components(self):
+        result = self.resolve("analiza hoy y dime qué hacer mañana")
+        self.assertEqual(result.primary_intent, CoachIntent.MIXED)
+        self.assertEqual([item.intent for item in result.components], [
+            CoachIntent.ANALYZE_DAY, CoachIntent.RECOMMEND_NEXT,
+        ])
+        self.assertEqual(result.components[0].observed_dates, (date(2026, 10, 4),))
+        self.assertEqual(result.components[0].advice_dates, ())
+        self.assertEqual(result.components[1].observed_dates, ())
+        self.assertEqual(result.components[1].advice_dates, (date(2026, 10, 5),))
+
+    def test_analysis_and_change_form_separate_components(self):
+        result = self.resolve("analiza y cambia el plan")
+        self.assertEqual(result.primary_intent, CoachIntent.MIXED)
+        self.assertEqual([item.intent for item in result.components], [
+            CoachIntent.CLARIFY, CoachIntent.REQUEST_CHANGE,
+        ])
+        self.assertTrue(result.change_requested)
+
+    def test_negation_does_not_propagate_to_following_clause(self):
+        result = self.resolve("no cambies el plan, analiza hoy")
+        self.assertEqual(result.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(len(result.components), 1)
+        self.assertFalse(result.change_requested)
+
+    def test_negated_analysis_does_not_suppress_following_plan_question(self):
+        result = self.resolve("no analices, dime qué toca mañana")
+        self.assertEqual(result.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(len(result.components), 1)
+        self.assertEqual(result.advice_dates, (date(2026, 10, 5),))
+
+    def test_undated_plan_question_after_negated_analysis_is_clarified(self):
+        result = self.resolve("no analices, dime qué toca")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertFalse(result.change_requested)
+
+    def test_same_clause_positive_and_negative_change_is_contradictory(self):
+        result = self.resolve("cambia la sesión pero no modifiques la sesión")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(
+            result.components[0].clarification_code,
+            ClarificationCode.CONTRADICTORY_OPERATION,
+        )
+        self.assertFalse(result.change_requested)
+
+    def test_change_requires_explicit_plan_object_and_is_not_advice_question(self):
+        command = self.resolve("cambia la sesión de mañana")
+        advice = self.resolve("¿debería cambiar la sesión de mañana?")
+        self.assertEqual(command.primary_intent, CoachIntent.REQUEST_CHANGE)
+        self.assertTrue(command.change_requested)
+        self.assertEqual(command.advice_dates, (date(2026, 10, 5),))
+        self.assertEqual(advice.primary_intent, CoachIntent.RECOMMEND_NEXT)
+        self.assertFalse(advice.change_requested)
+
+    def test_past_change_target_is_clarified_and_cannot_request_change(self):
+        result = self.resolve("cambia la sesión de ayer")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(result.components[0].clarification_code, ClarificationCode.PAST_CHANGE_DATE)
+        self.assertFalse(result.change_requested)
+
+    def test_changing_pace_or_shoes_is_not_a_plan_change(self):
+        for question in ("cambiar de ritmo", "cambiar de zapatillas", "cambia el ritmo"):
+            with self.subTest(question=question):
+                self.assertFalse(self.resolve(question).change_requested)
+
+    def test_retro_expression_and_date_resolve_as_analysis_hint(self):
+        for question in ("¿cómo fue lo del domingo?", "¿qué tal lo del domingo?"):
+            with self.subTest(question=question):
+                result = self.resolve(question)
+                self.assertEqual(result.primary_intent, CoachIntent.ANALYZE_DAY)
+                self.assertEqual(result.observed_dates, (date(2026, 10, 4),))
+
+    def test_invalid_explicit_date_returns_fixed_clarification_code(self):
+        result = self.resolve("analiza el 31/02/2026")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(result.components[0].clarification_code, ClarificationCode.INVALID_DATE)
+
+    def test_unknown_request_has_fixed_clarification_code_without_echoing_input(self):
+        question = "la sesión morada"
+        result = self.resolve(question)
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(result.components[0].clarification_code, ClarificationCode.UNSUPPORTED_PARAPHRASE)
+        self.assertNotIn(question, str(result))
 
 
 if __name__ == "__main__":

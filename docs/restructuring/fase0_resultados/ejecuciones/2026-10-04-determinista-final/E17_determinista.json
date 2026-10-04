@@ -1,0 +1,33 @@
+{
+  "resultado": "incumple",
+  "observado": {
+    "schema_version": "1",
+    "context_snapshot_id": "ctx_dc88944cafb74163b5368627f4c74c45",
+    "current_time": "2026-10-03T22:00:00+02:00",
+    "target_dates": [],
+    "available_sessions": [],
+    "available_evidence": [
+      {
+        "id": "activity:synthetic-g1",
+        "kind": "activity",
+        "source": "garmin",
+        "date": "2026-10-03",
+        "sport": "running",
+        "facts": {
+          "duration_s": 6304,
+          "avg_hr": 144,
+          "max_hr": 165,
+          "distance_km": 20.02
+        }
+      }
+    ],
+    "change_proposal_allowed_now": false,
+    "proposal_evidence_sources": [],
+    "freshness": "current"
+  },
+  "limitacion": "Se comprueba pérdida de estado en build_snapshot; no una respuesta en lenguaje natural.",
+  "id": "E17",
+  "seconds": 0.0,
+  "events": "",
+  "fixture_sha256": "5ce9502f368bae653d28f02255ccbe39103b5bf5ec106727e19de4e9242cce99"
+}

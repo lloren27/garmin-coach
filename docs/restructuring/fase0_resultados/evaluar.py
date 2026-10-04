@@ -4,11 +4,17 @@ from pathlib import Path
 from datetime import datetime
 from contextlib import redirect_stdout,ExitStack
 from unittest.mock import patch,AsyncMock
+import re
 from zoneinfo import ZoneInfo
 from aislamiento import install
 OUT=Path(__file__).resolve().parent; ROOT=OUT.parents[2]
 LIVE='--ollama' in sys.argv
 ONLY=next((a.split('=',1)[1] for a in sys.argv if a.startswith('--case=')),None)
+RUN=next((a.split('=',1)[1] for a in sys.argv if a.startswith('--run=')),None)
+if not RUN or not re.fullmatch(r'[a-zA-Z0-9_-]+', RUN):
+    raise SystemExit('Specify a unique --run=YYYY-MM-DD-label; previous results are never overwritten.')
+RESULTS=OUT/'ejecuciones'/RUN
+RESULTS.mkdir(parents=True,exist_ok=True)
 TMP,BLOCKED=install(OUT,live=LIVE)
 sys.path[:0]=[str(ROOT/'apps/bot'),str(ROOT/'apps/sync-local')]
 # Reuse installed bot-only dependencies without installing or changing either venv.
@@ -23,9 +29,20 @@ class FrozenDatetime(datetime):
     def now(cls,tz=None):return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
 
 def write(name,data):
-    (OUT/'ejecuciones'/name).write_text(json.dumps(data,ensure_ascii=False,indent=2,default=str)+'\n')
+    with (RESULTS/name).open('x') as f:
+        f.write(json.dumps(data,ensure_ascii=False,indent=2,default=str)+'\n')
 def pub(c):return build_snapshot(c.get('pregunta','hoy'),c['estado_inicial'],now=NOW).public_context()
 def result(ok,obs,limit=None):return {'resultado':'cumple' if ok else 'incumple','observado':obs,'limitacion':limit}
+def source_records(value):
+    """Explicit source/identifier pairs, never mere provider-name substrings."""
+    found=set()
+    if isinstance(value,dict):
+        if value.get('source') and (value.get('id') or value.get('source_activity_id')):
+            found.add((value['source'],str(value.get('id') or value['source_activity_id'])))
+        for child in value.values():found.update(source_records(child))
+    elif isinstance(value,list):
+        for child in value:found.update(source_records(child))
+    return found
 def store_setup():
     from app import main,store,pending_changes,coach
     store.DATABASE_URL=None
@@ -48,7 +65,8 @@ def deterministic(c):
     id=c['id']; initial=c['estado_inicial']
     if id=='E02':
         rows=merge_activities(initial['garmin'],[],initial['strava'])
-        return result(len(rows)==1 and 'strava' in json.dumps(rows),rows,'Deduplicación sí; se exige además conservar origen secundario.')
+        expected=source_records(initial)
+        return result(len(rows)==1 and expected.issubset(source_records(rows)),rows,'Deduplicación sí; se exige además conservar pares explícitos de origen e identificador.')
     if id=='E03':
         snap=pub(c);return result(snap['available_evidence'][0]['source']=='strava',snap)
     if id=='E04':
@@ -59,18 +77,30 @@ def deterministic(c):
             val={} if score is None else {'sleep':{'source':'zepp','score':score,'total_minutes':430}}
             store.upsert_wellness_days({'wellness':{'schema_version':2,'zepp':{day:val},'history':{day:{'effective':{'date':day,**val}}}}})
             out.append(store.load_wellness_history())
-        rows=out[-1];return result(len(rows)==1 and rows[day]['sources']['zepp']['sleep']['score']==82,out,'Almacén de ficheros; PostgreSQL y reconsulta del proveedor no ejecutados.')
+        rows=out[-1]
+        r=result(len(rows)==1 and rows[day]['sources']['zepp']['sleep']['score']==82,out,'Almacén de ficheros; PostgreSQL y reconsulta del proveedor no ejecutados. Ver pruebas_ampliadas.py para la reconsulta.')
+        r['subcomprobacion']=r['resultado']
+        if r['resultado']=='cumple':r['resultado']='no evaluable'
+        return r
     if id in ('E06','E17'):
         snap=pub(c)
-        key='provider_status' if id=='E06' else 'wattwise'
-        return result(key in json.dumps(snap),snap,'Se comprueba pérdida de estado en build_snapshot; no una respuesta en lenguaje natural.')
+        if id=='E06':
+            expected=initial['extra_context']['provider_status']['zepp']
+            actual=snap.get('provider_status',{}).get('zepp')
+            ok=actual==expected
+        else:
+            expected=initial['extra_context']['wattwise_live']['status']
+            actual=(snap.get('wattwise_live') or {}).get('status')
+            ok=actual==expected
+        return result(ok,{'snapshot':snap,'expected_status':expected,'actual_status':actual},'Se exige el estado explícito, no una mención del nombre del proveedor; no se evalúa aquí lenguaje natural.')
     if id=='E11':
         main,store=store_setup();plan={'start_date':'2026-10-03','end_date':'2026-10-03','sessions':[initial['plan']]}
         before=store.save_training_plan(plan,'audit');states=[before]
         with patch.object(main,'load_sync',return_value={'payload':{}}),patch.object(main,'load_profile',return_value={}),patch.object(main,'load_checkins',return_value=[]),patch.object(main,'build_week_plan',return_value=plan):
             for _ in range(2):main.route_message('/plan','audit','audit');states.append(store.load_active_training_plan('audit'))
-        ids=[p['id'] for p in states]
-        return result(len(set(ids))==1,{'ids':ids,'revisions':[p.get('revision') for p in states],'session_ids':[[s['id'] for s in p['sessions']] for p in states]},'Generador sustituido por plan fijo; se ejecutan enrutador y persistencia reales en ficheros.')
+        states=copy.deepcopy(states)
+        signatures=[{k:p.get(k) for k in ('id','revision','sessions')} for p in states]
+        return result(all(s==signatures[0] for s in signatures),signatures,'Generador sustituido por plan fijo; se ejecutan enrutador y persistencia reales en ficheros.')
     if id=='E12':
         variants=[]
         for persistent in (False,True):
@@ -95,7 +125,9 @@ def deterministic(c):
             for label,text in [('texto',c['pregunta']),('coach','/coach '+c['pregunta']),('alias','/feedback')]:
                 queue.reset_mock();main.route_message(text,'audit','audit');paths[label]={'queued':queue.called,'kwargs':queue.call_args.kwargs if queue.called else None}
             queue.reset_mock();asyncio.run(voice());paths['voz']={'queued':queue.called,'kwargs':queue.call_args.kwargs if queue.called else None}
-        return result(all(v['queued'] for v in paths.values()),paths,'Se prueba despacho; transcripción y equivalencia de contexto posterior no evaluadas: /feedback ya diverge antes.')
+        r=result(all(v['queued'] for v in paths.values()),paths,'Se prueba despacho; transcripción y equivalencia de contexto posterior no evaluadas: /feedback ya diverge antes.')
+        if r['resultado']=='cumple':r['resultado']='no evaluable'
+        return r
     if id in ('E15a','E15b'):
         _,store=store_setup(); explicit=initial['explicit'];session=initial['plan'];day=session['date']
         plan=store.save_training_plan({'start_date':day,'end_date':day,'sessions':[session]},'audit')
@@ -108,35 +140,53 @@ def deterministic(c):
         except ValueError as e:obs={'rejected':type(e).__name__,'reason':str(e)}
         obs['plan_unchanged']=before==store.TRAINING_PLAN_STATE_FILE.read_bytes()
         obs['proposals_unchanged']=proposals_before==(pfile.read_bytes() if pfile.exists() else None)
-        ok=obs['plan_unchanged'] and (obs.get('pending_status')=='PENDING' if explicit else bool(obs.get('rejected')) and obs['proposals_unchanged'])
+        if not explicit:
+            # Test normal informational completion separately from a malicious proposal.
+            informational={k:v for k,v in raw.items() if k!='change_proposal'}
+            saved=store.complete_ai_job(job['id'],structured_output=informational,output_source='ollama',answer=raw['answer'])
+            obs['informational_completed']=saved['status']=='completed' and saved.get('answer')==raw['answer']
+            obs['plan_unchanged_after_information']=before==store.TRAINING_PLAN_STATE_FILE.read_bytes()
+            obs['no_proposal_after_information']=proposals_before==(pfile.read_bytes() if pfile.exists() else None)
+        ok=obs['plan_unchanged'] and (obs.get('pending_status')=='PENDING' if explicit else obs.get('reason')=='Change proposal not authorized' and obs['proposals_unchanged'] and obs['informational_completed'] and obs['plan_unchanged_after_information'] and obs['no_proposal_after_information'])
         return result(ok,obs,'Persistencia de ficheros; PostgreSQL no evaluado.')
     if id=='E16':
         from garmin_sync.strava_activity_provider import _normalize_record
         rows=[_normalize_record({'id':str(i+1),'start_date':stamp,'elapsed_time':1200,'distance':4000,'sport_type':'Run'},ZoneInfo('Europe/Madrid')) for i,stamp in enumerate(initial['timestamps'])]
         merged=merge_activities([],[],rows)
-        return result([r['date'] for r in rows]==['2026-10-04','2026-10-25','2026-10-25'] and len(merged)==3,{'normalized':rows,'merged_count':len(merged)},'Normalizador Strava y deduplicación; sueño Zepp no evaluado por este caso.')
+        r=result([r['date'] for r in rows]==['2026-10-04','2026-10-25','2026-10-25'] and len(merged)==3,{'normalized':rows,'merged_count':len(merged)},'Normalizador Strava y deduplicación; sueño Zepp no evaluado por este caso. Ver pruebas_ampliadas.py.')
+        r['subcomprobacion']=r['resultado']
+        if r['resultado']=='cumple':r['resultado']='no evaluable'
+        return r
     raise ValueError('No deterministic implementation for '+id)
 
 def live_case(c,rep):
     import httpx
+    from garmin_sync import ai_worker as worker
+    # Call the real generator to avoid drifting from its options and plan budget.
+    worker.OLLAMA_URL='http://127.0.0.1:11434'
+    worker.OLLAMA_MODEL='garmin-coach:9b'
+    budget=worker.OLLAMA_PLAN_NUM_PREDICT if worker._is_plan_question(c['pregunta']) else worker.OLLAMA_NUM_PREDICT
     calls=[];events=io.StringIO()
     def generate(messages,**kwargs):
-        # Match ai_worker.ollama_generate for structured output exactly.
-        payload={'model':'garmin-coach:9b','messages':messages,'stream':False,'think':False,'format':kwargs['response_schema'],'options':{'temperature':0,'top_p':.9,'top_k':20,'num_ctx':32768,'num_predict':kwargs.get('num_predict',900)}}
-        with httpx.Client(timeout=180,trust_env=False) as client:
-            r=client.post('http://127.0.0.1:11434/api/chat',json=payload);r.raise_for_status();data=r.json()
-        calls.append({'request':payload,'response':data})
-        return data
+        def local_post(url,**request):
+            assert url=='http://127.0.0.1:11434/api/chat'
+            call={'request':request['json']};calls.append(call)
+            with httpx.Client(timeout=request['timeout'],trust_env=False) as client:
+                r=client.post(url,json=request['json'])
+            r.raise_for_status();call['response']=r.json()
+            return r
+        with patch.object(worker.httpx,'post',side_effect=local_post):
+            return worker.ollama_generate(messages,**kwargs)
     started=time.monotonic()
     try:
-        with redirect_stdout(events):wire=generate_validated(c['pregunta'],c['estado_inicial'],generate=generate,now=NOW,num_predict=900,timeout_seconds=180)
+        with redirect_stdout(events):wire=generate_validated(c['pregunta'],c['estado_inicial'],generate=generate,now=NOW,num_predict=budget,timeout_seconds=worker.OLLAMA_TIMEOUT_SECONDS)
         record={'wire':wire.model_dump(mode='json'),'resultado':'pendiente de revisión manual'}
     except Exception as e:
         # Only a validated contract failure is a product result. Transport,
         # evaluator and isolation errors remain no evaluable.
         product_error=isinstance(e,CoachValidationError)
         record={'resultado':'incumple' if product_error else 'no evaluable','error_type':type(e).__name__,'validation_codes':[str(i.code) for i in e.issues] if product_error else [],'motivo':'No se produjo salida válida en el pipeline; fallback exterior del worker no ejecutado.'}
-    record.update(id=c['id'],repetition=rep,fixture_sha256=hashlib.sha256(json.dumps(c,sort_keys=True).encode()).hexdigest(),seconds=round(time.monotonic()-started,3),calls=calls,repairs=max(0,len(calls)-1),fallbacks=None,events=events.getvalue(),fixed_now=NOW.isoformat())
+    record.update(id=c['id'],repetition=rep,fixture_sha256=hashlib.sha256(json.dumps(c,sort_keys=True).encode()).hexdigest(),seconds=round(time.monotonic()-started,3),calls=calls,repairs=max(0,len(calls)-1),fallbacks=None,events=events.getvalue(),fixed_now=NOW.isoformat(),num_predict=budget,timeout_seconds=worker.OLLAMA_TIMEOUT_SECONDS)
     write(f"{c['id']}_ollama_{rep}.json",record)
     print(json.dumps({'id':c['id'],'rep':rep,'seconds':record['seconds'],'result':record['resultado']}),flush=True)
 

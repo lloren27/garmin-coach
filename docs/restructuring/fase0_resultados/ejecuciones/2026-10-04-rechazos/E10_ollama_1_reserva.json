@@ -1,0 +1,18 @@
+{
+  "resultado": "cumple",
+  "checks": {
+    "two_attempts": true,
+    "job_completed": true,
+    "fallback_marked": true,
+    "invalid_structured_output_not_forwarded": true,
+    "user_notice": true
+  },
+  "completion": {
+    "status": "completed",
+    "answer": "No he podido completar el análisis del modelo. Esta es una lectura básica de los datos disponibles.\n\nPara manana.\nRiesgo estimado: medio (3/7).\nDecision: reduce el entreno: 40-55 min facil o bici Z2 suave.\nDetalle: Mantienes continuidad, pero sin meter mas carga dura.\nPor que: ultima actividad running, molestias reportadas.\nMolestias reportadas: molestias en el gemelo.",
+    "structured_output": null,
+    "output_source": "deterministic_fallback"
+  },
+  "events": "{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 1, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_3355300662c449e98c8c82ce5bc2c68b\", \"code\": \"INVALID_PACE_FORMAT\", \"phase\": \"structure\", \"path\": \"decisions[0].target_pace\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 1, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_3355300662c449e98c8c82ce5bc2c68b\", \"code\": \"INVALID_PACE_FORMAT\", \"phase\": \"structure\", \"path\": \"decisions[1].target_pace\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 2, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_3355300662c449e98c8c82ce5bc2c68b\", \"code\": \"INVALID_PACE_FORMAT\", \"phase\": \"structure\", \"path\": \"decisions[0].target_pace\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 2, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_3355300662c449e98c8c82ce5bc2c68b\", \"code\": \"INVALID_PACE_FORMAT\", \"phase\": \"structure\", \"path\": \"decisions[1].target_pace\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_fallback\", \"job\": \"synthetic-replay\", \"error\": \"INVALID_PACE_FORMAT, INVALID_PACE_FORMAT\"}\n{\"ok\": true, \"job\": \"synthetic-replay\", \"status\": \"completed\"}\n",
+  "limitation": "Replay offline de respuestas reales capturadas; transporte del backend interceptado."
+}

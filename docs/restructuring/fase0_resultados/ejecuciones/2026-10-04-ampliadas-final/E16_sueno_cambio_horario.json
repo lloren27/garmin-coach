@@ -1,0 +1,34 @@
+{
+  "resultado": "incumple",
+  "observado": {
+    "checks": {
+      "assigned_to_wake_date": true,
+      "correct_elapsed_minutes": false,
+      "deduplicate_same_sleep": true,
+      "persistent_wake_date": true
+    },
+    "expected_minutes_from_utc": 540,
+    "observed_sleep": {
+      "start": "2026-10-24T23:30:00+02:00",
+      "end": "2026-10-25T07:30:00+01:00",
+      "total_minutes": 480,
+      "deep_minutes": 90,
+      "light_minutes": 330,
+      "score": 78,
+      "source": "zepp"
+    },
+    "provider_status": {
+      "status": "ok",
+      "days_requested": 2,
+      "days_received": 2,
+      "last_success_at": "2026-10-04T10:44:17+02:00"
+    },
+    "persisted_dates": [
+      "2026-10-23",
+      "2026-10-24",
+      "2026-10-25"
+    ]
+  },
+  "limitacion": "Zepp band fallback sintético; no cambio de reloj del sistema.",
+  "seconds": 0.005
+}

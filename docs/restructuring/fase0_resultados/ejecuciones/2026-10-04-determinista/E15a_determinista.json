@@ -1,0 +1,17 @@
+{
+  "resultado": "cumple",
+  "observado": {
+    "rejected": "ProposalError",
+    "reason": "Change proposal not authorized",
+    "plan_unchanged": true,
+    "proposals_unchanged": true,
+    "informational_completed": true,
+    "plan_unchanged_after_information": true,
+    "no_proposal_after_information": true
+  },
+  "limitacion": "Persistencia de ficheros; PostgreSQL no evaluado.",
+  "id": "E15a",
+  "seconds": 0.004,
+  "events": "",
+  "fixture_sha256": "56e3459c9db9dbea97e22d1adff5d6411718af4785a746598644d62305b74dc6"
+}

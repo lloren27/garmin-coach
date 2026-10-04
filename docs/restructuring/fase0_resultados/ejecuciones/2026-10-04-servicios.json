@@ -1,0 +1,47 @@
+{
+  "observed_at": "2026-10-04T08:38:58.430205+00:00",
+  "commit": "2abba6ae655c2747fa7d7484cdaf34b323c5955c",
+  "application_diff_from_previous_audit": [],
+  "files": {
+    "apps/sync-local/garmin_sync/ai_worker.py": "93c7a8739a229a277ca5b7be6aaa5a21f40a3efec1c1f94836d264eeca8bb9f1",
+    "apps/sync-local/garmin_sync/coach_generation_pipeline.py": "3fd986962f58c8babc6b6e948e0791bb19d1abdef80dfa24bc6f0c25b0c350b7",
+    "apps/sync-local/garmin_sync/coach_generation_contracts.py": "09a62b8690f19f29e92c6d61be0613a0e3bb248797531be0fef8f3bd18d1ce2b",
+    "apps/bot/app/main.py": "08edcccf9d9df06318e93c19b05f56e45dbe70d82f3624f23c36fb98b83573b3"
+  },
+  "local_file_config_or_code_default": {
+    "OLLAMA_MODEL": "garmin-coach:9b",
+    "OLLAMA_NUM_CTX": "32768",
+    "OLLAMA_NUM_PREDICT": "900",
+    "OLLAMA_PLAN_NUM_PREDICT": "1400",
+    "OLLAMA_TIMEOUT_SECONDS": "600"
+  },
+  "note": "No atestigua entorno de un proceso ya arrancado ni commit remoto.",
+  "ollama_version": "0.35.1",
+  "/api/tags": [
+    {
+      "name": "garmin-coach:9b",
+      "digest": "17a5b58e68fd425bc6a86a443686fc81f92a86667f0b654423c0f91d686de623",
+      "size": 6169342155,
+      "context_length": null
+    },
+    {
+      "name": "qwen3.5:2b",
+      "digest": "324d162be6ca5629ae4517c8710434d0bd2d665bc94dbad46e9af8fbf8a2f0df",
+      "size": 2741192820,
+      "context_length": null
+    }
+  ],
+  "/api/ps": [
+    {
+      "name": "garmin-coach:9b",
+      "digest": "17a5b58e68fd425bc6a86a443686fc81f92a86667f0b654423c0f91d686de623",
+      "size": 6681903758,
+      "context_length": 32768
+    }
+  ],
+  "backend_health": {
+    "http_status": 200,
+    "status": "ok",
+    "remote_commit": "not exposed by /health"
+  }
+}

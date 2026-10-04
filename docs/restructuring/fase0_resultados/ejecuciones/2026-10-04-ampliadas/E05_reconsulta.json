@@ -1,0 +1,118 @@
+{
+  "resultado": "cumple",
+  "observado": {
+    "checks": {
+      "requeries_previous_day": true,
+      "initially_no_sleep": true,
+      "late_sleep_received": true,
+      "correction_applied": true,
+      "no_duplicate_day": true
+    },
+    "rounds": [
+      {
+        "today": "2026-10-03",
+        "queries": [
+          "2026-10-01",
+          "2026-10-02",
+          "2026-10-03"
+        ],
+        "target": {
+          "sources": {
+            "garmin": {},
+            "zepp": {
+              "vo2max_observations": []
+            }
+          },
+          "effective": {
+            "date": "2026-10-03"
+          }
+        },
+        "stored_days": [
+          "2026-10-01",
+          "2026-10-02",
+          "2026-10-03"
+        ]
+      },
+      {
+        "today": "2026-10-04",
+        "queries": [
+          "2026-10-02",
+          "2026-10-03",
+          "2026-10-04"
+        ],
+        "target": {
+          "sources": {
+            "garmin": {},
+            "zepp": {
+              "sleep": {
+                "start": "2026-10-02T23:30:00+02:00",
+                "end": "2026-10-03T07:00:00+02:00",
+                "total_minutes": 450,
+                "score": 78,
+                "source": "zepp"
+              },
+              "vo2max_observations": []
+            }
+          },
+          "effective": {
+            "date": "2026-10-03",
+            "sleep": {
+              "start": "2026-10-02T23:30:00+02:00",
+              "end": "2026-10-03T07:00:00+02:00",
+              "total_minutes": 450,
+              "score": 78,
+              "source": "zepp"
+            }
+          }
+        },
+        "stored_days": [
+          "2026-10-01",
+          "2026-10-02",
+          "2026-10-03",
+          "2026-10-04"
+        ]
+      },
+      {
+        "today": "2026-10-04",
+        "queries": [
+          "2026-10-02",
+          "2026-10-03",
+          "2026-10-04"
+        ],
+        "target": {
+          "sources": {
+            "garmin": {},
+            "zepp": {
+              "sleep": {
+                "start": "2026-10-02T23:30:00+02:00",
+                "end": "2026-10-03T07:00:00+02:00",
+                "total_minutes": 450,
+                "score": 82,
+                "source": "zepp"
+              },
+              "vo2max_observations": []
+            }
+          },
+          "effective": {
+            "date": "2026-10-03",
+            "sleep": {
+              "start": "2026-10-02T23:30:00+02:00",
+              "end": "2026-10-03T07:00:00+02:00",
+              "total_minutes": 450,
+              "score": 82,
+              "source": "zepp"
+            }
+          }
+        },
+        "stored_days": [
+          "2026-10-01",
+          "2026-10-02",
+          "2026-10-03",
+          "2026-10-04"
+        ]
+      }
+    ]
+  },
+  "limitacion": "Cliente Zepp sustituido; fecha seleccionada, normalizador, resolución y almacén de ficheros reales. PostgreSQL y cloud real fuera de alcance.",
+  "seconds": 0.123
+}

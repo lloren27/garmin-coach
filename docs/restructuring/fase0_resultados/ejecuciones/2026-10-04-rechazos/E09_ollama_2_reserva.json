@@ -1,0 +1,18 @@
+{
+  "resultado": "cumple",
+  "checks": {
+    "two_attempts": true,
+    "job_completed": true,
+    "fallback_marked": true,
+    "invalid_structured_output_not_forwarded": true,
+    "user_notice": true
+  },
+  "completion": {
+    "status": "completed",
+    "answer": "No he podido completar el análisis del modelo. Esta es una lectura básica de los datos disponibles.\n\nSobre la actividad solicitada.\n03/10/2026: 3 sesiones, 3 h 25 min en total.\nSesiones: running 20 km en 1 h 45 min + bici 35 km en 1 h 10 min + fuerza durante 30 min [Zepp].\nConclusion: Dia exigente: la doble sesion acumulo trabajo aerobico aunque ninguna actividad aislada pareciera extrema.\nImpacto semanal: encaja en una semana controlada y permite mantener el plan si la recuperacion sigue estable.\nDecision: manana descanso o 30-45 min muy faciles; evita encadenar intensidad.",
+    "structured_output": null,
+    "output_source": "deterministic_fallback"
+  },
+  "events": "{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 1, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_08d571ae5a4d4e06bc0d43273acf8121\", \"code\": \"PLAN_DATE_MISMATCH\", \"phase\": \"domain\", \"path\": \"decisions[0].date\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 2, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_08d571ae5a4d4e06bc0d43273acf8121\", \"code\": \"PLAN_DATE_MISMATCH\", \"phase\": \"domain\", \"path\": \"decisions[0].date\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_fallback\", \"job\": \"synthetic-replay\", \"error\": \"PLAN_DATE_MISMATCH\"}\n{\"ok\": true, \"job\": \"synthetic-replay\", \"status\": \"completed\"}\n",
+  "limitation": "Replay offline de respuestas reales capturadas; transporte del backend interceptado."
+}

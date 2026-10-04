@@ -1,0 +1,515 @@
+{
+  "runs": 18,
+  "valid_outputs": 14,
+  "repairs": 6,
+  "latency_seconds": {
+    "min": 16.147,
+    "median": 35.263999999999996,
+    "max": 125.282
+  },
+  "records": [
+    {
+      "file": "E01_ollama_1.json",
+      "id": "E01",
+      "repetition": 1,
+      "seconds": 32.531,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03: Sesión del plan: carrera, 35 a 45 minutos, intensidad suave. Sesión vigente del plan de entrenamiento.\nActividad registrada en los datos disponibles.\nMedición de bienestar disponible.\nGarmin (2026-10-03): duración: 6304 s; pulso medio: 144 lpm; pulso máximo: 165 lpm; distancia: 20,02 km.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E01_ollama_2.json",
+      "id": "E01",
+      "repetition": 2,
+      "seconds": 23.816,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03: Sesión del plan: carrera, 35 a 45 minutos, intensidad suave. Sesión vigente del plan de entrenamiento.\nActividad registrada en los datos disponibles.\nMedición de bienestar disponible.\nGarmin (2026-10-03): duración: 6304 s; pulso medio: 144 lpm; pulso máximo: 165 lpm; distancia: 20,02 km.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E01_ollama_3.json",
+      "id": "E01",
+      "repetition": 3,
+      "seconds": 26.17,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03: recomiendo descanso.\nEsta recomendación no modifica el plan vigente; ajústala si aparecen molestias o cambia tu recuperación.\nActividad registrada en los datos disponibles.\nMedición de bienestar disponible.\nGarmin (2026-10-03): duración: 6304 s; pulso medio: 144 lpm; pulso máximo: 165 lpm; distancia: 20,02 km.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.\nZepp (2026-10-03): estrés medio del proveedor: 22.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E07_ollama_1.json",
+      "id": "E07",
+      "repetition": 1,
+      "seconds": 17.393,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "Faltan datos para concretar la recomendación.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.\nZepp (2026-10-03): estrés medio del proveedor: 22.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.",
+      "automatic_checks": {
+        "derived_values": [],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E07_ollama_2.json",
+      "id": "E07",
+      "repetition": 2,
+      "seconds": 16.147,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "Faltan datos para concretar la recomendación.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.\nZepp (2026-10-03): estrés medio del proveedor: 22.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.",
+      "automatic_checks": {
+        "derived_values": [],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E07_ollama_3.json",
+      "id": "E07",
+      "repetition": 3,
+      "seconds": 18.364,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "Faltan datos para concretar la recomendación.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.\nZepp (2026-10-03): estrés medio del proveedor: 22.",
+      "automatic_checks": {
+        "derived_values": [],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E08_ollama_1.json",
+      "id": "E08",
+      "repetition": 1,
+      "seconds": 25.493,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03 — carrera (Garmin): 1 h 45 min 04 s; 20,02 km; ritmo calculado: 5:15 min/km; pulso medio: 144 lpm; pulso máximo: 165 lpm.\nEl ritmo y la velocidad calculados usan la duración registrada; pueden incluir pausas. El pulso medio y máximo por sí solos no determinan tus zonas ni la intensidad de la sesión. Para valorar el esfuerzo se necesitan referencias personales vinculadas al deporte y tiempo en zonas o sensaciones.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E08_ollama_2.json",
+      "id": "E08",
+      "repetition": 2,
+      "seconds": 26.45,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03 — carrera (Garmin): 1 h 45 min 04 s; 20,02 km; ritmo calculado: 5:15 min/km; pulso medio: 144 lpm; pulso máximo: 165 lpm.\nEl ritmo y la velocidad calculados usan la duración registrada; pueden incluir pausas. El pulso medio y máximo por sí solos no determinan tus zonas ni la intensidad de la sesión. Para valorar el esfuerzo se necesitan referencias personales vinculadas al deporte y tiempo en zonas o sensaciones.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E08_ollama_3.json",
+      "id": "E08",
+      "repetition": 3,
+      "seconds": 28.08,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03 — carrera (Garmin): 1 h 45 min 04 s; 20,02 km; ritmo calculado: 5:15 min/km; pulso medio: 144 lpm; pulso máximo: 165 lpm.\nEl ritmo y la velocidad calculados usan la duración registrada; pueden incluir pausas. El pulso medio y máximo por sí solos no determinan tus zonas ni la intensidad de la sesión. Para valorar el esfuerzo se necesitan referencias personales vinculadas al deporte y tiempo en zonas o sensaciones.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E09_ollama_1.json",
+      "id": "E09",
+      "repetition": 1,
+      "seconds": 78.413,
+      "repairs": 1,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03 — carrera (Garmin): 1 h 45 min 04 s; 20,02 km; ritmo calculado: 5:15 min/km; pulso medio: 144 lpm; pulso máximo: 165 lpm.\n2026-10-03 — bicicleta (Garmin): 1 h 10 min 00 s; 35 km; velocidad calculada: 30 km/h; potencia media: 140 W.\n2026-10-03 — fuerza (Zepp): 30 min 00 s; 0 km.\nEl ritmo y la velocidad calculados usan la duración registrada; pueden incluir pausas. El pulso medio y máximo por sí solos no determinan tus zonas ni la intensidad de la sesión. Para valorar el esfuerzo se necesitan referencias personales vinculadas al deporte y tiempo en zonas o sensaciones.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          },
+          {
+            "id": "synthetic-bike",
+            "elapsed_h_m_s": [
+              1,
+              10,
+              0
+            ],
+            "pace_min_sec": [
+              2,
+              0
+            ],
+            "speed_kmh": 30.0
+          },
+          {
+            "id": "synthetic-strength",
+            "elapsed_h_m_s": [
+              0,
+              30,
+              0
+            ]
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E09_ollama_2.json",
+      "id": "E09",
+      "repetition": 2,
+      "seconds": 82.442,
+      "repairs": 1,
+      "valid_output": false,
+      "validation_codes": [
+        "PLAN_DATE_MISMATCH"
+      ],
+      "answer": null,
+      "automatic_checks": null
+    },
+    {
+      "file": "E09_ollama_3.json",
+      "id": "E09",
+      "repetition": 3,
+      "seconds": 84.255,
+      "repairs": 1,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03 — carrera (Garmin): 1 h 45 min 04 s; 20,02 km; ritmo calculado: 5:15 min/km; pulso medio: 144 lpm; pulso máximo: 165 lpm.\n2026-10-03 — bicicleta (Garmin): 1 h 10 min 00 s; 35 km; velocidad calculada: 30 km/h; potencia media: 140 W.\n2026-10-03 — fuerza (Zepp): 30 min 00 s; 0 km.\nEl ritmo y la velocidad calculados usan la duración registrada; pueden incluir pausas. El pulso medio y máximo por sí solos no determinan tus zonas ni la intensidad de la sesión. Para valorar el esfuerzo se necesitan referencias personales vinculadas al deporte y tiempo en zonas o sensaciones.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          },
+          {
+            "id": "synthetic-bike",
+            "elapsed_h_m_s": [
+              1,
+              10,
+              0
+            ],
+            "pace_min_sec": [
+              2,
+              0
+            ],
+            "speed_kmh": 30.0
+          },
+          {
+            "id": "synthetic-strength",
+            "elapsed_h_m_s": [
+              0,
+              30,
+              0
+            ]
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E10_ollama_1.json",
+      "id": "E10",
+      "repetition": 1,
+      "seconds": 115.199,
+      "repairs": 1,
+      "valid_output": false,
+      "validation_codes": [
+        "INVALID_PACE_FORMAT",
+        "INVALID_PACE_FORMAT"
+      ],
+      "answer": null,
+      "automatic_checks": null
+    },
+    {
+      "file": "E10_ollama_2.json",
+      "id": "E10",
+      "repetition": 2,
+      "seconds": 121.519,
+      "repairs": 1,
+      "valid_output": false,
+      "validation_codes": [
+        "INVALID_PACE_FORMAT",
+        "INVALID_PACE_FORMAT"
+      ],
+      "answer": null,
+      "automatic_checks": null
+    },
+    {
+      "file": "E10_ollama_3.json",
+      "id": "E10",
+      "repetition": 3,
+      "seconds": 125.282,
+      "repairs": 1,
+      "valid_output": false,
+      "validation_codes": [
+        "INVALID_PACE_FORMAT",
+        "INVALID_PACE_FORMAT"
+      ],
+      "answer": null,
+      "automatic_checks": null
+    },
+    {
+      "file": "E13_ollama_1.json",
+      "id": "E13",
+      "repetition": 1,
+      "seconds": 38.789,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03: Sesión del plan: carrera, 35 a 45 minutos, intensidad suave. Sesión vigente del plan de entrenamiento.\nActividad registrada en los datos disponibles.\nMedición de bienestar disponible.\nGarmin (2026-10-03): duración: 6304 s; pulso medio: 144 lpm; pulso máximo: 165 lpm; distancia: 20,02 km.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E13_ollama_2.json",
+      "id": "E13",
+      "repetition": 2,
+      "seconds": 37.997,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03: Sesión del plan: carrera, 35 a 45 minutos, intensidad suave. Sesión vigente del plan de entrenamiento.\nActividad registrada en los datos disponibles.\nMedición de bienestar disponible.\nGarmin (2026-10-03): duración: 6304 s; pulso medio: 144 lpm; pulso máximo: 165 lpm; distancia: 20,02 km.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    },
+    {
+      "file": "E13_ollama_3.json",
+      "id": "E13",
+      "repetition": 3,
+      "seconds": 41.638,
+      "repairs": 0,
+      "valid_output": true,
+      "validation_codes": null,
+      "answer": "2026-10-03: Sesión del plan: carrera, 35 a 45 minutos, intensidad suave. Sesión vigente del plan de entrenamiento.\nActividad registrada en los datos disponibles.\nMedición de bienestar disponible.\nGarmin (2026-10-03): duración: 6304 s; pulso medio: 144 lpm; pulso máximo: 165 lpm; distancia: 20,02 km.\nplan (2026-10-03): duración mínima: 35 minutos; duración máxima: 45 minutos.\nZepp (2026-10-03): puntuación: 78; sueño: 430 minutos; sueño REM: 98 minutos; sueño profundo: 66 minutos; sueño ligero: 257 minutos; vigilia: 2 minutos.\nZepp (2026-10-03): pulso en reposo: 39 lpm.",
+      "automatic_checks": {
+        "derived_values": [
+          {
+            "id": "synthetic-g1",
+            "elapsed_h_m_s": [
+              1,
+              45,
+              4
+            ],
+            "pace_min_sec": [
+              5,
+              15
+            ],
+            "speed_kmh": 11.4
+          }
+        ],
+        "unsupported_numeric_values": [],
+        "of_those_structured_prescription_values_requiring_review": [],
+        "dates_not_in_input": [],
+        "unsupported_attributions": [],
+        "limit": "Checks numeric membership/conversions and explicit attributions only; does not validate semantic interpretation."
+      }
+    }
+  ]
+}

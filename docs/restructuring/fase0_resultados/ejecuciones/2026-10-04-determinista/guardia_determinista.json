@@ -1,0 +1,9 @@
+{
+  "blocked_events": [
+    "write",
+    "secret_read",
+    "network"
+  ],
+  "expected_self_checks": 3,
+  "temporary_root": "/private/var/folders/4v/2mg5vxrn3td5md5rysqkf2nm0000gn/T/garmin-audit-2bg28b5e"
+}

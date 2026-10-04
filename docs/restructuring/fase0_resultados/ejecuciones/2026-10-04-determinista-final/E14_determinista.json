@@ -1,0 +1,43 @@
+{
+  "resultado": "incumple",
+  "observado": {
+    "texto": {
+      "queued": true,
+      "kwargs": {
+        "chat_id": "audit",
+        "user_id": "audit",
+        "text": "Analiza mi entrenamiento de hoy"
+      }
+    },
+    "coach": {
+      "queued": true,
+      "kwargs": {
+        "chat_id": "audit",
+        "user_id": "audit",
+        "text": "Analiza mi entrenamiento de hoy"
+      }
+    },
+    "alias": {
+      "queued": false,
+      "kwargs": null
+    },
+    "voz": {
+      "queued": true,
+      "kwargs": {
+        "chat_id": "audit",
+        "user_id": "audit",
+        "text": "",
+        "audio_file_id": "synthetic-voice",
+        "audio_unique_id": null,
+        "audio_duration": null,
+        "source_kind": "voice",
+        "response_mode": "voice"
+      }
+    }
+  },
+  "limitacion": "Se prueba despacho; transcripción y equivalencia de contexto posterior no evaluadas: /feedback ya diverge antes.",
+  "id": "E14",
+  "seconds": 0.001,
+  "events": "",
+  "fixture_sha256": "2aa7a555348912bf487f0f0c73bc4246789e39fca035f9631904bd5789ee919e"
+}

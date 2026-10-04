@@ -2,7 +2,9 @@
 import os,sys,socket,tempfile
 from pathlib import Path
 
-def install(out,live=False):
+def install(out,live=False,database_port=None):
+    if database_port is not None and (type(database_port) is not int or not 1024 <= database_port <= 65535):
+        raise ValueError('Invalid isolated database port')
     sys.dont_write_bytecode=True
     root=Path(tempfile.mkdtemp(prefix='garmin-audit-')).resolve()
     out=out.resolve()
@@ -32,7 +34,8 @@ def install(out,live=False):
             if not all(in_allowed(x) for x in args[:2]): blocked.append('mutation');raise PermissionError('Audit blocks filesystem mutation')
         elif event=='socket.connect':
             addr=args[1]
-            if not (live and isinstance(addr,tuple) and addr[:2]==('127.0.0.1',11434)):
+            allowed_ports=({11434} if live else set()) | ({database_port} if database_port is not None else set())
+            if not (isinstance(addr,tuple) and addr[0]=='127.0.0.1' and addr[1] in allowed_ports):
                 blocked.append('network');raise PermissionError('Audit blocks network')
         elif event in ('subprocess.Popen','os.system','os.posix_spawn','os.fork'):
             blocked.append('process');raise PermissionError('Audit blocks subprocesses')

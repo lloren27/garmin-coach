@@ -1,5 +1,9 @@
 # Informe de auditoría — Fase 0
 
+> Este informe conserva el estado del 3 de octubre. La continuación y las pruebas
+> reales de Ollama y PostgreSQL del 4 de octubre se documentan en
+> [informe_2026-10-04.md](informe_2026-10-04.md).
+
 Fecha de ejecución: 3 de octubre de 2026. Checkout auditado: `b6912b94622d4850cf7b958363ca9551d15f553c` (`main`).
 
 ## Alcance y aislamiento

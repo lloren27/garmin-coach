@@ -1,0 +1,21 @@
+{
+  "resultado": "incumple",
+  "observado": [
+    {
+      "id": "synthetic-g1",
+      "source": "garmin",
+      "date": "2026-10-03",
+      "started_at": "2026-10-03T08:00:00+02:00",
+      "sport": "running",
+      "km": 20.02,
+      "duration_s": 6304,
+      "avg_hr": 144,
+      "max_hr": 165
+    }
+  ],
+  "limitacion": "Deduplicación sí; se exige además conservar origen secundario.",
+  "id": "E02",
+  "seconds": 0.0,
+  "events": "",
+  "fixture_sha256": "a07ea6811577417026eedb5eba336f04331ca777a5af2ca4b1969a7bc7561db4"
+}

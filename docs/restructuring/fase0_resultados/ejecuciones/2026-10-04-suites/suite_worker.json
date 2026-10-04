@@ -1,0 +1,11 @@
+{
+  "tests": 151,
+  "failures": 1,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 0.487,
+  "blocked_events": [],
+  "success": false,
+  "scope": "Existing regression tests, not new phase-0 acceptance cases.",
+  "isolated_postgres": false
+}

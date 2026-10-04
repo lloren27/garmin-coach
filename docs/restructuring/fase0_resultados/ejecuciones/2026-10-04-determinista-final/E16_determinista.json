@@ -1,0 +1,59 @@
+{
+  "resultado": "no evaluable",
+  "observado": {
+    "normalized": [
+      {
+        "id": "strava:1",
+        "source": "strava",
+        "source_activity_id": "1",
+        "date": "2026-10-04",
+        "started_at": "2026-10-04T00:30:00+02:00",
+        "name": "Actividad Strava",
+        "sport": "running",
+        "type": "Run",
+        "km": 4.0,
+        "duration_s": 1200,
+        "hours": 0.33,
+        "pace": "5:00/km",
+        "avg_speed_kmh": 12.0
+      },
+      {
+        "id": "strava:2",
+        "source": "strava",
+        "source_activity_id": "2",
+        "date": "2026-10-25",
+        "started_at": "2026-10-25T02:30:00+02:00",
+        "name": "Actividad Strava",
+        "sport": "running",
+        "type": "Run",
+        "km": 4.0,
+        "duration_s": 1200,
+        "hours": 0.33,
+        "pace": "5:00/km",
+        "avg_speed_kmh": 12.0
+      },
+      {
+        "id": "strava:3",
+        "source": "strava",
+        "source_activity_id": "3",
+        "date": "2026-10-25",
+        "started_at": "2026-10-25T02:30:00+01:00",
+        "name": "Actividad Strava",
+        "sport": "running",
+        "type": "Run",
+        "km": 4.0,
+        "duration_s": 1200,
+        "hours": 0.33,
+        "pace": "5:00/km",
+        "avg_speed_kmh": 12.0
+      }
+    ],
+    "merged_count": 3
+  },
+  "limitacion": "Normalizador Strava y deduplicación; sueño Zepp no evaluado por este caso. Ver pruebas_ampliadas.py.",
+  "subcomprobacion": "cumple",
+  "id": "E16",
+  "seconds": 0.042,
+  "events": "",
+  "fixture_sha256": "ada5b329bde0af72b177a69b0fda7d2e71307c8dd386ecab3e819c63f52d0398"
+}

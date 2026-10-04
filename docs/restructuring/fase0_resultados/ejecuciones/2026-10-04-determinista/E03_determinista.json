@@ -1,0 +1,33 @@
+{
+  "resultado": "incumple",
+  "observado": {
+    "schema_version": "1",
+    "context_snapshot_id": "ctx_87bb222ef0ad4aecb6f78c8da7dafabf",
+    "current_time": "2026-10-03T22:00:00+02:00",
+    "target_dates": [],
+    "available_sessions": [],
+    "available_evidence": [
+      {
+        "id": "activity:synthetic-st1",
+        "kind": "activity",
+        "source": "garmin",
+        "date": "2026-10-03",
+        "sport": "running",
+        "facts": {
+          "duration_s": 6304,
+          "avg_hr": 144,
+          "max_hr": 165,
+          "distance_km": 20.02
+        }
+      }
+    ],
+    "change_proposal_allowed_now": false,
+    "proposal_evidence_sources": [],
+    "freshness": "unknown"
+  },
+  "limitacion": null,
+  "id": "E03",
+  "seconds": 0.0,
+  "events": "",
+  "fixture_sha256": "06ed567f318f1b00ec8ca6d3fe4e56b74bbc85ecdf9feaa96f08c28521c97b14"
+}

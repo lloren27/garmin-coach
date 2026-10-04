@@ -90,8 +90,9 @@ def activity_analysis(result, snapshot):
     """Describe selected, dated observations; never infer physiological intensity."""
     if result.response_type != 'analysis' or not all(d.action == 'information_only' for d in result.decisions):
         return []
+    observed_dates = {day.isoformat() for day in snapshot.intent.observed_dates}
     rows = [e for e in result.evidence if e.kind == 'activity' and e.date
-            and (not snapshot.target_dates or e.date in snapshot.target_dates)]
+            and (not observed_dates or e.date in observed_dates)]
     lines = []
     for row in rows:
         facts = row.facts

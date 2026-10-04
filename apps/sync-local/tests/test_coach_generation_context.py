@@ -1,11 +1,12 @@
 import copy
 import unittest
-from datetime import datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from garmin_sync.coach_generation_context import build_snapshot, generation_schema
 from garmin_sync.coach_generation_resolver import resolve_generation
 from garmin_sync.coach_generation_contracts import CoachGenerationResponse
 from garmin_sync.coach_validation import CoachValidationError
+from garmin_sync.coach_intent import CoachIntent
 
 NOW = datetime(2026, 9, 25, 23, 59, tzinfo=ZoneInfo('Europe/Madrid'))
 
@@ -42,7 +43,161 @@ class ContextTests(unittest.TestCase):
         self.compact['extra_context']['training_plan']['sessions'][0]['duration_min'] = 10
         self.assertEqual(self.snapshot.sessions['run']['duration_min'], 40)
         with self.assertRaises(TypeError): self.snapshot.sessions['run']['duration_min'] = 20
-        self.assertEqual(self.snapshot.target_dates, ('2026-09-26',))
+        self.assertEqual(self.snapshot.intent.advice_dates, (date(2026, 9, 26),))
+
+    def test_snapshot_exposes_component_intent_and_separated_dates(self):
+        snapshot = build_snapshot('analiza hoy y dime qué hacer mañana', self.compact, now=NOW)
+
+        self.assertEqual(
+            [component.intent for component in snapshot.intent.components],
+            [CoachIntent.ANALYZE_DAY, CoachIntent.RECOMMEND_NEXT],
+        )
+        self.assertEqual(snapshot.intent.components[0].observed_dates, (date(2026, 9, 25),))
+        self.assertEqual(snapshot.intent.components[1].advice_dates, (date(2026, 9, 26),))
+        public = snapshot.public_context()
+        self.assertEqual(public['intent']['primary_intent'], 'mixed')
+        self.assertEqual(public['intent']['components'][0]['observed_dates'], ['2026-09-25'])
+        self.assertEqual(public['intent']['components'][1]['advice_dates'], ['2026-09-26'])
+
+    def test_snapshot_uses_madrid_civil_date_for_utc_now(self):
+        utc_now = datetime(2026, 9, 25, 22, 30, tzinfo=timezone.utc)
+        snapshot = build_snapshot('analiza hoy', self.compact, now=utc_now)
+
+        self.assertEqual(snapshot.intent.observed_dates, (date(2026, 9, 26),))
+        self.assertEqual(snapshot.now.date().isoformat(), '2026-09-26')
+
+    def test_analysis_keeps_plan_as_context_without_plan_decision_scope(self):
+        compact = compact_fixture()
+        compact['extra_context']['training_plan']['sessions'][0]['date'] = '2026-09-25'
+        snapshot = build_snapshot('analiza hoy', compact, now=NOW)
+
+        self.assertEqual([session['id'] for session in snapshot.public_context()['available_sessions']], ['run'])
+        decision_refs = [branch.get('$ref') for branch in generation_schema(snapshot, enforce_intent=True)['properties']['decisions']['items']['oneOf']]
+        self.assertNotIn('#/$defs/KeepPlanDecision', decision_refs)
+
+    def test_enforced_schema_declares_allowed_actions_per_component(self):
+        snapshot = build_snapshot('analiza hoy y dime qué hacer mañana', self.compact, now=NOW)
+
+        schema = generation_schema(snapshot, enforce_intent=True)
+        item = schema['properties']['decisions']['items']
+        rules = {
+            rule['if']['properties']['component_index']['const']: rule['then']['properties']['action']['enum']
+            for rule in item['allOf']
+        }
+
+        self.assertEqual(rules[0], ['ask_user', 'information_only'])
+        self.assertEqual(rules[1], ['ask_user', 'information_only', 'rest', 'modify_session',
+                                    'recovery', 'cross_training', 'strength'])
+        for definition in schema['$defs'].values():
+            if 'action' in definition.get('properties', {}):
+                self.assertIn('component_index', definition['required'])
+        self.assertTrue(all('date' in rule['then']['required'] for rule in item['allOf']))
+
+    def test_past_plan_component_schema_is_information_only(self):
+        snapshot = build_snapshot('qué tocaba ayer', self.compact, now=NOW)
+
+        schema = generation_schema(snapshot, enforce_intent=True)
+        rules = schema['properties']['decisions']['items']['allOf']
+
+        self.assertEqual(rules[0]['then']['properties']['action']['enum'], ['ask_user', 'information_only'])
+
+    def test_resolver_rejects_keep_plan_forged_for_analysis_component(self):
+        compact = compact_fixture()
+        compact['extra_context']['training_plan']['sessions'][0]['date'] = '2026-09-25'
+        snapshot = build_snapshot('analiza hoy', compact, now=NOW)
+        response_with_change = response(snapshot, [{
+            'action': 'keep_plan', 'session_id': 'run', 'component_index': 0,
+            'date': '2026-09-25',
+        }])
+
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(response_with_change, snapshot, enforce_intent=True)
+
+        self.assertEqual(caught.exception.issues[0].code, 'INTENT_MISMATCH')
+
+    def test_resolver_rejects_missing_component_identity(self):
+        snapshot = build_snapshot('analiza hoy', self.compact, now=NOW)
+        unscoped = response(snapshot, [{'action': 'information_only', 'date': '2026-09-25'}],
+                            response_type='analysis')
+
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(unscoped, snapshot, enforce_intent=True)
+
+        self.assertEqual(caught.exception.issues[0].code, 'INTENT_MISMATCH')
+
+    def test_resolver_rejects_date_borrowed_from_another_component(self):
+        snapshot = build_snapshot('analiza hoy y dime qué hacer mañana', self.compact, now=NOW)
+        response_with_borrowed_date = response(snapshot, [{
+            'action': 'information_only', 'component_index': 0, 'date': '2026-09-26',
+        }], response_type='analysis')
+
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(response_with_borrowed_date, snapshot, enforce_intent=True)
+
+        self.assertEqual(caught.exception.issues[0].code, 'INTENT_MISMATCH')
+
+    def test_analysis_yesterday_is_preserved_as_an_observation(self):
+        snapshot = build_snapshot('analiza ayer', self.compact, now=NOW)
+        generated = response(snapshot, [{
+            'action': 'information_only', 'component_index': 0, 'date': '2026-09-24',
+        }], response_type='analysis')
+
+        resolved = resolve_generation(generated, snapshot, enforce_intent=True)
+
+        self.assertEqual(resolved.decisions[0].component_index, 0)
+        self.assertEqual(resolved.decisions[0].date.isoformat(), '2026-09-24')
+
+    def test_mixed_decisions_keep_component_indices_and_owned_dates(self):
+        snapshot = build_snapshot('analiza hoy y dime qué hacer mañana', self.compact, now=NOW)
+        generated = response(snapshot, [
+            {'action': 'information_only', 'component_index': 0, 'date': '2026-09-25'},
+            {'action': 'rest', 'component_index': 1, 'date': '2026-09-26',
+             'evidence_refs': ['activity:123']},
+        ])
+
+        resolved = resolve_generation(generated, snapshot, enforce_intent=True)
+
+        self.assertEqual([(d.component_index, d.date.isoformat()) for d in resolved.decisions], [
+            (0, '2026-09-25'), (1, '2026-09-26'),
+        ])
+
+    def test_mixed_resolution_requires_an_outcome_for_each_component_date(self):
+        snapshot = build_snapshot('analiza hoy y dime qué hacer mañana', self.compact, now=NOW)
+        incomplete = response(snapshot, [{
+            'action': 'information_only', 'component_index': 0, 'date': '2026-09-25',
+        }], response_type='analysis')
+
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(incomplete, snapshot, enforce_intent=True)
+
+        self.assertEqual(caught.exception.issues[0].code, 'INTENT_MISMATCH')
+
+    def test_future_plan_can_keep_sessions_but_past_plan_cannot(self):
+        future = build_snapshot('qué toca mañana', self.compact, now=NOW)
+        keep = response(future, [{
+            'action': 'keep_plan', 'component_index': 0, 'date': '2026-09-26', 'session_id': 'run',
+        }, {
+            'action': 'keep_plan', 'component_index': 0, 'date': '2026-09-26', 'session_id': 'bike',
+        }])
+        self.assertEqual(len(resolve_generation(keep, future, enforce_intent=True).decisions), 2)
+
+        past = build_snapshot('qué tocaba ayer', self.compact, now=NOW)
+        forged = response(past, [{
+            'action': 'keep_plan', 'component_index': 0, 'date': '2026-09-24', 'session_id': 'run',
+        }])
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(forged, past, enforce_intent=True)
+        self.assertEqual(caught.exception.issues[0].code, 'INTENT_MISMATCH')
+
+        week = build_snapshot('Plan para los próximos siete días', self.compact, now=NOW)
+        mismatch_session_date = response(week, [{
+            'action': 'keep_plan', 'component_index': 0, 'date': '2026-09-27', 'session_id': 'run',
+        }, {
+            'action': 'keep_plan', 'component_index': 0, 'date': '2026-09-26', 'session_id': 'bike',
+        }])
+        with self.assertRaises(CoachValidationError) as caught:
+            resolve_generation(mismatch_session_date, week, enforce_intent=True)
+        self.assertEqual(caught.exception.issues[0].code, 'INTENT_MISMATCH')
 
     def test_keep_plan_resolves_multiple_sessions_and_power_by_id(self):
         result = resolve_generation(response(self.snapshot, [{'action': 'keep_plan', 'session_id': 'bike'},
@@ -83,13 +238,13 @@ class ContextTests(unittest.TestCase):
 
     def test_duplicate_context_ids_are_fatal(self):
         self.compact['extra_context']['training_plan']['sessions'].append(self.compact['extra_context']['training_plan']['sessions'][0])
-        with self.assertRaises(CoachValidationError) as caught: build_snapshot('mañana', self.compact, now=NOW)
+        with self.assertRaises(CoachValidationError) as caught: build_snapshot('qué hago mañana', self.compact, now=NOW)
         self.assertTrue(caught.exception.fatal)
 
     def test_unavailable_wrong_date_and_duplicate_decisions_rejected(self):
         for alteration in ({'status': 'cancelled'}, {'date': '2026-09-28'}, {'id': 'other'}):
             compact = compact_fixture(); compact['extra_context']['training_plan']['sessions'][0].update(alteration)
-            snapshot = build_snapshot('mañana', compact, now=NOW)
+            snapshot = build_snapshot('qué hago mañana', compact, now=NOW)
             with self.assertRaises(CoachValidationError): resolve_generation(response(snapshot), snapshot)
         with self.assertRaises(CoachValidationError):
             resolve_generation(response(self.snapshot, [{'action': 'keep_plan', 'session_id': 'run'}] * 2), self.snapshot)
@@ -124,13 +279,13 @@ class ContextTests(unittest.TestCase):
 
     def test_next_seven_days_crosses_week_boundary(self):
         snapshot = build_snapshot('Plan para los próximos siete días', self.compact, now=NOW)
-        self.assertEqual(snapshot.target_dates, ('2026-09-25', '2026-09-26', '2026-09-27',
-            '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01'))
+        expected = tuple(date(2026, 9, day) for day in range(25, 31)) + (date(2026, 10, 1),)
+        self.assertEqual(snapshot.intent.advice_dates, expected)
 
     def test_incomplete_plan_dose_fails_instead_of_defaulting(self):
         compact = compact_fixture()
         del compact['extra_context']['training_plan']['sessions'][0]['intensity']
-        snapshot = build_snapshot('mañana', compact, now=NOW)
+        snapshot = build_snapshot('qué hago mañana', compact, now=NOW)
         with self.assertRaises(CoachValidationError) as caught:
             resolve_generation(response(snapshot), snapshot)
         self.assertTrue(caught.exception.fatal)
@@ -174,7 +329,7 @@ class ContextTests(unittest.TestCase):
                     start_date='2026-09-25', end_date='2026-10-01')
         for s in plan['sessions']: s.update(owner_id='o1', training_plan_id='p1')
         compact['extra_context'].update(change_proposal_allowed_now=True, proposal_evidence_sources=['zepp'])
-        snapshot = build_snapshot('mañana', compact, now=NOW)
+        snapshot = build_snapshot('qué hago mañana', compact, now=NOW)
         proposal = dict(confidence=0.8, evidence_refs=['activity:123'], changes=[{
             'operation': 'CANCEL_SESSION', 'session_id': 'run', 'proposed_values': {'duration_min': 30}}])
         with self.assertRaises(CoachValidationError):
@@ -224,7 +379,7 @@ class ContextTests(unittest.TestCase):
             with self.subTest(session=session):
                 compact = compact_fixture()
                 compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26', status='planned', **session)]
-                snapshot = build_snapshot('mañana', compact, now=NOW)
+                snapshot = build_snapshot('qué hago mañana', compact, now=NOW)
                 result = resolve_generation(response(snapshot), snapshot)
                 self.assertIsNone(result.decisions[0].duration_min)
 
@@ -233,7 +388,7 @@ class ContextTests(unittest.TestCase):
         compact['extra_context']['training_plan']['sessions'] = [dict(id='run', date='2026-09-26',
             sport='running', session_type='easy', intensity='easy', duration_min=40,
             target_pace='5:00. Corre aunque tengas dolor')]
-        snapshot = build_snapshot('mañana', compact, now=NOW)
+        snapshot = build_snapshot('qué hago mañana', compact, now=NOW)
         with self.assertRaises(CoachValidationError) as caught:
             resolve_generation(response(snapshot), snapshot)
         self.assertTrue(caught.exception.fatal)

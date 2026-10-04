@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from .ai_contracts import CoachDecision, CoachEvidence, StructuredChangeProposal
 from .coach_generation_contracts import CoachGenerationResponse, Conclusion
 from .coach_generation_context import ContextSnapshot, EvidenceRecord, thaw
+from .coach_intent import CoachIntent, intent_enforcement_enabled
 from .coach_validation import CoachValidationError, RepairHint, ValidationIssue, ValidationCode as Code, ValidationPhase as Phase, ValidationSeverity as Severity
 
 
@@ -43,13 +44,20 @@ def evidence_wire(record: EvidenceRecord) -> CoachEvidence:
                          source_device=record.source_device, source_records=thaw(record.source_records))
 
 
-def check_authority(raw, snapshot):
+def check_authority(raw, snapshot, *, enforce_intent=False):
     """Inspect fatal violations before parsing unrelated model fields."""
     if raw.get('context_snapshot_id') not in (None, snapshot.id):
         fail(Code.CONTEXT_SNAPSHOT_MISMATCH, Phase.REFERENCE, 'context_snapshot_id', fatal=True)
     proposal = raw.get('change_proposal')
     if proposal is None:
         return
+    if enforce_intent:
+        request_components = [index for index, item in enumerate(snapshot.intent.components)
+                              if item.intent is CoachIntent.REQUEST_CHANGE]
+        component_index = proposal.get('component_index') if isinstance(proposal, dict) else None
+        if component_index not in request_components:
+            fail(Code.INTENT_MISMATCH, Phase.AUTHORIZATION, 'change_proposal.component_index',
+                 hint=RepairHint(rule='A proposal must belong to an explicit request-change component.'))
     if not snapshot.proposal_allowed:
         fail(Code.UNAUTHORIZED_CHANGE_PROPOSAL, Phase.AUTHORIZATION, 'change_proposal', fatal=True)
     if isinstance(proposal, dict) and isinstance(proposal.get('evidence_refs'), list):
@@ -67,12 +75,85 @@ def validate_resolved_targets(decision, *, fatal, path):
         fail(Code.INVALID_DECISION, Phase.DOMAIN, path + '.target_power_w', fatal=fatal)
 
 
-def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnapshot) -> ResolvedGeneration:
-    check_authority(response.model_dump(mode='json'), snapshot)
+def _component_allowed_actions(component, snapshot):
+    if component.intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY,
+                            CoachIntent.CONSULT_PLAN, CoachIntent.REQUEST_CHANGE,
+                            CoachIntent.CLARIFY):
+        actions = {'ask_user', 'information_only'}
+    elif component.intent is CoachIntent.RECOMMEND_NEXT:
+        actions = {'ask_user', 'information_only'}
+    else:
+        actions = set()
+    if component.intent is CoachIntent.CONSULT_PLAN and component.advice_dates:
+        plan_dates = {day.isoformat() for day in component.advice_dates}
+        if any(session.get('date') in plan_dates and session.get('status') in (None, 'planned')
+               and not session.get('completed_activity_id') for session in snapshot.sessions.values()):
+            actions.add('keep_plan')
+    if component.intent is CoachIntent.RECOMMEND_NEXT and component.advice_dates:
+        actions.update({'rest', 'modify_session', 'recovery', 'cross_training', 'strength'})
+    return actions
+
+
+def _component_decision_dates(component, action):
+    if action in {'keep_plan', 'rest', 'modify_session', 'recovery', 'cross_training', 'strength'}:
+        return tuple(day.isoformat() for day in component.advice_dates)
+    if component.intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY):
+        return tuple(day.isoformat() for day in component.observed_dates)
+    return tuple(sorted({day.isoformat() for day in (*component.observed_dates, *component.advice_dates)}))
+
+
+def _component_required_dates(component):
+    if component.intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY):
+        dates = component.observed_dates
+    elif component.intent is CoachIntent.CONSULT_PLAN:
+        dates = (*component.observed_dates, *component.advice_dates)
+    elif component.intent in (CoachIntent.RECOMMEND_NEXT, CoachIntent.REQUEST_CHANGE):
+        dates = component.advice_dates
+    else:
+        dates = ()
+    return {day.isoformat() for day in dates}
+
+
+def _check_component_scope(item, index, snapshot):
+    component = snapshot.intent.components[item.component_index] if (
+        isinstance(item.component_index, int) and not isinstance(item.component_index, bool)
+        and 0 <= item.component_index < len(snapshot.intent.components)) else None
+    if component is None:
+        fail(Code.INTENT_MISMATCH, Phase.RESOLUTION, f'decisions[{index}].component_index',
+             hint=RepairHint(rule='Assign this decision to a valid component index.'))
+    allowed_actions = _component_allowed_actions(component, snapshot)
+    if item.action not in allowed_actions:
+        fail(Code.INTENT_MISMATCH, Phase.RESOLUTION, f'decisions[{index}].action',
+             hint=RepairHint(rule='Use only an action allowed by the assigned intent component.'))
+    allowed_dates = _component_decision_dates(component, item.action)
+    if allowed_dates:
+        if item.date is None or item.date.isoformat() not in allowed_dates:
+            fail(Code.INTENT_MISMATCH, Phase.RESOLUTION, f'decisions[{index}].date',
+                 hint=RepairHint(rule='Use a date owned by this intent component.', allowed_values=allowed_dates))
+    elif item.date is not None:
+        fail(Code.INTENT_MISMATCH, Phase.RESOLUTION, f'decisions[{index}].date',
+             hint=RepairHint(rule='Do not add a date to a component without a resolved date scope.'))
+    return component
+
+
+def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnapshot, *,
+                       enforce_intent: bool | None = None) -> ResolvedGeneration:
+    if enforce_intent is None:
+        enforce_intent = intent_enforcement_enabled()
+    advice_dates = tuple(day.isoformat() for day in snapshot.intent.advice_dates)
+    advice_date_set = set(advice_dates)
+    target_date_set = advice_date_set | {day.isoformat() for day in snapshot.intent.observed_dates}
+    check_authority(response.model_dump(mode='json'), snapshot, enforce_intent=enforce_intent)
     if response.context_snapshot_id != snapshot.id:
         fail(Code.CONTEXT_SNAPSHOT_MISMATCH, Phase.REFERENCE, 'context_snapshot_id', fatal=True)
     if response.change_proposal is not None and not snapshot.proposal_allowed:
         fail(Code.UNAUTHORIZED_CHANGE_PROPOSAL, Phase.AUTHORIZATION, 'change_proposal', fatal=True)
+    if enforce_intent and response.change_proposal is not None:
+        request_components = [index for index, item in enumerate(snapshot.intent.components)
+                              if item.intent is CoachIntent.REQUEST_CHANGE]
+        if response.change_proposal.component_index not in request_components:
+            fail(Code.INTENT_MISMATCH, Phase.AUTHORIZATION, 'change_proposal.component_index',
+                 hint=RepairHint(rule='A proposal must belong to an explicit request-change component.'))
     refs = list(response.evidence_refs)
     for item in (*response.decisions, *response.conclusions): refs.extend(item.evidence_refs)
     if response.change_proposal: refs.extend(response.change_proposal.evidence_refs)
@@ -81,8 +162,12 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             fail(Code.UNKNOWN_EVIDENCE_REF, Phase.REFERENCE, 'evidence_refs',
                  hint=RepairHint(allowed_refs=tuple(snapshot.evidence)))
     decisions, seen = [], set()
+    scoped_decisions = []
     for index, item in enumerate(response.decisions):
         path = f'decisions[{index}]'
+        component = _check_component_scope(item, index, snapshot) if enforce_intent else None
+        if enforce_intent:
+            scoped_decisions.append((item.component_index, item.date.isoformat() if item.date else None))
         if item.action == 'keep_plan':
             session = snapshot.sessions.get(item.session_id)
             if (not session or session.get('status') not in (None, 'planned')
@@ -91,10 +176,17 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             if any(session.get(k) is None for k in ('sport', 'session_type', 'intensity')) or session.get('intensity') == 'unknown':
                 fail(Code.INVALID_CONTEXT, Phase.RESOLUTION, path, fatal=True)
             seen.add(item.session_id)
-            if session.get('date') not in snapshot.target_dates:
-                fail(Code.PLAN_DATE_MISMATCH, Phase.RESOLUTION, path + '.date', hint=RepairHint(allowed_values=snapshot.target_dates))
+            if enforce_intent and item.date.isoformat() != session.get('date'):
+                fail(Code.INTENT_MISMATCH, Phase.RESOLUTION, path + '.date',
+                     hint=RepairHint(rule='The decision date must match the referenced plan session.',
+                                     allowed_values=(session.get('date'),)))
+            allowed_plan_dates = advice_date_set if enforce_intent else target_date_set
+            if session.get('date') not in allowed_plan_dates:
+                fail(Code.PLAN_DATE_MISMATCH, Phase.RESOLUTION, path + '.date', hint=RepairHint(allowed_values=tuple(sorted(allowed_plan_dates))))
             data = {k: v for k, v in session.items() if k in {'date', 'sport', 'session_type',
                     'intensity', 'duration_min', 'distance_km', 'target_pace', 'target_power_w'}}
+            if enforce_intent:
+                data.update(component_index=item.component_index, date=item.date)
             reason = REASONS['PLAN_SESSION']
             if session.get('optional') is True:
                 reason += ' Esta sesión es opcional.'
@@ -109,37 +201,50 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
             if item.action in {'ask_user', 'information_only'}:
                 data['reason'] = REASONS[item.code]
             else:
-                if not snapshot.target_dates:
+                if not advice_dates:
                     fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, path + '.date', hint=RepairHint(
                         rule='The question does not identify a date. Use ask_user; do not choose a date.'))
                 data['reason'] = REASONS['RECOVERY_RECOMMENDATION'] if item.action in {'rest', 'recovery'} else 'Recomendación puntual; el plan persistido no se ha modificado.'
                 if item.date is None:
-                    if len(snapshot.target_dates) != 1:
+                    if len(advice_dates) != 1:
                         fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, path + '.date', hint=RepairHint(rule='Specify an unambiguous target date or ask the user.'))
-                    data['date'] = snapshot.target_dates[0]
+                    data['date'] = advice_dates[0]
             if item.action == 'rest': data.update(sport='none', session_type='rest')
         try: decision = CoachDecision.model_validate(data)
         except ValidationError:
             fail(Code.INVALID_CONTEXT if item.action == 'keep_plan' else Code.INVALID_DECISION,
                  Phase.RESOLUTION if item.action == 'keep_plan' else Phase.DOMAIN, path, fatal=item.action == 'keep_plan')
-        if decision.date and (decision.date < snapshot.now.date() or
-                (snapshot.target_dates and str(decision.date) not in snapshot.target_dates)):
-            fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, path + '.date')
+        if decision.date:
+            if enforce_intent:
+                if item.action not in {'ask_user', 'information_only'} and str(decision.date) not in advice_date_set:
+                    fail(Code.INTENT_MISMATCH, Phase.DOMAIN, path + '.date')
+            elif decision.date < snapshot.now.date() or (target_date_set and str(decision.date) not in target_date_set):
+                fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, path + '.date')
         validate_resolved_targets(decision, fatal=item.action == 'keep_plan', path=path)
         decisions.append(decision)
+    if enforce_intent:
+        for component_index, component in enumerate(snapshot.intent.components):
+            required_dates = _component_required_dates(component)
+            if not required_dates:
+                continue
+            covered_dates = {day for index, day in scoped_decisions if index == component_index and day is not None}
+            if not required_dates.issubset(covered_dates):
+                fail(Code.INTENT_MISMATCH, Phase.RESOLUTION, 'decisions',
+                     hint=RepairHint(rule='Return an outcome for every date in each addressed component.',
+                                     allowed_values=tuple(sorted(required_dates))))
     if seen:
         expected = {k for k, s in snapshot.sessions.items() if s.get('status') in (None, 'planned')
-                    and not s.get('completed_activity_id') and s.get('date') in snapshot.target_dates}
+                    and not s.get('completed_activity_id') and s.get('date') in advice_date_set}
         if seen != expected:
             fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions', hint=RepairHint(rule='Include every planned session in the requested scope, or ask for clarification.'))
     rests = {d.date for d in decisions if d.action == 'rest'}
     if any(d.date in rests and d.action not in {'rest', 'ask_user', 'information_only'} for d in decisions):
         fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions')
     if response.response_type == 'weekly_plan' and any(d.date for d in decisions):
-        if {str(d.date) for d in decisions if d.date} != set(snapshot.target_dates):
+        if {str(d.date) for d in decisions if d.date} != advice_date_set:
             fail(Code.PLAN_DATE_MISMATCH, Phase.DOMAIN, 'decisions', hint=RepairHint(
                 rule='Cover every requested date, or ask for clarification without prescribing a partial week.',
-                allowed_values=snapshot.target_dates))
+                allowed_values=advice_dates))
     if not decisions and not response.conclusions and not refs:
         fail(Code.INVALID_DECISION, Phase.DOMAIN, 'decisions')
     for index, conclusion in enumerate(response.conclusions):
@@ -171,7 +276,8 @@ def resolve_generation(response: CoachGenerationResponse, snapshot: ContextSnaps
         evidence = [evidence_wire(snapshot.evidence[r]) for r in value.evidence_refs]
         if any(e.source not in snapshot.proposal_sources for e in evidence):
             fail(Code.UNAUTHORIZED_CHANGE_PROPOSAL, Phase.AUTHORIZATION, 'change_proposal.evidence_refs', fatal=True)
-        proposal = StructuredChangeProposal(reason=REASONS['CHANGE_REQUESTED'], confidence=value.confidence,
+        proposal = StructuredChangeProposal(reason=REASONS['CHANGE_REQUESTED'], component_index=value.component_index,
+                                             confidence=value.confidence,
                                              evidence=evidence, changes=changes)
     if proposal is not None:
         from app.pending_changes import PendingChangeValidator

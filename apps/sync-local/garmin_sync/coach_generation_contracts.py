@@ -29,12 +29,13 @@ class Conclusion(StrictModel):
 
 class DecisionBase(StrictModel):
     evidence_refs: Refs = Field(default_factory=list)
+    component_index: int | None = Field(default=None, ge=0, le=6)
+    date: Date | None = None
 
 
 class RestDecision(DecisionBase):
     action: Literal['rest']
     intensity: Literal['rest', 'recovery'] = 'rest'
-    date: Date | None = None
     target_pace: None = None
     target_power_w: None = None
     distance_km: Literal[0] | None = None
@@ -47,7 +48,6 @@ class KeepPlanDecision(DecisionBase):
 
 class ActivityDecision(DecisionBase):
     sport: Literal['running', 'cycling', 'strength', 'mobility', 'recovery']
-    date: Date | None = None
     session_type: str | None = Field(default=None, min_length=1, max_length=80)
     intensity: Literal['recovery', 'easy', 'moderate', 'tempo', 'threshold', 'vo2max',
                        'hard', 'very_easy', 'Z1', 'Z1-Z2', 'Z2', 'marathon_pace']
@@ -111,6 +111,7 @@ class GenerationChange(StrictModel):
 
 class GenerationChangeProposal(StrictModel):
     code: Literal['CHANGE_REQUESTED'] = 'CHANGE_REQUESTED'
+    component_index: int | None = Field(default=None, ge=0, le=6)
     confidence: float = Field(strict=True, ge=0, le=1, allow_inf_nan=False)
     evidence_refs: Refs = Field(default_factory=list)
     changes: list[GenerationChange] = Field(min_length=1, max_length=14)

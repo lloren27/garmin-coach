@@ -30,10 +30,14 @@ class GenerationContractTests(unittest.TestCase):
         self.assertEqual(RestDecision(action='rest', evidence_refs=[]).intensity, 'rest')
 
     def test_keep_plan_cannot_regenerate_authoritative_fields(self):
-        for key, value in [('duration_min', 30), ('date', '2026-09-25'), ('intensity', 'easy'),
+        for key, value in [('duration_min', 30), ('intensity', 'easy'),
                            ('source', 'training_plan')]:
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 KeepPlanDecision(action='keep_plan', session_id='s1', evidence_refs=[], **{key: value})
+        decision = KeepPlanDecision(action='keep_plan', session_id='s1', evidence_refs=[],
+                                     component_index=0, date='2026-09-25')
+        self.assertEqual(decision.component_index, 0)
+        self.assertEqual(decision.date.isoformat(), '2026-09-25')
 
     def test_response_requires_version_snapshot_and_forbids_free_answer(self):
         for key in ('schema_version', 'context_snapshot_id'):
@@ -81,3 +85,5 @@ class GenerationContractTests(unittest.TestCase):
         self.assertEqual(variants['discriminator']['propertyName'], 'action')
         self.assertEqual(set(variants['discriminator']['mapping']), {'rest', 'keep_plan', 'modify_session',
             'recovery', 'cross_training', 'strength', 'ask_user', 'information_only'})
+        information = schema['$defs']['InformationDecision']
+        self.assertNotIn('component_index', information.get('required', []))

@@ -1,7 +1,9 @@
 import io
 import json
+import os
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 from test_coach_generation_context import compact_fixture, NOW
 from garmin_sync.coach_generation_pipeline import generate_validated
 from garmin_sync.coach_validation import CoachValidationError
@@ -23,14 +25,75 @@ class PipelineTests(unittest.TestCase):
             reply = valid_reply(messages, **kwargs)
             return mutate(reply, len(self.requests))
         self.output = io.StringIO()
-        with redirect_stdout(self.output):
-            return generate_validated('mañana', compact_fixture(), generate=generate, job_id='job1', now=NOW)
+        with patch.dict(os.environ, {'COACH_INTENT_ENFORCEMENT': ''}), redirect_stdout(self.output):
+            return generate_validated('qué toca mañana', compact_fixture(), generate=generate, job_id='job1', now=NOW)
 
     def test_success_is_rendered_from_one_validated_generation(self):
         wire = self.run_case(lambda reply, attempt: reply)
         self.assertIn('40 a 50 minutos', wire.answer)
         self.assertEqual(len(self.requests), 1)
         self.assertNotIn('answer', self.requests[0][1]['response_schema']['properties'])
+        schema = self.requests[0][1]['response_schema']
+        self.assertTrue(all('component_index' not in schema['$defs'][name].get('required', [])
+                            for name in schema['$defs'] if 'component_index' in schema['$defs'][name].get('properties', {})))
+        self.assertNotIn('component_index', self.requests[0][0][0]['content'])
+
+    def test_fixed_clarification_bypasses_generation_when_enforcement_is_on(self):
+        generate = unittest.mock.Mock(side_effect=AssertionError('must not invoke model'))
+        with patch.dict(os.environ, {'COACH_INTENT_ENFORCEMENT': 'on'}):
+            wire = generate_validated('¿Qué hago?', compact_fixture(), generate=generate, now=NOW)
+        self.assertEqual(generate.call_count, 0)
+        self.assertIn('día quieres', wire.answer)
+        self.assertEqual(wire.decisions[0].action, 'ask_user')
+
+    def test_unrecognized_paraphrase_is_routed_to_restricted_generation(self):
+        requests = []
+        def generate(messages, **kwargs):
+            requests.append((messages, kwargs))
+            context = json.loads(messages[1]['content'])['context']
+            reply = dict(schema_version='1', context_snapshot_id=context['context_snapshot_id'],
+                         response_type='information', decisions=[{'action': 'ask_user', 'component_index': 0}],
+                         conclusions=[], evidence_refs=[])
+            return {'message': {'content': json.dumps(reply)}, 'done_reason': 'stop'}
+        with patch.dict(os.environ, {'COACH_INTENT_ENFORCEMENT': 'on'}), redirect_stdout(io.StringIO()):
+            wire = generate_validated('¿Qué opinas del domingo?', compact_fixture(), generate=generate, now=NOW)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(wire.decisions[0].action, 'ask_user')
+        item_schema = requests[0][1]['response_schema']['properties']['decisions']['items']
+        scoped = next(rule['then'] for rule in item_schema['allOf']
+                      if rule.get('if', {}).get('properties', {}).get('component_index', {}).get('const') == 0)
+        self.assertEqual(set(scoped['properties']['action']['enum']), {'ask_user', 'information_only'})
+
+    def test_unauthorized_change_request_returns_fixed_answer_without_model(self):
+        generate = unittest.mock.Mock(side_effect=AssertionError('must not invoke model'))
+        with patch.dict(os.environ, {'COACH_INTENT_ENFORCEMENT': 'on'}):
+            wire = generate_validated('Cambia la sesión de mañana', compact_fixture(), generate=generate, now=NOW)
+        self.assertEqual(generate.call_count, 0)
+        self.assertIn('autorización', wire.answer.lower())
+        self.assertIsNone(wire.change_proposal)
+
+    def test_enforced_mixed_generation_returns_one_scoped_decision_per_component(self):
+        requests = []
+        def generate(messages, **kwargs):
+            requests.append((messages, kwargs))
+            context = json.loads(messages[1]['content'])['context']
+            reply = dict(schema_version='1', context_snapshot_id=context['context_snapshot_id'],
+                         response_type='single_session', decisions=[
+                             {'action': 'information_only', 'component_index': 0, 'date': '2026-09-25'},
+                             {'action': 'rest', 'component_index': 1, 'date': '2026-09-26',
+                              'evidence_refs': ['activity:123']}], conclusions=[], evidence_refs=[])
+            return {'message': {'content': json.dumps(reply)}, 'done_reason': 'stop'}
+
+        with patch.dict(os.environ, {'COACH_INTENT_ENFORCEMENT': 'on'}), redirect_stdout(io.StringIO()):
+            wire = generate_validated('analiza hoy y dime qué hacer mañana', compact_fixture(),
+                                      generate=generate, now=NOW)
+
+        self.assertEqual([(d.component_index, d.date.isoformat()) for d in wire.decisions], [
+            (0, '2026-09-25'), (1, '2026-09-26'),
+        ])
+        context = json.loads(requests[0][0][1]['content'])['context']
+        self.assertEqual(context['observed_dates'], ['2026-09-25'])
+        self.assertEqual(context['advice_dates'], ['2026-09-26'])
 
     def test_repair_contains_rejected_decision_and_specific_hint(self):
         def mutate(reply, attempt):

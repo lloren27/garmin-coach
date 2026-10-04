@@ -24,6 +24,7 @@ from .sync import API_URL, SYNC_SECRET
 from .wattwise_context import fetch_wattwise_context
 from .ai_contracts import CoachDecision, CoachStructuredResponse
 from .coach_validation import CoachValidationError
+from .coach_job_time import job_created_at
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -562,12 +563,13 @@ def send_telegram_voice(chat_id: str, audio_path: Path, caption: str) -> None:
         raise RuntimeError(f"Telegram {method} failed: {data}")
 
 
-def call_ollama(question: str, context: dict[str, Any], *, job_id: str | None = None) -> CoachRunResult:
+def call_ollama(question: str, context: dict[str, Any], *, job_id: str | None = None,
+                now: datetime | None = None) -> CoachRunResult:
     from .coach_generation_pipeline import generate_validated
 
     structured = generate_validated(
         question, compact_context(context), generate=ollama_generate, job_id=job_id,
-        timeout_seconds=OLLAMA_TIMEOUT_SECONDS, max_chars=ANSWER_MAX_CHARS,
+        timeout_seconds=OLLAMA_TIMEOUT_SECONDS, max_chars=ANSWER_MAX_CHARS, now=now,
         num_predict=OLLAMA_PLAN_NUM_PREDICT if _is_plan_question(question) else OLLAMA_NUM_PREDICT,
     )
     return CoachRunResult(answer=structured.answer,
@@ -1338,8 +1340,9 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
         context = enrich_context_for_question(question, context)
         context = dict(context)
         context["wattwise_live"] = fetch_wattwise_context()
+        enqueued_at = job_created_at(job)
         try:
-            coach_result = call_ollama(question, context, job_id=job_id)
+            coach_result = call_ollama(question, context, job_id=job_id, now=enqueued_at)
         except (httpx.HTTPError, ValueError) as exc:
             coach_result = CoachRunResult(
                 answer=basic_fallback_answer(

@@ -18,3 +18,6 @@ Plan: docs/restructuring/restructuring_fase0_v2.md.
 - Pruebas ampliadas: reconsulta Zepp + persistencia pasa; sueño en cambio horario reproduce 480 minutos frente a 540 reales; texto/voz controlada y reserva del worker pasan.
 - Suite del bot: 81/81 pasan con PostgreSQL temporal, cero omitidas. Contenedor `garmin-audit-fase0-20261004` retirado tras la suite; no quedan datos de esa base.
 - Suite del worker: 150 pasan y 1 falla por expectativa de fecha fija del 29 de septiembre. Se conserva el fallo como evidencia; no se modifica código del producto.
+- Evaluación manual de Ollama: 18/18 revisadas (14 válidas, 4 rechazadas); la trazabilidad es correcta en las salidas válidas, pero ninguna familia de caso cumple por completo su objetivo de utilidad.
+- Punto 3: la captura de Railway confirma un despliegue activo y exitoso de `fix: refactor v1`; no muestra el SHA y `/health` no lo expone, por lo que la correspondencia exacta del commit sigue sin certificarse.
+- Punto 4 cerrado documentalmente en `informe_2026-10-04.md`: se especifican los límites de restauración de backup, rutas de sueño Zepp, verificación remota, voz y cobertura de proveedores.

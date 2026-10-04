@@ -1,0 +1,28 @@
+{
+  "id": "E15a",
+  "capa": "persistencia",
+  "now": "2026-10-03T22:00:00+02:00",
+  "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+  "estado_inicial": {
+    "explicit": false,
+    "plan": {
+      "id": "synthetic-s1",
+      "date": "2026-10-04",
+      "status": "planned",
+      "sport": "running",
+      "session_type": "easy_run",
+      "intensity": "easy",
+      "duration_min": 35,
+      "duration_max": 45
+    }
+  },
+  "operaciones": [
+    "E15a"
+  ],
+  "estado_final_esperado": "No persistir propuesta no autorizada ni modificar plan.",
+  "pregunta": "",
+  "debe": "No persistir propuesta no autorizada ni modificar plan.",
+  "no_debe": "",
+  "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+  "modo_modelo": "doble determinista"
+}

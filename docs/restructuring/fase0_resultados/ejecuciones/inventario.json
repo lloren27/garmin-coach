@@ -1,0 +1,417 @@
+[
+  {
+    "commands": [
+      "/start",
+      "/help"
+    ],
+    "line": 427,
+    "calls": [
+      "format_help"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/plan_semana",
+      "/plan"
+    ],
+    "line": 430,
+    "calls": [
+      "build_week_plan",
+      "format_training_plan",
+      "load_checkins",
+      "save_training_plan"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "save_training_plan"
+    ]
+  },
+  {
+    "commands": [
+      "/hoy"
+    ],
+    "line": 453,
+    "calls": [
+      "format_today"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/semana"
+    ],
+    "line": 455,
+    "calls": [
+      "format_week",
+      "load_checkins"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/ultima"
+    ],
+    "line": 457,
+    "calls": [
+      "format_latest"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/proximo"
+    ],
+    "line": 459,
+    "calls": [
+      "format_next",
+      "load_checkins"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/fatiga"
+    ],
+    "line": 461,
+    "calls": [
+      "format_fatigue",
+      "load_wattwise"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/salud"
+    ],
+    "line": 463,
+    "calls": [
+      "format_health"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/carga"
+    ],
+    "line": 465,
+    "calls": [
+      "format_load",
+      "load_wattwise"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/running",
+      "/correr",
+      "/carga_running"
+    ],
+    "line": 467,
+    "calls": [
+      "format_running"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/tendencia"
+    ],
+    "line": 469,
+    "calls": [
+      "format_trend",
+      "load_sync_history"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/feedback"
+    ],
+    "line": 471,
+    "calls": [
+      "format_feedback",
+      "load_checkins",
+      "load_wattwise"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/ajustar"
+    ],
+    "line": 473,
+    "calls": [
+      "create_ai_job",
+      "format_ai_queued"
+    ],
+    "ai_job": true,
+    "possible_mutations": [
+      "create_ai_job"
+    ]
+  },
+  {
+    "commands": [
+      "/bici"
+    ],
+    "line": 476,
+    "calls": [
+      "format_bike",
+      "load_wattwise"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/potencia",
+      "/wattwise"
+    ],
+    "line": 478,
+    "calls": [
+      "format_wattwise",
+      "load_wattwise"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/malaga"
+    ],
+    "line": 480,
+    "calls": [
+      "format_malaga"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/coach"
+    ],
+    "line": 482,
+    "calls": [
+      "create_ai_job",
+      "format_ai_help",
+      "format_ai_queued"
+    ],
+    "ai_job": true,
+    "possible_mutations": [
+      "create_ai_job"
+    ]
+  },
+  {
+    "commands": [
+      "/sync"
+    ],
+    "line": 487,
+    "calls": [
+      "format_sync_requested",
+      "save_sync_request"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "save_sync_request"
+    ]
+  },
+  {
+    "commands": [
+      "/perfil"
+    ],
+    "line": 498,
+    "calls": [
+      "any",
+      "format_profile",
+      "format_profile_help",
+      "format_profile_saved",
+      "merge_profile",
+      "parse_profile",
+      "save_profile"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "save_profile"
+    ]
+  },
+  {
+    "commands": [
+      "/prueba_esfuerzo"
+    ],
+    "line": 507,
+    "calls": [
+      "format_lab_test_help"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/pruebas"
+    ],
+    "line": 509,
+    "calls": [
+      "format_lab_tests",
+      "load_lab_tests"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/ver_prueba"
+    ],
+    "line": 511,
+    "calls": [
+      "format_lab_test",
+      "load_lab_tests",
+      "load_pending_lab_test"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/zonas"
+    ],
+    "line": 513,
+    "calls": [
+      "format_zones",
+      "load_lab_tests",
+      "load_pending_lab_test"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/aplicar_prueba"
+    ],
+    "line": 515,
+    "calls": [
+      "dict",
+      "find_lab_test_for_apply",
+      "format_lab_test_applied",
+      "mark_lab_test_applied",
+      "merge_profile",
+      "save_profile",
+      "str"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "mark_lab_test_applied",
+      "save_profile"
+    ]
+  },
+  {
+    "commands": [
+      "/corregir_prueba"
+    ],
+    "line": 527,
+    "calls": [
+      "format_lab_test_corrected",
+      "format_lab_test_correction_help",
+      "parse_lab_test_correction",
+      "split_optional_lab_test_id",
+      "update_lab_test"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "update_lab_test"
+    ]
+  },
+  {
+    "commands": [
+      "/descartar_prueba"
+    ],
+    "line": 536,
+    "calls": [
+      "discard_lab_test",
+      "format_lab_test_discarded"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "discard_lab_test"
+    ]
+  },
+  {
+    "commands": [
+      "/checkin"
+    ],
+    "line": 540,
+    "calls": [
+      "format_checkin_help",
+      "format_checkin_saved",
+      "parse_checkin",
+      "save_checkin"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "save_checkin"
+    ]
+  },
+  {
+    "commands": [
+      "/fuerza"
+    ],
+    "line": 545,
+    "calls": [
+      "handle_strength_command",
+      "load_strength_state",
+      "save_strength_state"
+    ],
+    "ai_job": false,
+    "possible_mutations": [
+      "handle_strength_command",
+      "save_strength_state"
+    ]
+  },
+  {
+    "commands": [
+      "/status"
+    ],
+    "line": 556,
+    "calls": [
+      "format_status"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/syncinfo"
+    ],
+    "line": 558,
+    "calls": [
+      "format_syncinfo",
+      "load_sync_request"
+    ],
+    "ai_job": false,
+    "possible_mutations": []
+  },
+  {
+    "commands": [
+      "/"
+    ],
+    "line": 560,
+    "calls": [
+      "create_ai_job",
+      "format_ai_queued"
+    ],
+    "ai_job": true,
+    "possible_mutations": [
+      "create_ai_job"
+    ]
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "resultado": "incumple",
+  "observado": {
+    "ids": [
+      "a9588b1a-b752-4f42-a677-1099d554a969",
+      "dbc3c353-f092-4303-a139-de61a05b5619",
+      "c19910b0-8173-4f8d-a3a7-2f1641960997"
+    ],
+    "revisions": [
+      1,
+      1,
+      1
+    ],
+    "session_ids": [
+      [
+        "57125667-183d-4715-b24f-036db9fcf3f2"
+      ],
+      [
+        "53d2011c-7ee7-43ff-9865-36544dcbc34f"
+      ],
+      [
+        "9b27dfc4-8ce0-4e37-afeb-8c1ff7cb577f"
+      ]
+    ]
+  },
+  "limitacion": "Generador sustituido por plan fijo; se ejecutan enrutador y persistencia reales en ficheros.",
+  "id": "E11",
+  "seconds": 0.004,
+  "events": "",
+  "fixture_sha256": "008d260990ad5c41b0da5509528d8968e8d418ef0678bce0e7ed8562f43028a3"
+}

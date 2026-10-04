@@ -1,0 +1,25 @@
+{
+  "id": "E05",
+  "capa": "ingesta/persistencia",
+  "now": "2026-10-03T22:00:00+02:00",
+  "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+  "estado_inicial": {
+    "day": "2026-10-03",
+    "scores": [
+      null,
+      78,
+      82
+    ]
+  },
+  "operaciones": [
+    "persistir ausencia",
+    "persistir sueño tardío",
+    "actualizar sueño"
+  ],
+  "estado_final_esperado": "Un día Zepp con valor actualizado.",
+  "pregunta": "",
+  "debe": "Un día Zepp con valor actualizado.",
+  "no_debe": "",
+  "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+  "modo_modelo": "no aplica"
+}

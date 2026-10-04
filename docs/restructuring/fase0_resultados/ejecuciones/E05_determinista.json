@@ -1,0 +1,62 @@
+{
+  "resultado": "cumple",
+  "observado": [
+    {
+      "2026-10-03": {
+        "sources": {
+          "zepp": {}
+        },
+        "effective": {
+          "date": "2026-10-03"
+        }
+      }
+    },
+    {
+      "2026-10-03": {
+        "sources": {
+          "zepp": {
+            "sleep": {
+              "source": "zepp",
+              "score": 78,
+              "total_minutes": 430
+            }
+          }
+        },
+        "effective": {
+          "date": "2026-10-03",
+          "sleep": {
+            "source": "zepp",
+            "score": 78,
+            "total_minutes": 430
+          }
+        }
+      }
+    },
+    {
+      "2026-10-03": {
+        "sources": {
+          "zepp": {
+            "sleep": {
+              "source": "zepp",
+              "score": 82,
+              "total_minutes": 430
+            }
+          }
+        },
+        "effective": {
+          "date": "2026-10-03",
+          "sleep": {
+            "source": "zepp",
+            "score": 82,
+            "total_minutes": 430
+          }
+        }
+      }
+    }
+  ],
+  "limitacion": "Almacén de ficheros; PostgreSQL y reconsulta del proveedor no ejecutados.",
+  "id": "E05",
+  "seconds": 0.158,
+  "events": "",
+  "fixture_sha256": "83f0d2c145d96034e17738b64b227a6c2ec5968039578347d93e5bf95e913258"
+}

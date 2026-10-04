@@ -1,0 +1,41 @@
+{
+  "id": "E04",
+  "capa": "ingesta",
+  "now": "2026-10-03T22:00:00+02:00",
+  "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+  "estado_inicial": {
+    "garmin": [
+      {
+        "id": "synthetic-g1",
+        "source": "garmin",
+        "date": "2026-10-03",
+        "started_at": "2026-10-03T08:00:00+02:00",
+        "sport": "running",
+        "km": 20.02,
+        "duration_s": 6304,
+        "avg_hr": 144,
+        "max_hr": 165
+      },
+      {
+        "id": "synthetic-g2",
+        "source": "garmin",
+        "date": "2026-10-03",
+        "started_at": "2026-10-03T18:00:00+02:00",
+        "sport": "running",
+        "km": 20.02,
+        "duration_s": 6304,
+        "avg_hr": 144,
+        "max_hr": 165
+      }
+    ]
+  },
+  "operaciones": [
+    "E04"
+  ],
+  "estado_final_esperado": "Dos actividades separadas.",
+  "pregunta": "",
+  "debe": "Dos actividades separadas.",
+  "no_debe": "",
+  "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+  "modo_modelo": "no aplica"
+}

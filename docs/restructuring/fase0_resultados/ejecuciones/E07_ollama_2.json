@@ -1,0 +1,15 @@
+{
+  "resultado": "no evaluable",
+  "error_type": "ConnectError",
+  "validation_codes": [],
+  "motivo": "No se produjo salida válida en el pipeline; fallback exterior del worker no ejecutado.",
+  "id": "E07",
+  "repetition": 2,
+  "fixture_sha256": "39414894bcf5eecff311bbb28f799e442accfe199f6838af897ed0f500e9b002",
+  "seconds": 0.009,
+  "calls": [],
+  "repairs": 0,
+  "fallbacks": null,
+  "events": "",
+  "fixed_now": "2026-10-03T22:00:00+02:00"
+}

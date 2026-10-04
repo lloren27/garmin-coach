@@ -1,0 +1,79 @@
+{
+  "resultado": "incumple",
+  "observado": {
+    "schema_version": "1",
+    "context_snapshot_id": "ctx_810d791bd5794c6d91d757ab263a9d63",
+    "current_time": "2026-10-03T22:00:00+02:00",
+    "target_dates": [],
+    "available_sessions": [],
+    "available_evidence": [
+      {
+        "id": "activity:synthetic-g1",
+        "kind": "activity",
+        "source": "garmin",
+        "date": "2026-10-03",
+        "sport": "running",
+        "facts": {
+          "duration_s": 6304,
+          "avg_hr": 144,
+          "max_hr": 165,
+          "distance_km": 20.02
+        }
+      },
+      {
+        "id": "wellness:sleep",
+        "kind": "wellness",
+        "source": "zepp",
+        "date": "2026-10-01",
+        "sport": null,
+        "facts": {
+          "score": 78,
+          "total_minutes": 430,
+          "rem_minutes": 98,
+          "deep_minutes": 66,
+          "light_minutes": 257,
+          "awake_minutes": 2
+        }
+      },
+      {
+        "id": "wellness:resting_hr",
+        "kind": "wellness",
+        "source": "zepp",
+        "date": "2026-10-01",
+        "sport": null,
+        "facts": {
+          "resting_hr": 39
+        }
+      },
+      {
+        "id": "wellness:stress",
+        "kind": "wellness",
+        "source": "zepp",
+        "date": "2026-10-01",
+        "sport": null,
+        "facts": {
+          "stress_avg": 22
+        }
+      },
+      {
+        "id": "plan:synthetic-s1",
+        "kind": "plan",
+        "source": "training_plan",
+        "date": "2026-10-03",
+        "sport": "running",
+        "facts": {
+          "duration_min": 35,
+          "duration_max": 45
+        }
+      }
+    ],
+    "change_proposal_allowed_now": false,
+    "proposal_evidence_sources": [],
+    "freshness": "current"
+  },
+  "limitacion": "Se comprueba pérdida de estado en build_snapshot; no una respuesta en lenguaje natural.",
+  "id": "E06",
+  "seconds": 0.0,
+  "events": "",
+  "fixture_sha256": "9e55c52362b086a5c155469a3ecd492957a3872673294017c92859f441b3e69d"
+}

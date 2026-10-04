@@ -1,0 +1,29 @@
+{
+  "id": "E11",
+  "capa": "persistencia",
+  "now": "2026-10-03T22:00:00+02:00",
+  "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+  "estado_inicial": {
+    "plan": {
+      "id": "synthetic-s1",
+      "date": "2026-10-03",
+      "status": "planned",
+      "sport": "running",
+      "session_type": "easy_run",
+      "intensity": "easy",
+      "duration_min": 35,
+      "duration_max": 45
+    }
+  },
+  "operaciones": [
+    "guardar plan inicial",
+    "/plan",
+    "/plan"
+  ],
+  "estado_final_esperado": "Mismo identificador, revisión y sesiones tras dos consultas.",
+  "pregunta": "",
+  "debe": "Mismo identificador, revisión y sesiones tras dos consultas.",
+  "no_debe": "",
+  "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+  "modo_modelo": "no aplica"
+}

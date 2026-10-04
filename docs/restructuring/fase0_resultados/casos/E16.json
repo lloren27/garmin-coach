@@ -1,0 +1,22 @@
+{
+  "id": "E16",
+  "capa": "ingesta",
+  "now": "2026-10-03T22:00:00+02:00",
+  "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+  "estado_inicial": {
+    "timestamps": [
+      "2026-10-03T22:30:00Z",
+      "2026-10-25T00:30:00Z",
+      "2026-10-25T01:30:00Z"
+    ]
+  },
+  "operaciones": [
+    "E16"
+  ],
+  "estado_final_esperado": "Fechas Europe/Madrid correctas; no fusionar horas repetidas distintas.",
+  "pregunta": "",
+  "debe": "Fechas Europe/Madrid correctas; no fusionar horas repetidas distintas.",
+  "no_debe": "",
+  "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+  "modo_modelo": "no aplica"
+}

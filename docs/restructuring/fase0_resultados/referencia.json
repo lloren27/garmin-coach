@@ -1,0 +1,124 @@
+{
+  "observed_at": "2026-10-03T21:43:37.106913+00:00",
+  "commit": "b6912b94622d4850cf7b958363ca9551d15f553c",
+  "branch": "main",
+  "working_tree": "?? docs/restructuring/",
+  "fixed_now": "2026-10-03T22:00:00+02:00",
+  "timezone": "Europe/Madrid",
+  "config_dotenv_allowlist": {},
+  "config_note": "Valores del fichero local; el entorno heredado de procesos activos puede diferir. Nunca se guardan secretos.",
+  "railway": {
+    "version": "no observable",
+    "reason": "Sin CLI Railway; /health no expone versión; loaders de datos ejecutan ensure_schema. No se llaman."
+  },
+  "local_runtime": "LaunchAgents apuntan al checkout; procesos ya arrancados no atestiguados",
+  "hashes": {
+    "apps/bot/app/ai_contracts.py": "31a35afb398fc16cd536a3d127c52cc87b1d8560425c752f590b9ff2e5a7b723",
+    "apps/sync-local/garmin_sync/sync.py": "07ea81739232242ceb4917484217fbdb96f304c6a224026306549bef5ef0486a",
+    "apps/sync-local/garmin_sync/coach_generation_renderer.py": "d37cf1676b5da01c1dcd5df850a9a423c274eab8ec7091a677e95614ccfcd49c",
+    "apps/sync-local/garmin_sync/coach_generation_contracts.py": "09a62b8690f19f29e92c6d61be0613a0e3bb248797531be0fef8f3bd18d1ce2b",
+    "apps/sync-local/garmin_sync/coach_generation_context.py": "9f827a3094c7fc8a69fa393b2303e4e7bfab5c4a32ff2857e8cfdc60ebb8275b",
+    "apps/sync-local/garmin_sync/ai_worker.py": "93c7a8739a229a277ca5b7be6aaa5a21f40a3efec1c1f94836d264eeca8bb9f1",
+    "apps/sync-local/garmin_sync/coach_generation_pipeline.py": "3fd986962f58c8babc6b6e948e0791bb19d1abdef80dfa24bc6f0c25b0c350b7",
+    "apps/sync-local/garmin_sync/ai_contracts.py": "4a708e5628868e63893b4710297aaee343cf1e9c4841102df35372a19078f4b7"
+  },
+  "database_connection_configured": false,
+  "python": "Python 3.13.1",
+  "launch_agents": [
+    {
+      "Label": "com.lloren27.garmin-coach.ai-worker",
+      "ProgramArguments": [
+        "/bin/zsh",
+        "/Users/lloren27/Projects/garmin-coach/scripts/run_ai_worker.sh"
+      ],
+      "WorkingDirectory": "/Users/lloren27/Projects/garmin-coach",
+      "StartInterval": 60,
+      "StartCalendarInterval": null,
+      "RunAtLoad": true
+    },
+    {
+      "Label": "com.lloren27.garmin-coach.sync",
+      "ProgramArguments": [
+        "/bin/zsh",
+        "/Users/lloren27/Projects/garmin-coach/scripts/run_sync.sh"
+      ],
+      "WorkingDirectory": "/Users/lloren27/Projects/garmin-coach",
+      "StartInterval": 14400,
+      "StartCalendarInterval": [
+        {
+          "Hour": 8,
+          "Minute": 20
+        },
+        {
+          "Hour": 8,
+          "Minute": 50
+        },
+        {
+          "Hour": 18,
+          "Minute": 30
+        },
+        {
+          "Hour": 21,
+          "Minute": 15
+        },
+        {
+          "Hour": 21,
+          "Minute": 45
+        }
+      ],
+      "RunAtLoad": true
+    },
+    {
+      "Label": "com.lloren27.garmin-coach.sync-watch",
+      "ProgramArguments": [
+        "/bin/zsh",
+        "/Users/lloren27/Projects/garmin-coach/scripts/run_requested_sync.sh"
+      ],
+      "WorkingDirectory": "/Users/lloren27/Projects/garmin-coach",
+      "StartInterval": 300,
+      "StartCalendarInterval": null,
+      "RunAtLoad": true
+    }
+  ],
+  "ollama_models": [
+    {
+      "name": "garmin-coach:9b",
+      "digest": "17a5b58e68fd425bc6a86a443686fc81f92a86667f0b654423c0f91d686de623",
+      "size": 6169342155,
+      "modified_at": "2026-09-13T20:18:52.204216727+02:00",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "9.2B",
+        "quantization_level": "Q4_K_M",
+        "context_length": 262144,
+        "embedding_length": 4096
+      }
+    },
+    {
+      "name": "qwen3.5:2b",
+      "digest": "324d162be6ca5629ae4517c8710434d0bd2d665bc94dbad46e9af8fbf8a2f0df",
+      "size": 2741192820,
+      "modified_at": "2026-03-24T08:59:37.201899981+01:00",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "2.3B",
+        "quantization_level": "Q8_0",
+        "context_length": 262144,
+        "embedding_length": 2048
+      }
+    }
+  ],
+  "ollama_version": {
+    "version": "0.35.1"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "checks": {
+    "write_product": true,
+    "read_env": true,
+    "network": true
+  },
+  "temporary_root": "/private/var/folders/4v/2mg5vxrn3td5md5rysqkf2nm0000gn/T/garmin-audit-vnvx9cw1",
+  "live_socket_allowlist": [
+    "127.0.0.1:11434"
+  ],
+  "note": "Guardia Python para este evaluador; no es una frontera contra código nativo malicioso."
+}

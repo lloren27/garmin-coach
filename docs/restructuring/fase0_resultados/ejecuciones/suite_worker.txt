@@ -1,0 +1,25 @@
+................................................................................................................................................F......
+======================================================================
+FAIL: test_build_payload_imports_strava_activity_from_sixty_day_window (test_zepp_sync_payload.ZeppSyncPayloadTests.test_build_payload_imports_strava_activity_from_sixty_day_window)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/lloren27/Projects/garmin-coach/apps/sync-local/tests/test_zepp_sync_payload.py", line 251, in test_build_payload_imports_strava_activity_from_sixty_day_window
+    self.assertEqual(sync._strava_activity_date_range(), (date(2026, 7, 31), date(2026, 9, 29)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (datetime.date(2026, 8, 4), datetime.date(2026, 10, 3)) != (datetime.date(2026, 7, 31), datetime.date(2026, 9, 29))
+
+First differing element 0:
+datetime.date(2026, 8, 4)
+datetime.date(2026, 7, 31)
+
+- (datetime.date(2026, 8, 4), datetime.date(2026, 10, 3))
+?                      ^  ^                       ^^  ^
+
++ (datetime.date(2026, 7, 31), datetime.date(2026, 9, 29))
+?                      ^  ^^                       ^  ^^
+
+
+----------------------------------------------------------------------
+Ran 151 tests in 0.253s
+
+FAILED (failures=1)

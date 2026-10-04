@@ -1,0 +1,23 @@
+{
+  "resultado": "no evaluable",
+  "observado": [
+    {
+      "answer": "2026-10-03: recomiendo descanso.\nEsta recomendación no modifica el plan vigente; ajústala si aparecen molestias o cambia tu recuperación.\nGarmin (2026-10-03): duración: 6304 s; pulso medio: 144 lpm; pulso máximo: 165 lpm; distancia: 20,02 km.",
+      "calls": 2,
+      "rejected": false
+    },
+    {
+      "rejected": true,
+      "codes": [
+        "INVALID_STRUCTURED_OUTPUT"
+      ],
+      "calls": 2
+    }
+  ],
+  "motivo": "Contrato actual prohíbe answer; prueba rechazo estructural, no detección semántica. No se invoca worker/fallback exterior.",
+  "subcomprobacion": "Reparación acotada y rechazo del campo extra verificables.",
+  "id": "E12",
+  "seconds": 0.013,
+  "events": "{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 1, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_eb8b10e163ae4e8eb5b9a4dd097f7f75\", \"code\": \"INVALID_STRUCTURED_OUTPUT\", \"phase\": \"structure\", \"path\": \"$\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_repaired\", \"job\": null, \"attempt\": 2, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_eb8b10e163ae4e8eb5b9a4dd097f7f75\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 1, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_22101975113a4f44a835acfa6676948f\", \"code\": \"INVALID_STRUCTURED_OUTPUT\", \"phase\": \"structure\", \"path\": \"$\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 2, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_22101975113a4f44a835acfa6676948f\", \"code\": \"INVALID_STRUCTURED_OUTPUT\", \"phase\": \"structure\", \"path\": \"$\", \"severity\": \"retry_required\"}\n",
+  "fixture_sha256": "b905320a6c0dc8e66936581ce0a2e2f540e8662a247d3ae35f774b3aa7571346"
+}

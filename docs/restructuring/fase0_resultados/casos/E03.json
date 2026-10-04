@@ -1,0 +1,32 @@
+{
+  "id": "E03",
+  "capa": "contexto",
+  "now": "2026-10-03T22:00:00+02:00",
+  "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+  "estado_inicial": {
+    "extra_context": {
+      "recent_activities": [
+        {
+          "id": "synthetic-st1",
+          "source": "strava",
+          "date": "2026-10-03",
+          "started_at": "2026-10-03T08:00:00+02:00",
+          "sport": "running",
+          "km": 20.02,
+          "duration_s": 6304,
+          "avg_hr": 144,
+          "max_hr": 165
+        }
+      ]
+    }
+  },
+  "operaciones": [
+    "E03"
+  ],
+  "estado_final_esperado": "Conservar source=strava.",
+  "pregunta": "",
+  "debe": "Conservar source=strava.",
+  "no_debe": "",
+  "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+  "modo_modelo": "no aplica"
+}

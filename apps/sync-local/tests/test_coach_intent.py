@@ -1,5 +1,6 @@
 import unittest
-from datetime import date, datetime, timezone
+from collections import Counter
+from datetime import date, datetime, timedelta, timezone
 
 from garmin_sync.coach_intent import (
     ClarificationCode,
@@ -11,6 +12,7 @@ from garmin_sync.coach_intent import (
     InvalidDateError,
     resolve_dates,
     resolve_intent,
+    clarification_prompt,
 )
 
 
@@ -203,6 +205,17 @@ class IntentClassificationTests(unittest.TestCase):
         self.assertEqual(activity.selector, DateSelector.LATEST_ACTIVITY)
         self.assertEqual(training_day.selector, DateSelector.LATEST_TRAINING_DAY)
 
+    def test_plan_weekday_and_past_month_dates_follow_intent(self):
+        future_plan = self.resolve("qué toca el domingo")
+        past_plan = self.resolve("qué tocaba el 3 de octubre")
+        self.assertEqual(future_plan.advice_dates, (date(2026, 10, 11),))
+        self.assertEqual(past_plan.observed_dates, (date(2026, 10, 3),))
+
+    def test_latest_selector_with_explicit_date_is_clarified(self):
+        result = self.resolve("analiza mi última actividad de ayer")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(result.components[0].clarification_code, ClarificationCode.CONFLICTING_SCOPE)
+
     def test_plan_query_and_future_advice_have_distinct_date_scope(self):
         plan = self.resolve("qué toca mañana")
         recommendation = self.resolve("dime qué hacer mañana")
@@ -232,6 +245,22 @@ class IntentClassificationTests(unittest.TestCase):
         self.assertEqual(result.components[0].advice_dates, ())
         self.assertEqual(result.components[1].observed_dates, ())
         self.assertEqual(result.components[1].advice_dates, (date(2026, 10, 5),))
+
+    def test_modal_change_question_after_y_starts_a_separate_advice_clause(self):
+        result = self.resolve("analiza hoy y ¿debería cambiar la sesión de mañana?")
+        self.assertEqual(result.primary_intent, CoachIntent.MIXED)
+        self.assertEqual([item.intent for item in result.components], [
+            CoachIntent.ANALYZE_DAY, CoachIntent.RECOMMEND_NEXT,
+        ])
+        self.assertFalse(result.change_requested)
+
+    def test_comma_does_not_separate_context_from_its_question(self):
+        result = self.resolve(
+            "Con el sueño y pulso de hoy 2026-10-03, ¿estoy mejor recuperado que de costumbre?"
+        )
+        self.assertEqual(result.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(len(result.components), 1)
+        self.assertEqual(result.observed_dates, (date(2026, 10, 3), date(2026, 10, 4)))
 
     def test_analysis_and_change_form_separate_components(self):
         result = self.resolve("analiza y cambia el plan")
@@ -305,6 +334,110 @@ class IntentClassificationTests(unittest.TestCase):
         self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
         self.assertEqual(result.components[0].clarification_code, ClarificationCode.UNSUPPORTED_PARAPHRASE)
         self.assertNotIn(question, str(result))
+
+
+class ClarificationTests(unittest.TestCase):
+    NOW = datetime(2026, 10, 3, 22, 30, tzinfo=timezone.utc)
+
+    def resolve(self, question):
+        return resolve_intent(question, now=self.NOW)
+
+    def test_every_clarification_code_has_one_fixed_template(self):
+        questions = {
+            ClarificationCode.NO_SCOPE: "",
+            ClarificationCode.CONTRADICTORY_OPERATION: "cambia la sesión pero no modifiques la sesión",
+            ClarificationCode.UNSUPPORTED_PARAPHRASE: "la sesión morada",
+            ClarificationCode.INVALID_DATE: "analiza 31/02/2026",
+            ClarificationCode.MISSING_ADVICE_DATE: "dime qué hacer",
+            ClarificationCode.PAST_CHANGE_DATE: "cambia la sesión de ayer",
+            ClarificationCode.CONFLICTING_SCOPE: "analiza mi última actividad de ayer",
+        }
+        self.assertEqual(set(questions), set(ClarificationCode))
+
+        for code, question in questions.items():
+            with self.subTest(code=code):
+                result = self.resolve(question)
+                self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+                self.assertEqual(result.components[0].clarification_code, code)
+                self.assertEqual(result.components[0].clarification_template_key, code.value)
+                prompt = clarification_prompt(code)
+                self.assertTrue(prompt)
+                if question:
+                    self.assertNotIn(question, prompt)
+
+    def test_templates_reject_unknown_codes(self):
+        with self.assertRaises((TypeError, ValueError)):
+            clarification_prompt("no_scope")
+
+
+class IntentRegressionCorpusTests(unittest.TestCase):
+    NOW = datetime(2026, 10, 3, 22, 30, tzinfo=timezone.utc)
+    EVALUATION_NOW = datetime(2026, 10, 3, 22, 0, tzinfo=timezone(timedelta(hours=2)))
+
+    EVALUATION_PROMPTS = (
+        ("E01", "Valora lo que he hecho hoy 2026-10-03 frente al plan y dime qué toca después.", CoachIntent.MIXED),
+        ("E07", "¿He completado la sesión de hoy 2026-10-03?", CoachIntent.ANALYZE_DAY),
+        ("E08", "Analiza hoy 2026-10-03: ¿cómo encaja esta actividad en mi plan?", CoachIntent.ANALYZE_DAY),
+        ("E09", "Valora la carga conjunta de carrera, bici y fuerza de hoy 2026-10-03 y qué implica para mañana.", CoachIntent.MIXED),
+        ("E10", "Tengo molestia en el gemelo. Valora la sesión de calidad de mañana.", CoachIntent.CONSULT_PLAN),
+        ("E13", "Con el sueño y pulso de hoy 2026-10-03, ¿estoy mejor recuperado que de costumbre?", CoachIntent.ANALYZE_DAY),
+        ("E14", "Analiza mi entrenamiento de hoy", CoachIntent.ANALYZE_DAY),
+    )
+
+    AUTHORED_PROMPTS = (
+        ("Valora lo que he hecho hoy", CoachIntent.ANALYZE_DAY),
+        ("¿Qué tal me fue ayer?", CoachIntent.ANALYZE_DAY),
+        ("¿Cómo me salió el entreno del domingo?", CoachIntent.ANALYZE_DAY),
+        ("Revisa la salida del martes pasado", CoachIntent.ANALYZE_DAY),
+        ("Analiza mi última actividad", CoachIntent.ANALYZE_ACTIVITY),
+        ("Repasa mi último día de entrenamiento", CoachIntent.ANALYZE_DAY),
+        ("¿Qué toca mañana?", CoachIntent.CONSULT_PLAN),
+        ("¿Qué tocaba ayer?", CoachIntent.CONSULT_PLAN),
+        ("Dime qué hacer mañana", CoachIntent.RECOMMEND_NEXT),
+        ("¿Qué debería hacer el jueves?", CoachIntent.RECOMMEND_NEXT),
+        ("¿Debería cambiar la sesión del viernes?", CoachIntent.RECOMMEND_NEXT),
+        ("Cambia la sesión de mañana", CoachIntent.REQUEST_CHANGE),
+        ("Modifica el plan", CoachIntent.REQUEST_CHANGE),
+        ("No cambies el plan, analiza hoy", CoachIntent.ANALYZE_DAY),
+        ("Analiza hoy y dime qué hacer mañana", CoachIntent.MIXED),
+        ("Analiza ayer y hoy", CoachIntent.ANALYZE_DAY),
+        ("¿Cómo fue lo del domingo?", CoachIntent.ANALYZE_DAY),
+        ("Cambia de ritmo", CoachIntent.CLARIFY),
+        ("Cambia las zapatillas", CoachIntent.CLARIFY),
+        ("Dime qué hacer", CoachIntent.CLARIFY),
+        ("Esta mañana corrí", CoachIntent.CLARIFY),
+        ("¿Qué tengo mañana?", CoachIntent.CLARIFY),
+    )
+
+    def test_evaluation_and_authored_prompts_match_reviewed_intent_outcomes(self):
+        corpus = tuple((case_id, text, expected) for case_id, text, expected in self.EVALUATION_PROMPTS)
+        corpus += tuple((f"manual-{index:02d}", text, expected)
+                        for index, (text, expected) in enumerate(self.AUTHORED_PROMPTS, 1))
+        clarify_count = 0
+        component_clarify_count = 0
+        outcome_counts = Counter()
+        for case_id, question, expected in corpus:
+            with self.subTest(case_id=case_id):
+                now = self.EVALUATION_NOW if case_id.startswith("E") else self.NOW
+                result = resolve_intent(question, now=now)
+                self.assertEqual(result.primary_intent, expected)
+                self.assertTrue(result.components)
+                outcome_counts[result.primary_intent.value] += 1
+                if expected is not CoachIntent.REQUEST_CHANGE:
+                    self.assertFalse(result.change_requested)
+                if expected is CoachIntent.CLARIFY:
+                    clarify_count += 1
+                component_clarify_count += sum(
+                    component.intent is CoachIntent.CLARIFY for component in result.components
+                )
+        self.assertEqual(clarify_count, 5)
+        self.assertEqual(component_clarify_count, 6)
+        print(
+            f"\nIntent corpus: {dict(sorted(outcome_counts.items()))}; "
+            f"fully clarified={clarify_count}/{len(corpus)} "
+            f"({clarify_count / len(corpus):.1%}); queries containing a clarify component="
+            f"{component_clarify_count}/{len(corpus)}"
+        )
 
 
 if __name__ == "__main__":

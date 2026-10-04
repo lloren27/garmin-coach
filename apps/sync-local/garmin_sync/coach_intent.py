@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from enum import Enum
 import re
 import unicodedata
+from types import MappingProxyType
 from zoneinfo import ZoneInfo
 
 
@@ -32,6 +33,25 @@ class ClarificationCode(str, Enum):
     INVALID_DATE = "invalid_date"
     MISSING_ADVICE_DATE = "missing_advice_date"
     PAST_CHANGE_DATE = "past_change_date"
+    CONFLICTING_SCOPE = "conflicting_scope"
+
+
+CLARIFICATION_TEMPLATES = MappingProxyType({
+    ClarificationCode.NO_SCOPE: "¿Qué día o actividad quieres consultar?",
+    ClarificationCode.CONTRADICTORY_OPERATION: "¿Quieres analizar la sesión o solicitar un cambio?",
+    ClarificationCode.UNSUPPORTED_PARAPHRASE: "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+    ClarificationCode.INVALID_DATE: "No reconozco esa fecha. ¿Puedes indicar una fecha válida?",
+    ClarificationCode.MISSING_ADVICE_DATE: "¿Para qué día quieres una recomendación?",
+    ClarificationCode.PAST_CHANGE_DATE: "Esa sesión ya pasó. ¿Quieres consultar esa fecha o pedir un cambio futuro?",
+    ClarificationCode.CONFLICTING_SCOPE: "¿Quieres consultar la última actividad o las actividades de una fecha concreta?",
+})
+
+
+def clarification_prompt(code: ClarificationCode) -> str:
+    """Return a fixed clarification prompt without reflecting user text."""
+    if not isinstance(code, ClarificationCode):
+        raise TypeError("code must be a ClarificationCode")
+    return CLARIFICATION_TEMPLATES[code]
 
 
 class DateResolutionScope(str, Enum):
@@ -200,10 +220,10 @@ def resolve_dates(
 # phrasings deliberately flow to clarification instead of widening permission.
 _INTENT_SIGNAL_PATTERNS = (
     ("explicit_change", r"\b(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b"),
-    ("analysis_command", r"\b(?:analiza|analizar|analices|revisa|revisar|repasa|repasar)\b"),
-    ("retrospective_question", r"\b(?:como\s+(?:fue|me\s+fue|salio)|que\s+tal|que\s+hice)\b"),
+    ("analysis_command", r"\b(?:analiza|analizar|analices|revisa|revisar|repasa|repasar|valora|valorar)\b"),
+    ("retrospective_question", r"\b(?:como\s+(?:fue|me\s+fue|salio|me\s+salio)|que\s+tal|que\s+hice|he\s+completado|estoy\s+(?:mejor|peor)\s+recuperado)\b"),
     ("plan_question", r"\bque\s+(?:me\s+)?(?:toca|tocaba|tocara|corresponde)\b|\bsesion\s+prevista\b"),
-    ("recommendation", r"\b(?:que\s+(?:debo\s+|deberia\s+|puedo\s+)?hacer|dime\s+que\s+hacer|como\s+entreno|que\s+me\s+recomiendas|deberia\s+cambiar)\b"),
+    ("recommendation", r"\b(?:que\s+(?:hago|debo\s+|deberia\s+|puedo\s+)?hacer|dime\s+que\s+(?:hacer|hago)|como\s+entreno|que\s+me\s+recomiendas|deberia\s+cambiar|que\s+implica)\b"),
 )
 _PLAN_OBJECT = re.compile(r"\b(?:plan|sesion|entrenamiento|entreno|tirada|carrera)\b")
 _NEGATED_CHANGE = re.compile(r"\bno\s+(?:cambies|modifiques|muevas|quites|anadas|canceles|reprogrames)\b")
@@ -213,7 +233,7 @@ _POSITIVE_CHANGE = re.compile(
     r"\b(?:quiero|necesito)\s+(?:cambiar|modificar|mover|quitar|anadir|cancelar|reprogramar)\b"
 )
 _ADVICE_MODAL = re.compile(r"\b(?:deberia|debo|conviene)\b")
-_ANALYSIS_VERB = re.compile(r"\b(?:analiza|analizar|revisa|revisar|repasa|repasar)\b")
+_ANALYSIS_VERB = re.compile(r"\b(?:analiza|analizar|revisa|revisar|repasa|repasar|valora|valorar)\b")
 _RETROSPECTIVE_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[2][1])
 _PLAN_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[3][1])
 _RECOMMENDATION = re.compile(_INTENT_SIGNAL_PATTERNS[4][1])
@@ -221,27 +241,45 @@ _LATEST_ACTIVITY = re.compile(r"\b(?:ultima\s+actividad|actividad\s+mas\s+recien
 _LATEST_TRAINING_DAY = re.compile(r"\b(?:ultimo\s+dia\s+de\s+entrenamiento|ultimo\s+dia\s+que\s+entrene)\b")
 _CHANGE_START = re.compile(r"^(?:no\s+)?(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b")
 _RECOGNIZED_CLAUSE_STARTS = (
-    re.compile(r"^(?:no\s+)?(?:analiza|analizar|analices|revisa|revisar|repasa|repasar)\b"),
+    re.compile(r"^(?:no\s+)?(?:analiza|analizar|analices|revisa|revisar|repasa|repasar|valora|valorar)\b"),
     re.compile(r"^(?:no\s+)?(?:dime|consulta|revisa)\b"),
     re.compile(r"^(?:no\s+)?que\s+(?:me\s+)?(?:toca|tocaba|tocara|debo|deberia|puedo)\b"),
     re.compile(r"^(?:no\s+)?(?:como\s+(?:fue|me\s+fue)|que\s+tal|que\s+hice)\b"),
+    re.compile(r"^(?:no\s+)?(?:que\s+implica|he\s+completado|estoy\s+(?:mejor|peor)\s+recuperado)\b"),
+    re.compile(r"^(?:deberia|debo|conviene)\b"),
     _CHANGE_START,
 )
 
 
 def _starts_recognized_clause(text: str) -> bool:
-    return any(pattern.search(text.lstrip()) for pattern in _RECOGNIZED_CLAUSE_STARTS)
+    return any(pattern.search(text.lstrip(" \t¿¡\"'")) for pattern in _RECOGNIZED_CLAUSE_STARTS)
+
+
+def _contains_intent_signal(text: str) -> bool:
+    normalized = _normalize(text)
+    return any((
+        _ANALYSIS_VERB.search(normalized),
+        _NEGATED_ANALYSIS.search(normalized),
+        _POSITIVE_CHANGE.search(normalized),
+        _NEGATED_CHANGE.search(normalized),
+        _PLAN_QUESTION.search(normalized),
+        _RECOMMENDATION.search(normalized),
+        _RETROSPECTIVE_QUESTION.search(normalized),
+        _LATEST_ACTIVITY.search(normalized),
+        _LATEST_TRAINING_DAY.search(normalized),
+    ))
 
 
 def _split_intent_clauses(text: str) -> tuple[str, ...]:
-    """Split at comma/y only if the following segment starts an intent cue."""
+    """Split at `y` on a new intent cue; split comma only between intent clauses."""
     separators = list(re.finditer(r",|\by\b", text))
     clauses: list[str] = []
     start = 0
     for separator in separators:
         right = text[separator.end():].strip()
-        if right and _starts_recognized_clause(right):
-            left = text[start:separator.start()].strip()
+        left = text[start:separator.start()].strip()
+        comma_has_two_intents = separator.group(0) != "," or _contains_intent_signal(left)
+        if right and comma_has_two_intents and _starts_recognized_clause(right):
             if left:
                 clauses.append(left)
             start = separator.end()
@@ -315,10 +353,21 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
     selector = DateSelector.BY_DATE
     if _LATEST_ACTIVITY.search(normalized):
         selector = DateSelector.LATEST_ACTIVITY
-        return _make_component(CoachIntent.ANALYZE_ACTIVITY, clause, now, selector)
-    if _LATEST_TRAINING_DAY.search(normalized):
+    elif _LATEST_TRAINING_DAY.search(normalized):
         selector = DateSelector.LATEST_TRAINING_DAY
-        return _make_component(CoachIntent.ANALYZE_DAY, clause, now, selector)
+    if selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
+        try:
+            explicit_scope = resolve_dates(clause, now=now, scope=DateResolutionScope.OBSERVED)
+        except InvalidDateError:
+            return _clarify(ClarificationCode.INVALID_DATE)
+        if explicit_scope:
+            return _clarify(ClarificationCode.CONFLICTING_SCOPE)
+        latest_intent = (
+            CoachIntent.ANALYZE_ACTIVITY
+            if selector is DateSelector.LATEST_ACTIVITY
+            else CoachIntent.ANALYZE_DAY
+        )
+        return _make_component(latest_intent, clause, now, selector)
 
     if positive_change and has_plan_object and not _ADVICE_MODAL.search(normalized):
         return _make_component(CoachIntent.REQUEST_CHANGE, clause, now)
@@ -329,7 +378,10 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
         return _clarify(ClarificationCode.INVALID_DATE)
     today = now.astimezone(_MADRID).date()
     retrospective_dates = any(day <= today for day in dates_for_hint)
-    if _ANALYSIS_VERB.search(normalized) or (_RETROSPECTIVE_QUESTION.search(normalized) and retrospective_dates):
+    analysis_signal = _ANALYSIS_VERB.search(normalized) or (_RETROSPECTIVE_QUESTION.search(normalized) and retrospective_dates)
+    if analysis_signal:
+        if has_plan_object and any(day > today for day in dates_for_hint):
+            return _make_component(CoachIntent.CONSULT_PLAN, clause, now)
         return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
     if _PLAN_QUESTION.search(normalized) or re.search(r"\b(?:plan|sesion\s+prevista)\b", normalized):
         return _make_component(CoachIntent.CONSULT_PLAN, clause, now)

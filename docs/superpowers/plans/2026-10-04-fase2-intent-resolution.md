@@ -32,11 +32,11 @@
 | Acción futura (`qué hacer`, `siguiente sesión`, `cómo entreno`) sin objeto de plan explícito | `recommend_next` si existe fecha de consejo; si no, `clarify` |
 | Análisis y cambio en la misma consulta | `mixed` con componentes separados; no es contradicción |
 | Afirmar y negar la misma operación en una cláusula (`cambia y no cambies la sesión`) | `clarify` con código de contradicción |
-| Paráfrasis sin señal reconocible (`¿cómo fue lo del domingo?`) | `clarify`/pista no resuelta; nunca `request_change` |
+| Paráfrasis sin señal reconocible (`la sesión morada del domingo`) | `clarify`/pista no resuelta; nunca `request_change` |
 
 ## Clause and date-scope semantics
 
-- Split at `y` only when the following text begins a recognized intent verb/phrase (`dime`, `analiza`, `consulta`, `cambia`, etc.). A conjunction between date expressions does not split: «analiza ayer y hoy» is one analysis component with two observed dates.
+- Split at `y` only when the following text begins a recognized intent verb/phrase (`dime`, `analiza`, `consulta`, `cambia`, etc.). A conjunction between date expressions does not split: «analiza ayer y hoy» is one analysis component with two observed dates. A comma separates clauses only when both sides contain intent signals; this keeps contextual lead-ins attached to their question.
 - Negation applies only inside its clause and never propagates across a recognized clause boundary. A date belongs only to the clause containing it; clauses do not borrow dates from neighbors.
 - `primary_intent` is derived: one component returns its intent; more than one distinct intent returns `MIXED`; repeated components with the same intent retain that intent.
 - Date ownership: retrospective analysis dates go to `observed_dates`; future `CONSULT_PLAN` and `REQUEST_CHANGE` dates go to `advice_dates`; past plan questions such as «qué tocaba ayer» use `observed_dates`; recommendations use `advice_dates`.
@@ -53,7 +53,7 @@
 
 ## Visible signal table
 
-Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate from the clause/date mechanics. Include recognized retrospective, plan, recommendation and explicit change patterns, each with examples and precedence. A general `retrospective expression + date => analysis hint` rule recognizes forms such as «qué tal me salió ayer»; unsupported wording such as «¿cómo fue lo del domingo?» remains available to the clarification path unless the general retrospective pattern applies.
+Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate from the clause/date mechanics. Include recognized retrospective, plan, recommendation and explicit change patterns, each with examples and precedence. A general `retrospective expression + past/current date => analysis hint` rule recognizes forms such as «qué tal me salió ayer» and «¿cómo fue lo del domingo?». Unknown wording such as «la sesión morada del domingo» remains available to the clarification path.
 
 ## Date semantics
 
@@ -78,7 +78,7 @@ Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate
 **Interfaces:**
 - `CoachIntent`: `ANALYZE_ACTIVITY`, `ANALYZE_DAY`, `CONSULT_PLAN`, `RECOMMEND_NEXT`, `REQUEST_CHANGE`, `MIXED`, `CLARIFY`.
 - `DateSelector`: `BY_DATE`, `LATEST_ACTIVITY`, `LATEST_TRAINING_DAY`.
-- `ClarificationCode`: fixed codes including `NO_SCOPE`, `CONTRADICTORY_OPERATION`, `UNSUPPORTED_PARAPHRASE`, `INVALID_DATE`, `MISSING_ADVICE_DATE`, `PAST_CHANGE_DATE`.
+- `ClarificationCode`: fixed codes including `NO_SCOPE`, `CONTRADICTORY_OPERATION`, `UNSUPPORTED_PARAPHRASE`, `INVALID_DATE`, `MISSING_ADVICE_DATE`, `PAST_CHANGE_DATE`, `CONFLICTING_SCOPE`.
 - `IntentComponent`: frozen dataclass with `intent`, `selector`, `observed_dates: tuple[date, ...]`, `advice_dates: tuple[date, ...]`, `clarification_code: ClarificationCode | None`; its fixed `clarification_template_key` is derived from that code.
 - `IntentResolution`: frozen dataclass with ordered `components`; `primary_intent`, `selector`, `observed_dates`, `advice_dates` and `change_requested` are read-only properties calculated from components. One component yields its intent; several distinct intents yield `MIXED`. `change_requested` is true only for an explicit `REQUEST_CHANGE` component.
 - `IntentComponent` validates at construction: `CLARIFY` iff a `ClarificationCode` exists, and `LATEST_ACTIVITY`/`LATEST_TRAINING_DAY` require empty date tuples.
@@ -89,7 +89,7 @@ Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate
 
 - [ ] **Step 2: Run the focused tests and verify the missing contract fails**
 
-  Run: `cd apps/sync-local && .venv/bin/python -m unittest tests.test_coach_intent -v`
+  Run: `cd apps/sync-local && python3 -m unittest tests.test_coach_intent -v`
 
   Expected: FAIL because `garmin_sync.coach_intent` and its public types do not exist.
 
@@ -99,7 +99,7 @@ Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate
 
 - [ ] **Step 4: Run the focused tests and verify they pass**
 
-  Run: `cd apps/sync-local && .venv/bin/python -m unittest tests.test_coach_intent -v`
+  Run: `cd apps/sync-local && python3 -m unittest tests.test_coach_intent -v`
 
 - [ ] **Step 5: Commit cycle 1**
 
@@ -154,11 +154,11 @@ Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate
 
 - [ ] **Step 1: Write failing classification tests**
 
-  Cover analysis (`analiza mi entrenamiento de hoy`, `qué tal me salió ayer`), latest selectors, plan (`qué toca mañana`), past plan (`qué tocaba ayer`), advice (`dime qué hacer mañana`), no-date advice (`dime qué hacer` → `MISSING_ADVICE_DATE`), explicit change proposals, `analiza hoy y dime qué hacer mañana`, `analiza y cambia el plan`, `no cambies el plan, analiza hoy`, `no analices, dime qué toca`, and retrospective `¿cómo fue lo del domingo?` → `ANALYZE_DAY` under the general retrospective-expression-plus-date rule. Use `la sesión morada del domingo` as an unsupported phrase → `CLARIFY`/`UNSUPPORTED_PARAPHRASE`. Add non-mutating negatives: `¿debería cambiar la sesión de mañana?`, `cambiar de ritmo`, and `cambiar de zapatillas` never produce `REQUEST_CHANGE`. Assert `analiza hoy` has exactly one component; `analiza ayer y hoy` has one analysis component and both observed dates; `no analices, dime qué toca` applies negation only to the first clause; mixed clauses do not borrow dates from one another. Assert plan beats generic advice for `qué toca`, and future advice dates are never copied into observed dates.
+  Cover analysis (`analiza mi entrenamiento de hoy`, `qué tal me salió ayer`), latest selectors, plan (`qué toca mañana`), past plan (`qué tocaba ayer`), advice (`dime qué hacer mañana`), no-date advice (`dime qué hacer` → `MISSING_ADVICE_DATE`), explicit change proposals, `analiza hoy y dime qué hacer mañana`, `analiza y cambia el plan`, `no cambies el plan, analiza hoy`, `no analices, dime qué toca`, and retrospective `¿cómo fue lo del domingo?` → `ANALYZE_DAY` under the general retrospective-expression-plus-date rule. Use `la sesión morada del domingo` as an unsupported phrase → `CLARIFY`/`UNSUPPORTED_PARAPHRASE`. Add non-mutating negatives: `¿debería cambiar la sesión de mañana?`, `cambiar de ritmo`, and `cambiar de zapatillas` never produce `REQUEST_CHANGE`. Assert `analiza hoy` has exactly one component; `analiza ayer y hoy` has one analysis component and both observed dates; `no analices, dime qué toca` applies negation only to the first clause; a modal advice question after `y` starts a distinct component; contextual lead-in before a comma stays attached to its question; mixed clauses do not borrow dates from one another. Assert plan beats generic advice for `qué toca`, and future advice dates are never copied into observed dates.
 
 - [ ] **Step 2: Run classification tests and verify they fail**
 
-  Run: `cd apps/sync-local && .venv/bin/python -m unittest tests.test_coach_intent.IntentClassificationTests -v`
+  Run: `cd apps/sync-local && python3 -m unittest tests.test_coach_intent.IntentClassificationTests -v`
 
   Expected: FAIL because only the contract/date skeleton exists.
 
@@ -168,7 +168,7 @@ Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate
 
 - [ ] **Step 4: Run classification tests and verify they pass**
 
-  Run: `cd apps/sync-local && .venv/bin/python -m unittest tests.test_coach_intent.IntentClassificationTests -v`
+  Run: `cd apps/sync-local && python3 -m unittest tests.test_coach_intent.IntentClassificationTests -v`
 
 - [ ] **Step 5: Commit cycle 3**
 
@@ -189,7 +189,7 @@ Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate
 
 - [ ] **Step 2: Run clarification tests and verify they fail**
 
-  Run: `cd apps/sync-local && .venv/bin/python -m unittest tests.test_coach_intent.ClarificationTests -v`
+  Run: `cd apps/sync-local && python3 -m unittest tests.test_coach_intent.ClarificationTests -v`
 
   Expected: FAIL until fixed codes/templates are wired into all clarification paths.
 
@@ -197,13 +197,13 @@ Keep signal patterns in a named, reviewable table in `coach_intent.py`, separate
 
   Keep `clarification_code` machine-readable and map it to a fixed, non-sensitive prompt at the presentation boundary. Do not persist or interpolate the original question. The applying backend remains responsible for enforcing authorization before any plan persistence; integration verification is assigned to the later E15 coverage in Fase 2.
 
-  Run a handwritten, non-log regression corpus through the resolver: all 17 evaluation case prompts (question text only, with fixtures checked for privacy before copying) plus about 20 authored phrases representative of normal Spanish use. Record per-class outcomes and the `clarify` rate in test output or a checked-in test summary; this corpus guides coverage and does not loosen the conservative change-permission rule. Add a clear regression that «analiza hoy» resolves to one component. The later Fase 2 integration plan owns the E15 backend authorization proof that no `REQUEST_CHANGE` path can persist a plan without the authorized proposal/approval flow.
+  Run a handwritten, non-log regression corpus through the resolver: use each non-empty `pregunta` field among the Fase 0 evaluation fixtures (seven text questions; the others are ingestion/flow cases without natural-language questions) plus about 20 authored phrases representative of normal Spanish use. Inspect fixture provenance before copying question text. Record per-class outcomes and the `clarify` rate in the test summary; the current corpus has 5/29 fully clarified queries (17.2%) and one additional mixed query with a clarification component. This corpus guides coverage and does not loosen the conservative change-permission rule. Add a clear regression that «analiza hoy» resolves to one component. The later Fase 2 integration plan owns the E15 backend authorization proof that no `REQUEST_CHANGE` path can persist a plan without the authorized proposal/approval flow.
 
 - [ ] **Step 4: Run the focused and full worker suites**
 
-  Run: `cd apps/sync-local && .venv/bin/python -m unittest tests.test_coach_intent -v`
+  Run: `cd apps/sync-local && python3 -m unittest tests.test_coach_intent -v`
 
-  Then run: `cd apps/sync-local && .venv/bin/python -m unittest discover -s tests -v`
+  Then run: `cd apps/sync-local && python3 -m unittest discover -s tests -v`
 
   Expected: all new and existing tests pass.
 

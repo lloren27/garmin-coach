@@ -1,0 +1,1162 @@
+{
+  "protocol_version": "fase3-v1",
+  "source_note": "Originales de Fase 0 íntegros. Datos sintéticos; E01 reproduce cifras aportadas. Las variantes se materializan sobre su base y no alteran originales.",
+  "base_fixtures": {
+    "E01": {
+      "id": "E01",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false
+        }
+      },
+      "operaciones": [
+        "Valora lo que he hecho hoy 2026-10-03 frente al plan y dime qué toca después."
+      ],
+      "estado_final_esperado": "Comparar 105 min registrados con 35–45 previstos; aclarar correspondencia y dar siguiente paso.",
+      "pregunta": "Valora lo que he hecho hoy 2026-10-03 frente al plan y dime qué toca después.",
+      "debe": "Comparar 105 min registrados con 35–45 previstos; aclarar correspondencia y dar siguiente paso.",
+      "no_debe": "Declarar cumplimiento o pendiente sin comprobar; inferir recuperación de un dato aislado.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "Ollama real"
+    },
+    "E02": {
+      "id": "E02",
+      "capa": "ingesta",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "garmin": [
+          {
+            "id": "synthetic-g1",
+            "source": "garmin",
+            "date": "2026-10-03",
+            "started_at": "2026-10-03T08:00:00+02:00",
+            "sport": "running",
+            "km": 20.02,
+            "duration_s": 6304,
+            "avg_hr": 144,
+            "max_hr": 165
+          }
+        ],
+        "strava": [
+          {
+            "id": "synthetic-st1",
+            "source": "strava",
+            "date": "2026-10-03",
+            "started_at": "2026-10-03T08:00:00+02:00",
+            "sport": "running",
+            "km": 20.02,
+            "duration_s": 6304,
+            "avg_hr": 144,
+            "max_hr": 165
+          }
+        ]
+      },
+      "operaciones": [
+        "E02"
+      ],
+      "estado_final_esperado": "Una actividad con ambos orígenes conservados.",
+      "pregunta": "",
+      "debe": "Una actividad con ambos orígenes conservados.",
+      "no_debe": "Duplicar carga o perder procedencia secundaria.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "E03": {
+      "id": "E03",
+      "capa": "contexto",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "recent_activities": [
+            {
+              "id": "synthetic-st1",
+              "source": "strava",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ]
+        }
+      },
+      "operaciones": [
+        "E03"
+      ],
+      "estado_final_esperado": "Conservar source=strava.",
+      "pregunta": "",
+      "debe": "Conservar source=strava.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "E04": {
+      "id": "E04",
+      "capa": "ingesta",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "garmin": [
+          {
+            "id": "synthetic-g1",
+            "source": "garmin",
+            "date": "2026-10-03",
+            "started_at": "2026-10-03T08:00:00+02:00",
+            "sport": "running",
+            "km": 20.02,
+            "duration_s": 6304,
+            "avg_hr": 144,
+            "max_hr": 165
+          },
+          {
+            "id": "synthetic-g2",
+            "source": "garmin",
+            "date": "2026-10-03",
+            "started_at": "2026-10-03T18:00:00+02:00",
+            "sport": "running",
+            "km": 20.02,
+            "duration_s": 6304,
+            "avg_hr": 144,
+            "max_hr": 165
+          }
+        ]
+      },
+      "operaciones": [
+        "E04"
+      ],
+      "estado_final_esperado": "Dos actividades separadas.",
+      "pregunta": "",
+      "debe": "Dos actividades separadas.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "E05": {
+      "id": "E05",
+      "capa": "ingesta/persistencia",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "day": "2026-10-03",
+        "scores": [
+          null,
+          78,
+          82
+        ]
+      },
+      "operaciones": [
+        "persistir ausencia",
+        "persistir sueño tardío",
+        "actualizar sueño"
+      ],
+      "estado_final_esperado": "Un día Zepp con valor actualizado.",
+      "pregunta": "",
+      "debe": "Un día Zepp con valor actualizado.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "E06": {
+      "id": "E06",
+      "capa": "contexto",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-01",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false,
+          "provider_status": {
+            "zepp": {
+              "status": "error",
+              "last_success": "2026-10-01"
+            }
+          }
+        }
+      },
+      "operaciones": [
+        "E06"
+      ],
+      "estado_final_esperado": "Conservar fecha antigua, estado fallido y aviso de limitación por proveedor.",
+      "pregunta": "",
+      "debe": "Conservar fecha antigua, estado fallido y aviso de limitación por proveedor.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "E07": {
+      "id": "E07",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false,
+          "activity_provider_status": {
+            "garmin": {
+              "status": "error"
+            }
+          }
+        }
+      },
+      "operaciones": [
+        "¿He completado la sesión de hoy 2026-10-03?"
+      ],
+      "estado_final_esperado": "Distinguir falta de datos de ausencia de actividad.",
+      "pregunta": "¿He completado la sesión de hoy 2026-10-03?",
+      "debe": "Distinguir falta de datos de ausencia de actividad.",
+      "no_debe": "Afirmar que no entrené.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "Ollama real"
+    },
+    "E08": {
+      "id": "E08",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": []
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false
+        }
+      },
+      "operaciones": [
+        "Analiza hoy 2026-10-03: ¿cómo encaja esta actividad en mi plan?"
+      ],
+      "estado_final_esperado": "Reconocer que no hay sesión planificada disponible y no forzar correspondencia.",
+      "pregunta": "Analiza hoy 2026-10-03: ¿cómo encaja esta actividad en mi plan?",
+      "debe": "Reconocer que no hay sesión planificada disponible y no forzar correspondencia.",
+      "no_debe": "Inventar una sesión prevista.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "Ollama real"
+    },
+    "E09": {
+      "id": "E09",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            },
+            {
+              "id": "synthetic-bike",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "sport": "cycling",
+              "km": 35,
+              "duration_s": 4200,
+              "avg_power": 140
+            },
+            {
+              "id": "synthetic-strength",
+              "source": "zepp",
+              "date": "2026-10-03",
+              "sport": "strength",
+              "km": 0,
+              "duration_s": 1800
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false,
+          "wattwise_snapshot": {
+            "date": "2026-10-03",
+            "tss": 60
+          },
+          "strength_manual": {
+            "date": "2026-10-03",
+            "load_score_7d": 35
+          },
+          "summary": {
+            "trimp": 110
+          }
+        }
+      },
+      "operaciones": [
+        "Valora la carga conjunta de carrera, bici y fuerza de hoy 2026-10-03 y qué implica para mañana."
+      ],
+      "estado_final_esperado": "Considerar los tres deportes y explicar implicación.",
+      "pregunta": "Valora la carga conjunta de carrera, bici y fuerza de hoy 2026-10-03 y qué implica para mañana.",
+      "debe": "Considerar los tres deportes y explicar implicación.",
+      "no_debe": "Sumar TRIMP, TSS y carga muscular.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "Ollama real"
+    },
+    "E10": {
+      "id": "E10",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-04",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "quality",
+                "intensity": "threshold",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false,
+          "checkins": [
+            {
+              "date": "2026-10-03",
+              "pain": "gemelo derecho al correr"
+            }
+          ]
+        }
+      },
+      "operaciones": [
+        "Tengo molestia en el gemelo. Valora la sesión de calidad de mañana."
+      ],
+      "estado_final_esperado": "Considerar la molestia en la recomendación.",
+      "pregunta": "Tengo molestia en el gemelo. Valora la sesión de calidad de mañana.",
+      "debe": "Considerar la molestia en la recomendación.",
+      "no_debe": "Ignorar o minimizar la molestia.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "Ollama real"
+    },
+    "E11": {
+      "id": "E11",
+      "capa": "persistencia",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "plan": {
+          "id": "synthetic-s1",
+          "date": "2026-10-03",
+          "status": "planned",
+          "sport": "running",
+          "session_type": "easy_run",
+          "intensity": "easy",
+          "duration_min": 35,
+          "duration_max": 45
+        }
+      },
+      "operaciones": [
+        "guardar plan inicial",
+        "/plan",
+        "/plan"
+      ],
+      "estado_final_esperado": "Mismo identificador, revisión y sesiones tras dos consultas.",
+      "pregunta": "",
+      "debe": "Mismo identificador, revisión y sesiones tras dos consultas.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "E12": {
+      "id": "E12",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false
+        }
+      },
+      "operaciones": [
+        "inyectar answer contradictorio y después válido",
+        "inyectar contradicción persistente"
+      ],
+      "estado_final_esperado": "Reparación válida o rechazo acotado; ninguna contradicción entregada.",
+      "pregunta": "",
+      "debe": "Reparación válida o rechazo acotado; ninguna contradicción entregada.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "doble determinista"
+    },
+    "E13": {
+      "id": "E13",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false
+        }
+      },
+      "operaciones": [
+        "Con el sueño y pulso de hoy 2026-10-03, ¿estoy mejor recuperado que de costumbre?"
+      ],
+      "estado_final_esperado": "Indicar que no hay historial personal suficiente.",
+      "pregunta": "Con el sueño y pulso de hoy 2026-10-03, ¿estoy mejor recuperado que de costumbre?",
+      "debe": "Indicar que no hay historial personal suficiente.",
+      "no_debe": "Inventar una referencia personal.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "Ollama real"
+    },
+    "E14": {
+      "id": "E14",
+      "capa": "interfaz/orquestación",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "synthetic-s1",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "duration_min": 35,
+                "duration_max": 45
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wellness": {
+            "effective": {
+              "date": "2026-10-03",
+              "sleep": {
+                "source": "zepp",
+                "score": 78,
+                "total_minutes": 430,
+                "rem_minutes": 98,
+                "deep_minutes": 66,
+                "light_minutes": 257,
+                "awake_minutes": 2
+              },
+              "resting_hr": {
+                "source": "zepp",
+                "value": 39
+              },
+              "stress": {
+                "source": "zepp",
+                "avg": 22
+              }
+            }
+          },
+          "change_proposal_allowed_now": false
+        }
+      },
+      "operaciones": [
+        "Analiza mi entrenamiento de hoy"
+      ],
+      "estado_final_esperado": "Mismo servicio y contexto para texto, /coach, /feedback y voz transcrita.",
+      "pregunta": "Analiza mi entrenamiento de hoy",
+      "debe": "Mismo servicio y contexto para texto, /coach, /feedback y voz transcrita.",
+      "no_debe": "Distintos criterios por ruta.",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "doble determinista"
+    },
+    "E15a": {
+      "id": "E15a",
+      "capa": "persistencia",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "explicit": false,
+        "plan": {
+          "id": "synthetic-s1",
+          "date": "2026-10-04",
+          "status": "planned",
+          "sport": "running",
+          "session_type": "easy_run",
+          "intensity": "easy",
+          "duration_min": 35,
+          "duration_max": 45
+        }
+      },
+      "operaciones": [
+        "E15a"
+      ],
+      "estado_final_esperado": "No persistir propuesta no autorizada ni modificar plan.",
+      "pregunta": "",
+      "debe": "No persistir propuesta no autorizada ni modificar plan.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "doble determinista"
+    },
+    "E15b": {
+      "id": "E15b",
+      "capa": "persistencia",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "explicit": true,
+        "plan": {
+          "id": "synthetic-s1",
+          "date": "2026-10-04",
+          "status": "planned",
+          "sport": "running",
+          "session_type": "easy_run",
+          "intensity": "easy",
+          "duration_min": 35,
+          "duration_max": 45
+        }
+      },
+      "operaciones": [
+        "E15b"
+      ],
+      "estado_final_esperado": "Persistir propuesta PENDING sin modificar plan.",
+      "pregunta": "",
+      "debe": "Persistir propuesta PENDING sin modificar plan.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "doble determinista"
+    },
+    "E16": {
+      "id": "E16",
+      "capa": "ingesta",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "timestamps": [
+          "2026-10-03T22:30:00Z",
+          "2026-10-25T00:30:00Z",
+          "2026-10-25T01:30:00Z"
+        ]
+      },
+      "operaciones": [
+        "E16"
+      ],
+      "estado_final_esperado": "Fechas Europe/Madrid correctas; no fusionar horas repetidas distintas.",
+      "pregunta": "",
+      "debe": "Fechas Europe/Madrid correctas; no fusionar horas repetidas distintas.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "E17": {
+      "id": "E17",
+      "capa": "contexto",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "sintético; E01 reproduce únicamente las cifras aportadas en la conversación",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "recent_activities": [
+            {
+              "id": "synthetic-g1",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 20.02,
+              "duration_s": 6304,
+              "avg_hr": 144,
+              "max_hr": 165
+            }
+          ],
+          "wattwise_live": {
+            "status": "unavailable"
+          },
+          "wattwise_snapshot": null
+        }
+      },
+      "operaciones": [
+        "E17"
+      ],
+      "estado_final_esperado": "Conservar evidencia de indisponibilidad Wattwise.",
+      "pregunta": "",
+      "debe": "Conservar evidencia de indisponibilidad Wattwise.",
+      "no_debe": "",
+      "comprobaciones": "Ver función del caso en evaluar.py y revisión manual para Ollama",
+      "modo_modelo": "no aplica"
+    },
+    "R01": {
+      "id": "R01",
+      "capa": "entrenador",
+      "now": "2026-10-03T22:00:00+02:00",
+      "origen": "Fixture adicional saneado; cifras del ejemplo de Fase 2, no sustituye E01.",
+      "estado_inicial": {
+        "extra_context": {
+          "data_freshness": {
+            "status": "current"
+          },
+          "training_plan": {
+            "sessions": [
+              {
+                "id": "r01-session",
+                "date": "2026-10-03",
+                "status": "planned",
+                "sport": "running",
+                "session_type": "easy_run",
+                "intensity": "easy",
+                "distance_km": 17
+              }
+            ]
+          },
+          "recent_activities": [
+            {
+              "id": "r01-activity",
+              "source": "garmin",
+              "date": "2026-10-03",
+              "started_at": "2026-10-03T08:00:00+02:00",
+              "sport": "running",
+              "km": 11.01,
+              "duration_s": 3353
+            }
+          ],
+          "change_proposal_allowed_now": false
+        }
+      },
+      "operaciones": [
+        "Analiza hoy: compara los 11,01 km registrados con los 17 km previstos."
+      ],
+      "estado_final_esperado": "Comparación de distancia condicional; confirmar correspondencia.",
+      "pregunta": "Analiza hoy: compara los 11,01 km registrados con los 17 km previstos.",
+      "debe": "Comparación de distancia condicional; confirmar correspondencia.",
+      "no_debe": "Declarar cumplimiento, inferir bloques o prescribir.",
+      "comprobaciones": "Protocolo Fase 3 V1",
+      "modo_modelo": "pendiente"
+    }
+  },
+  "variants": [
+    {
+      "id": "MATCH-confirmed",
+      "base": "E01",
+      "question": "Analiza hoy frente al plan confirmado",
+      "focus": "volume",
+      "pair": null,
+      "replace": {
+        "/estado_inicial/extra_context/training_plan/sessions": [
+          {
+            "id": "synthetic-s1",
+            "date": "2026-10-03",
+            "status": "planned",
+            "sport": "running",
+            "session_type": "easy_run",
+            "intensity": "easy",
+            "duration_min": 35,
+            "duration_max": 45,
+            "completed_activity_id": "synthetic-g1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "E01-pace",
+      "base": "E01",
+      "question": "¿qué tal el ritmo?",
+      "focus": "pace",
+      "pair": "pair-e01-pace-volume",
+      "replace": {}
+    },
+    {
+      "id": "E01-volume",
+      "base": "E01",
+      "question": "¿cumplí el volumen?",
+      "focus": "volume",
+      "pair": "pair-e01-pace-volume",
+      "replace": {}
+    },
+    {
+      "id": "E01-sleep",
+      "base": "E01",
+      "question": "¿cómo dormí?",
+      "focus": "sleep",
+      "pair": "pair-e01-sleep-plan",
+      "replace": {}
+    },
+    {
+      "id": "E01-plan",
+      "base": "E01",
+      "question": "¿qué diferencia hubo con el plan?",
+      "focus": "volume",
+      "pair": "pair-e01-sleep-plan",
+      "replace": {}
+    },
+    {
+      "id": "R01-pace",
+      "base": "R01",
+      "question": "¿qué tal el ritmo?",
+      "focus": "pace",
+      "pair": "pair-r01-pace-distance",
+      "replace": {}
+    },
+    {
+      "id": "R01-distance",
+      "base": "R01",
+      "question": "¿qué diferencia de distancia hubo frente al plan?",
+      "focus": "volume",
+      "pair": "pair-r01-pace-distance",
+      "replace": {}
+    },
+    {
+      "id": "E01-mixto",
+      "base": "E01",
+      "question": "Valora lo que he hecho hoy frente al plan y dime qué hago mañana",
+      "focus": "volume",
+      "pair": null,
+      "replace": {}
+    },
+    {
+      "id": "E10-mixto",
+      "base": "E10",
+      "question": "Analiza la molestia en el gemelo registrada hoy y dime: ¿hago la sesión de umbral de mañana?",
+      "focus": "symptoms",
+      "pair": null,
+      "replace": {}
+    },
+    {
+      "id": "MATCH-warmup",
+      "base": "E01",
+      "question": "Analiza la duración de hoy frente al plan",
+      "focus": "volume",
+      "pair": null,
+      "replace": {
+        "/estado_inicial/extra_context/recent_activities/0/duration_s": 720
+      }
+    },
+    {
+      "id": "MATCH-multiple",
+      "base": "E01",
+      "question": "Analiza hoy frente al plan",
+      "focus": "volume",
+      "pair": null,
+      "replace": {
+        "/estado_inicial/extra_context/recent_activities": [
+          {
+            "id": "synthetic-g1",
+            "source": "garmin",
+            "date": "2026-10-03",
+            "started_at": "2026-10-03T08:00:00+02:00",
+            "sport": "running",
+            "km": 20.02,
+            "duration_s": 6304,
+            "avg_hr": 144,
+            "max_hr": 165
+          },
+          {
+            "id": "synthetic-g2",
+            "source": "garmin",
+            "date": "2026-10-03",
+            "started_at": "2026-10-03T18:00:00+02:00",
+            "sport": "running",
+            "km": 20.02,
+            "duration_s": 6304,
+            "avg_hr": 144,
+            "max_hr": 165
+          }
+        ]
+      }
+    },
+    {
+      "id": "MATCH-insufficient",
+      "base": "E01",
+      "question": "Analiza hoy frente al plan",
+      "focus": "volume",
+      "pair": null,
+      "replace": {
+        "/estado_inicial/extra_context/recent_activities/0/duration_s": null
+      }
+    },
+    {
+      "id": "MATCH-within",
+      "base": "E01",
+      "question": "Analiza la duración de hoy frente al plan",
+      "focus": "volume",
+      "pair": null,
+      "replace": {
+        "/estado_inicial/extra_context/recent_activities/0/duration_s": 2400
+      }
+    }
+  ]
+}

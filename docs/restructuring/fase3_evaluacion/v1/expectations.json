@@ -1,0 +1,698 @@
+{
+  "protocol_version": "fase3-v1",
+  "interpretation": "Códigos internos de análisis propuestos y categorías semánticas de acciones; no son nombres de wire API. El futuro adaptador traduce sin relajar restricciones. required_checks son afirmaciones revisables, nunca resultados obtenidos.",
+  "global_rules": [
+    "Toda referencia procede del snapshot y componente correcto.",
+    "No fabricar cifras, fuentes, correspondencia, diagnóstico ni seguridad.",
+    "Códigos de limitación obligatorios acompañan cualquier hallazgo que los necesite.",
+    "Cumplir required_codes no basta: todas las required_checks y restricciones deben pasar."
+  ],
+  "cases": {
+    "MATCH-confirmed": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Vínculo completed_activity_id confirma identidad aunque la razón exceda la banda.",
+        "6304 s frente a 2100–2700 s; exceso 3604 s (60:04), 133,5 % contra límite superior."
+      ],
+      "required_codes": [
+        "DURATION_ABOVE_PLAN_RANGE"
+      ],
+      "forbidden_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH",
+        "PLAN_MATCH_UNCONFIRMED"
+      ],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "confirmed",
+      "expected_values": {
+        "duration_delta_s": 3604,
+        "duration_delta_percent_display": "133,5 %"
+      },
+      "follow_up": null
+    },
+    "E01": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Presentar 6304 s (1:45:04) registrados frente a 35–45 min previstos; diferencia grande y posible sesión distinta.",
+        "Pedir confirmación de correspondencia; no porcentaje ni cumplimiento. No inventar sesión de mañana ni recuperación."
+      ],
+      "required_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "implausible_single",
+      "expected_values": {
+        "recorded_duration_s": 6304,
+        "planned_duration_min": 35,
+        "planned_duration_max": 45,
+        "relation_ratio_display": "2,33"
+      },
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    },
+    "E02": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "Una actividad; conservar los pares garmin/synthetic-g1 y strava/synthetic-st1; carga contada una vez."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ],
+      "expected_values": {
+        "activity_count": 1
+      }
+    },
+    "E03": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "Evidencia de synthetic-st1 conserva source=strava, nunca Garmin."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ]
+    },
+    "E04": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "Conservar synthetic-g1 y synthetic-g2, dos horas de inicio; no fusionar."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ],
+      "expected_values": {
+        "activity_count": 2
+      }
+    },
+    "E05": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "La secuencia null,78,82 deja un día Zepp 2026-10-03 con score 82.",
+        "Reconsulta incorpora sueño publicado tarde y actualiza el día sin duplicarlo."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ],
+      "expected_values": {
+        "day_count": 1,
+        "final_sleep_score": 82
+      },
+      "coverage": "Persistencia y reconsulta deben evaluarse por separado; no basta el almacén."
+    },
+    "E06": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "Wellness conserva fecha 2026-10-01 y fallo Zepp; no presentar como datos actuales por freshness global."
+      ],
+      "required_codes": [
+        "DATA_COVERAGE_INCOMPLETE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ]
+    },
+    "E07": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Error Garmin no permite afirmar ausencia de entrenamiento; pedir sincronización/dato de actividad."
+      ],
+      "required_codes": [
+        "DATA_COVERAGE_INCOMPLETE"
+      ],
+      "forbidden_codes": [
+        "ACTIVITY_NOT_RECORDED"
+      ],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "insufficient_data",
+      "follow_up": "PROVIDE_MISSING_CONTEXT"
+    },
+    "E08": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "No hay sesión planificada disponible en el contexto. No afirmar ausencia global del plan ni inventar objetivo.",
+        "Describir actividad con procedencia y pedir plan si desea comparar."
+      ],
+      "required_codes": [
+        "NO_PLAN_FOR_SCOPE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "none",
+      "follow_up": "PROVIDE_MISSING_CONTEXT"
+    },
+    "E09": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Considerar running 20.02 km/6304 s, cycling 35 km/4200 s y strength 1800 s por separado.",
+        "No sumar TRIMP 110, TSS 60 y load_score_7d 35; tampoco afirmar recuperación conjunta.",
+        "Para mañana pedir contexto; no asignar dosis desde cargas incompatibles."
+      ],
+      "required_codes": [
+        "MULTISPORT_COMPONENTS_SEPARATE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "follow_up": "PROVIDE_MISSING_CONTEXT"
+    },
+    "E10": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Reconocer gemelo derecho al correr y sesión threshold mañana.",
+        "Expresar limitación de seguridad y pedir si continúa/cuándo aparece; no avalar ni diagnosticar."
+      ],
+      "required_codes": [
+        "SYMPTOM_REPORTED",
+        "SESSION_SAFETY_NOT_ASSESSABLE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "follow_up": "CLARIFY_SYMPTOM_CONTEXT",
+      "required_text": [
+        "No puedo valorar si es seguro hacerla"
+      ]
+    },
+    "E11": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "Dos consultas /plan dejan mismo id, revision y sesiones completas; no regenerar."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ]
+    },
+    "E12": {
+      "kind": "validation",
+      "status": "not_run",
+      "required_checks": [
+        "Selección con referencias ajenas/contradictorias se rechaza antes del renderer; nunca se entrega como válida.",
+        "Arnés mínimo: fallo cuenta como fallo, sin reparación. Solo si se integra Ollama: reparación máximo una y reserva identificada si falla."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ],
+      "coverage": "Reparación de producción condicionada a integración; no ejecutarla en entregable 1."
+    },
+    "E13": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Sin histórico personal no comparar con costumbre ni afirmar recuperación.",
+        "Sueño 430 min y pulso 39 son observaciones Zepp del día, no baseline."
+      ],
+      "required_codes": [
+        "WELLNESS_BASELINE_UNAVAILABLE",
+        "WELLNESS_TREND_NOT_ASSESSABLE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "follow_up": "REVIEW_HISTORY_WINDOW"
+    },
+    "E14": {
+      "kind": "routing",
+      "status": "not_run",
+      "required_checks": [
+        "Texto, /coach y voz transcrita mantienen pregunta/reloj/contexto equivalentes en trabajos.",
+        "Alias simulados equivalentes solo en arnés V3.",
+        "Alias reales /feedback,/semana,/proximo siguen locales sin crear trabajo, con Mac indisponible y flags on/off."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ],
+      "coverage": "partial",
+      "deferred": [
+        "Unificación real de alias; E14 global no puede declararse aprobado."
+      ]
+    },
+    "E15a": {
+      "kind": "persistence",
+      "status": "not_run",
+      "required_checks": [
+        "Informativo completa sin propuesta; propuesta inyectada sin autorización se rechaza.",
+        "Comparar plan y propuestas antes/después: ambos intactos."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "expected_values": {
+        "plan_unchanged": true,
+        "proposals_unchanged": true
+      },
+      "storage": [
+        "isolated_files",
+        "isolated_postgresql_or_explicit_not_evaluated"
+      ]
+    },
+    "E15b": {
+      "kind": "persistence",
+      "status": "not_run",
+      "required_checks": [
+        "Autorización explícita válida permite propuesta PENDING; no aplica cambios a sesiones.",
+        "Comprobar plan antes/después y estado PENDING; repetir en PostgreSQL aislado o registrar no evaluado."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ],
+      "expected_values": {
+        "proposal_status": "PENDING",
+        "plan_unchanged": true
+      },
+      "storage": [
+        "isolated_files",
+        "isolated_postgresql_or_explicit_not_evaluated"
+      ]
+    },
+    "E16": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "UTC 2026-10-03T22:30Z corresponde a 2026-10-04 en Madrid.",
+        "UTC 00:30Z y 01:30Z del 25 de octubre son dos instantes distintos, no deduplicar.",
+        "Sueño entre 2026-10-24T21:30Z y 2026-10-25T06:30Z: 540 minutos; no 480."
+      ],
+      "required_codes": [],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ],
+      "expected_values": {
+        "local_dates": [
+          "2026-10-04",
+          "2026-10-25",
+          "2026-10-25"
+        ],
+        "activity_count": 3,
+        "sleep_elapsed_minutes": 540
+      },
+      "coverage": "Normalización y duración de sueño se reportan por separado."
+    },
+    "E17": {
+      "kind": "integration",
+      "status": "not_run",
+      "required_checks": [
+        "Wattwise unavailable se conserva como fallo del proveedor; no cero ni recuperación inferida."
+      ],
+      "required_codes": [
+        "DATA_COVERAGE_INCOMPLETE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "plan_mutation"
+      ]
+    },
+    "R01": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Comparación condicional de distancia; no declarar incumplimiento ni interpretar bloques."
+      ],
+      "required_codes": [
+        "PLAN_MATCH_UNCONFIRMED",
+        "DISTANCE_BELOW_PLAN"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "candidate",
+      "expected_values": {
+        "duration_s": 3353,
+        "duration_display": "55:53",
+        "pace_display": "5:05 min/km",
+        "distance_delta_km": -5.99,
+        "distance_delta_percent_display": "−35,2 %"
+      },
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    },
+    "E01-pace": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Priorizar ritmo medio calculado con 6304s/20.02km y su límite: no demuestra bloques.",
+        "No centrar la respuesta en sueño o volumen no preguntados."
+      ],
+      "required_codes": [
+        "PACE_BLOCKS_NOT_COMPARABLE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "focus": "pace",
+      "priority_family": "pace",
+      "expected_values": {
+        "pace_display": "5:15 min/km"
+      },
+      "follow_up": null
+    },
+    "E01-volume": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Presentar 6304 s (1:45:04) registrados frente a 35–45 min previstos; diferencia grande y posible sesión distinta.",
+        "Pedir confirmación de correspondencia; no porcentaje ni cumplimiento. No inventar sesión de mañana ni recuperación."
+      ],
+      "required_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH"
+      ],
+      "forbidden_codes": [
+        "DURATION_ABOVE_PLAN_RANGE"
+      ],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "focus": "volume",
+      "priority_family": "volume",
+      "relation": "implausible_single",
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    },
+    "E01-sleep": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Priorizar sueño Zepp: 430 min (7h10), score 78 del 2026-10-03.",
+        "No afirmar recuperación o calidad respecto al historial ausente; no centrar en carrera."
+      ],
+      "required_codes": [
+        "WELLNESS_OBSERVATION_AVAILABLE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "focus": "sleep",
+      "priority_family": "sleep",
+      "expected_values": {
+        "sleep_minutes": 430,
+        "sleep_score": 78
+      },
+      "follow_up": null
+    },
+    "E01-plan": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Presentar 6304 s (1:45:04) registrados frente a 35–45 min previstos; diferencia grande y posible sesión distinta.",
+        "Pedir confirmación de correspondencia; no porcentaje ni cumplimiento. No inventar sesión de mañana ni recuperación."
+      ],
+      "required_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "focus": "volume",
+      "priority_family": "volume",
+      "relation": "implausible_single",
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    },
+    "R01-pace": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Priorizar 5:05 min/km derivado de 3353s/11.01km; no prueba bloques.",
+        "No centrar en diferencia de distancia no preguntada."
+      ],
+      "required_codes": [
+        "PACE_BLOCKS_NOT_COMPARABLE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "focus": "pace",
+      "priority_family": "pace",
+      "expected_values": {
+        "pace_display": "5:05 min/km"
+      },
+      "follow_up": null
+    },
+    "R01-distance": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Comparación condicional de distancia; no declarar incumplimiento ni interpretar bloques."
+      ],
+      "required_codes": [
+        "PLAN_MATCH_UNCONFIRMED",
+        "DISTANCE_BELOW_PLAN"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "focus": "volume",
+      "priority_family": "volume",
+      "relation": "candidate",
+      "expected_values": {
+        "duration_s": 3353,
+        "duration_display": "55:53",
+        "pace_display": "5:05 min/km",
+        "distance_delta_km": -5.99,
+        "distance_delta_percent_display": "−35,2 %"
+      },
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    },
+    "E01-mixto": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Análisis hoy muestra discrepancia; consejo mañana solo pide confirmar correspondencia antes de decidir.",
+        "No hay sesión de mañana en los hechos; no inventarla."
+      ],
+      "required_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "implausible_single",
+      "follow_up": "CONFIRM_PLAN_MATCH",
+      "components": [
+        {
+          "index": 0,
+          "intent": "analyze",
+          "date": "2026-10-03"
+        },
+        {
+          "index": 1,
+          "intent": "advice",
+          "date": "2026-10-04",
+          "allowed_outcome": "clarification_only"
+        }
+      ]
+    },
+    "E10-mixto": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Análisis reconoce molestia; consejo mañana pregunta si sigue y cuándo aparece.",
+        "No confirmar umbral; mantener plan almacenado no implica recomendar ejecutarlo."
+      ],
+      "required_codes": [
+        "SYMPTOM_REPORTED",
+        "SESSION_SAFETY_NOT_ASSESSABLE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "follow_up": "CLARIFY_SYMPTOM_CONTEXT",
+      "required_text": [
+        "No puedo valorar si es seguro hacerla"
+      ],
+      "components": [
+        {
+          "index": 0,
+          "intent": "analyze",
+          "date": "2026-10-03"
+        },
+        {
+          "index": 1,
+          "intent": "advice",
+          "date": "2026-10-04",
+          "allowed_outcome": "clarification_only"
+        }
+      ]
+    },
+    "MATCH-warmup": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "720s frente a 35–45min: implausible_single; mostrar magnitudes, pedir confirmación, sin porcentaje."
+      ],
+      "required_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "implausible_single",
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    },
+    "MATCH-multiple": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Dos actividades frente a una sesión: enumerar opciones; no elegir una por duración."
+      ],
+      "required_codes": [
+        "PLAN_MATCH_AMBIGUOUS"
+      ],
+      "forbidden_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH",
+        "DURATION_ABOVE_PLAN_RANGE"
+      ],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "ambiguous_multiple",
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    },
+    "MATCH-insufficient": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "Duración ausente y plan sin distancia: faltan magnitudes comparables; no usar cero."
+      ],
+      "required_codes": [
+        "PLAN_MATCH_INSUFFICIENT_DATA"
+      ],
+      "forbidden_codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH"
+      ],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "insufficient_data",
+      "follow_up": "PROVIDE_MISSING_CONTEXT"
+    },
+    "MATCH-within": {
+      "kind": "response",
+      "status": "not_run",
+      "required_checks": [
+        "40min dentro de 35–45min: ratio 1, candidate; conclusión condicional sin confirmar identidad."
+      ],
+      "required_codes": [
+        "PLAN_MATCH_UNCONFIRMED",
+        "DURATION_WITHIN_PLAN_RANGE"
+      ],
+      "forbidden_codes": [],
+      "forbidden_actions": [
+        "keep_plan",
+        "prescription",
+        "change_proposal",
+        "plan_mutation"
+      ],
+      "relation": "candidate",
+      "expected_values": {
+        "duration_s": 2400,
+        "relation_ratio": 1
+      },
+      "follow_up": "CONFIRM_PLAN_MATCH"
+    }
+  }
+}

@@ -10,6 +10,7 @@ from .file_state import atomic_json, serialized_file_state
 from .plan_intent import requests_plan_change
 from .pending_changes import create_pending_change, allowed_now
 from .proposal_repository import FileProposalRepository, PostgresProposalRepository
+from .ai_contracts import validate_deterministic_output
 
 
 DATA_DIR = Path("data")
@@ -488,6 +489,8 @@ def complete_ai_job(
     structured_output: dict[str, Any] | None = None,
     output_source: str | None = None,
 ) -> dict[str, Any] | None:
+    if output_source == 'deterministic':
+        validate_deterministic_output(structured_output, answer, status)
     if DATABASE_URL:
         return complete_ai_job_postgres(
             job_id=job_id,
@@ -1226,6 +1229,8 @@ def complete_ai_job_postgres(
     structured_output: dict[str, Any] | None = None,
     output_source: str | None = None,
 ) -> dict[str, Any] | None:
+    if output_source == 'deterministic':
+        validate_deterministic_output(structured_output, answer, status)
     import psycopg
     from psycopg.types.json import Jsonb
 

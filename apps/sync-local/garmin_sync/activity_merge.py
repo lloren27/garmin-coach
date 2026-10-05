@@ -82,8 +82,22 @@ def _is_duplicate(garmin: dict[str, Any], zepp: dict[str, Any]) -> bool:
         bool(garmin.get("sport")) and garmin.get("sport") == zepp.get("sport")
         and _start_difference_seconds(garmin, zepp) < 600
         and _overlap_fraction(garmin, zepp) >= 0.70
-        and _duration_matches(garmin, zepp)
+        and (_duration_matches(garmin, zepp) or _same_garmin_strava_recording(garmin, zepp))
         and _distance_matches_when_available(garmin, zepp)
+    )
+
+
+def _same_garmin_strava_recording(left, right):
+    # Garmin's timer and Strava's elapsed time can differ substantially with
+    # pauses. Require a tight recording fingerprint before ignoring duration.
+    if {left.get('source'), right.get('source')} != {'garmin', 'strava'}:
+        return False
+    a, b = _positive_number(left.get('km')), _positive_number(right.get('km'))
+    hr_a, hr_b = _positive_number(left.get('avg_hr')), _positive_number(right.get('avg_hr'))
+    return (
+        _start_difference_seconds(left, right) <= 1
+        and a is not None and b is not None and abs(a - b) <= 0.01
+        and hr_a is not None and hr_b is not None and abs(hr_a - hr_b) <= 1
     )
 
 

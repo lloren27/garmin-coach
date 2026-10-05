@@ -44,7 +44,7 @@ Intensity = Literal[
     "unknown",
 ]
 
-DecisionSource = Literal["ollama", "training_plan"]
+DecisionSource = Literal["ollama", "training_plan", "deterministic"]
 
 ResponseType = Literal[
     "analysis",
@@ -79,6 +79,13 @@ class CoachDecision(BaseModel):
 
     @model_validator(mode="after")
     def validate_decision(self) -> "CoachDecision":
+        if self.source == 'deterministic' and self.action not in {'information_only', 'ask_user'}:
+            raise ValueError('Deterministic decisions must be informational')
+        if self.source == 'deterministic' and any(value is not None for value in (
+            self.duration_min, self.duration_max_min, self.distance_km, self.target_pace, self.target_power_w)):
+            raise ValueError('Deterministic decisions cannot carry a prescription')
+        if self.source == 'deterministic' and (self.sport != 'none' or self.intensity != 'unknown' or self.session_type is not None):
+            raise ValueError('Deterministic decisions cannot prescribe sport or intensity')
         if self.target_pace and self.target_pace.strip().lower() in {
             "easy",
             "moderate",
@@ -114,6 +121,16 @@ class CoachDecision(BaseModel):
                 raise ValueError("Rest cannot contain target power")
 
         return self
+
+
+def validate_deterministic_output(payload, answer, status):
+    """Reader-side contract: deterministic completion carries no plan authority."""
+    response = CoachStructuredResponse.model_validate(payload)
+    if (status != 'completed' or answer != response.answer or not response.decisions
+            or response.change_proposal is not None
+            or any(d.source != 'deterministic' for d in response.decisions)):
+        raise ValueError('Invalid deterministic output')
+    return response
 
 
 class CoachEvidence(BaseModel):
@@ -206,3 +223,10 @@ class CoachStructuredResponse(BaseModel):
         default_factory=list,
         max_length=4,
     )
+
+    @model_validator(mode='after')
+    def deterministic_is_read_only(self):
+        if any(d.source == 'deterministic' for d in self.decisions):
+            if self.change_proposal is not None or any(d.source != 'deterministic' for d in self.decisions):
+                raise ValueError('Deterministic responses cannot mix sources or propose changes')
+        return self

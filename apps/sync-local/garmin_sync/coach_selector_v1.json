@@ -1,0 +1,161 @@
+{
+  "protocol_version": "fase3-v1",
+  "name": "keyword_focus_v1",
+  "role": "Especificación de datos; implementación del selector reservada al entregable 3.",
+  "normalization": [
+    "Unicode NFKD, eliminar marcas combinantes, casefold.",
+    "Tokenizar letras/dígitos; signos y espacios separan tokens.",
+    "Frase coincide con secuencia completa de tokens consecutivos; nunca subcadena dentro de palabra."
+  ],
+  "families": [
+    {
+      "id": "symptoms",
+      "phrases": [
+        "molestia",
+        "molestias",
+        "dolor",
+        "gemelo",
+        "seguro",
+        "umbral"
+      ],
+      "codes": [
+        "SYMPTOM_REPORTED",
+        "SESSION_SAFETY_NOT_ASSESSABLE",
+        "SYMPTOM_CONTEXT_INSUFFICIENT"
+      ]
+    },
+    {
+      "id": "pace",
+      "phrases": [
+        "ritmo",
+        "ritmos",
+        "velocidad",
+        "bloques"
+      ],
+      "codes": [
+        "PACE_BLOCKS_NOT_COMPARABLE",
+        "INTENSITY_NOT_ASSESSABLE"
+      ]
+    },
+    {
+      "id": "volume",
+      "phrases": [
+        "volumen",
+        "distancia",
+        "duracion",
+        "kilometros",
+        "km",
+        "minutos",
+        "cumpli",
+        "cumplido",
+        "completado",
+        "frente al plan",
+        "diferencia hubo con el plan",
+        "encaja",
+        "plan"
+      ],
+      "codes": [
+        "PLAN_ACTIVITY_MAGNITUDE_MISMATCH",
+        "PLAN_MATCH_AMBIGUOUS",
+        "PLAN_MATCH_INSUFFICIENT_DATA",
+        "NO_PLAN_FOR_SCOPE",
+        "DURATION_BELOW_PLAN_RANGE",
+        "DURATION_WITHIN_PLAN_RANGE",
+        "DURATION_ABOVE_PLAN_RANGE",
+        "DISTANCE_BELOW_PLAN",
+        "DISTANCE_AT_PLAN",
+        "DISTANCE_ABOVE_PLAN"
+      ]
+    },
+    {
+      "id": "sleep",
+      "phrases": [
+        "sueno",
+        "dormi",
+        "dormir",
+        "dormido"
+      ],
+      "codes": [
+        "WELLNESS_OBSERVATION_AVAILABLE",
+        "WELLNESS_BASELINE_UNAVAILABLE",
+        "WELLNESS_TREND_NOT_ASSESSABLE"
+      ]
+    },
+    {
+      "id": "wellness",
+      "phrases": [
+        "pulso",
+        "estres",
+        "recuperacion",
+        "recuperado",
+        "costumbre"
+      ],
+      "codes": [
+        "WELLNESS_BASELINE_UNAVAILABLE",
+        "WELLNESS_TREND_NOT_ASSESSABLE",
+        "WELLNESS_OBSERVATION_AVAILABLE"
+      ]
+    },
+    {
+      "id": "multisport",
+      "phrases": [
+        "carga conjunta",
+        "carrera bici y fuerza",
+        "tres deportes"
+      ],
+      "codes": [
+        "MULTISPORT_COMPONENTS_SEPARATE"
+      ]
+    }
+  ],
+  "selection_rules": [
+    "Construir conjunto admisible desde hechos antes de ambos selectores; el mapa solo decide relevancia, nunca fechas o permisos.",
+    "Ordenar familias coincidentes por la posición de su primera frase coincidente; empate por orden en families.",
+    "Recorrer codes en orden dentro de cada familia, filtrar por admisibilidad y deduplicar conservando orden.",
+    "Si ninguna familia coincide, recorrer default_family_order. Si ninguna produce hallazgos, aplicar insufficient_data_policy.",
+    "Seleccionar hasta 3 hallazgos focales. Adjuntar observaciones que referencian y limitaciones obligatorias; nunca llenar cupo con familias sin foco si ya hay coincidencias.",
+    "Anexar dependencias obligatorias aunque superen el cupo; mismo presupuesto y mismas dependencias para Ollama.",
+    "Elegir como máximo un seguimiento informativo: seguridad/síntoma, identidad, cobertura, historial en ese orden. Omitir si no falta información para la pregunta.",
+    "Renderizar con las mismas plantillas que la selección de Ollama; la selección determinista nunca se marca reserva si es la ruta principal."
+  ],
+  "default_family_order": [
+    "symptoms",
+    "multisport",
+    "volume",
+    "pace",
+    "sleep",
+    "wellness"
+  ],
+  "insufficient_data_policy": "Si no hay hallazgo admisible, pedir el contexto ausente; no inventar código/evidencia ni convertir en prescripción.",
+  "mandatory_dependencies": [
+    {
+      "when": "comparación dimensional bajo candidate",
+      "codes": [
+        "PLAN_MATCH_UNCONFIRMED"
+      ]
+    },
+    {
+      "when": "molestia registrada y consulta de realizar sesión",
+      "codes": [
+        "SYMPTOM_REPORTED",
+        "SESSION_SAFETY_NOT_ASSESSABLE"
+      ],
+      "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+    },
+    {
+      "when": "afirmación de tendencia/baseline solicitado sin histórico",
+      "codes": [
+        "WELLNESS_BASELINE_UNAVAILABLE",
+        "WELLNESS_TREND_NOT_ASSESSABLE"
+      ]
+    },
+    {
+      "when": "fuente necesaria fallida o cobertura insuficiente",
+      "codes": [
+        "DATA_COVERAGE_INCOMPLETE"
+      ]
+    }
+  ],
+  "max_focus_findings": 3,
+  "max_follow_ups": 1
+}

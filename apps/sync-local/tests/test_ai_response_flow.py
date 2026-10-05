@@ -79,6 +79,21 @@ class ResponseFlowTests(unittest.TestCase):
             self.assertIn("lectura básica", payload["answer"])
             self.assertIn("Hoy mantén la carga suave.", payload["answer"])
 
+    def test_v3_text_voice_share_canonical_response_without_model(self):
+        question = 'analiza hoy y dime qué hacer mañana'
+        compact = {'extra_context': {'checkins': [{'date': '2026-10-03', 'pain': True}]}}
+        with patch.object(worker, 'COACH_ANALYSIS_V3_ENABLED', True), patch.object(worker, 'compact_context', return_value=compact), patch.object(worker, 'call_ollama') as model, patch.object(worker, 'download_telegram_audio', return_value=Path('audio.ogg')), patch.object(worker, 'transcribe_audio', return_value=question), patch.object(worker, 'synthesize_voice', return_value=Path('voice.ogg')) as synth, patch.object(worker, 'send_telegram_voice'):
+            outputs = []
+            for job in ({'id': 'v3-text', 'text': question},
+                        {'id': 'v3-voice', 'audio_file_id': 'audio', 'response_mode': 'voice', 'chat_id': 'chat'}):
+                worker.process_job({**job, 'created_at': JOB_CREATED_AT}, {})
+                outputs.append(self.post.call_args.args[1])
+            model.assert_not_called()
+            self.assertEqual(outputs[0]['answer'], outputs[1]['answer'])
+            self.assertEqual(outputs[0]['structured_output'], outputs[1]['structured_output'])
+            self.assertEqual(outputs[0]['output_source'], 'deterministic')
+            self.assertEqual(synth.call_args.args[0], outputs[0]['answer'])
+
     def test_voice_failure_preserves_full_answer_as_text(self) -> None:
         answer = "Hoy te recomiendo descansar para recuperar. " * 30
         for result in (None, RuntimeError("Piper unavailable")):

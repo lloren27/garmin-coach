@@ -5,6 +5,7 @@ import os
 import re
 from .pending_changes import ProposalError, ProposalConflict
 from .store import VALID_SYNC_MODES, prepare_proposal_context
+from .ai_contracts import validate_deterministic_output
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .coach import (
@@ -311,6 +312,7 @@ async def complete_ai_job_endpoint(
     if output_source not in {
         None,
         "ollama",
+        "deterministic",
         "deterministic_fallback",
     }:
         raise HTTPException(
@@ -318,16 +320,22 @@ async def complete_ai_job_endpoint(
             detail="Invalid output_source",
         )
 
+    if output_source == 'deterministic':
+        try:
+            validate_deterministic_output(structured_output, answer, status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail='Invalid deterministic output') from None
+
     if output_source == "ollama" and structured_output is None:
         raise HTTPException(
             status_code=400,
             detail="Ollama output requires structured_output",
         )
 
-    if structured_output is not None and output_source != "ollama":
+    if structured_output is not None and output_source not in {"ollama", "deterministic"}:
         raise HTTPException(
             status_code=400,
-            detail="structured_output is only valid for Ollama output",
+            detail="structured_output requires a supported structured source",
         )
 
     notify_telegram = bool(

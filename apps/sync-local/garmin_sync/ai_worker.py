@@ -40,6 +40,7 @@ except Exception:
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "garmin-coach:9b")
+COACH_ANALYSIS_V3_ENABLED = os.getenv('COACH_ANALYSIS_V3_ENABLED', '').strip().lower() in {'1', 'true', 'on'}
 MAX_JOBS = int(os.getenv("GARMIN_COACH_AI_MAX_JOBS", "3"))
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "600"))
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
@@ -561,6 +562,21 @@ def send_telegram_voice(chat_id: str, audio_path: Path, caption: str) -> None:
     data = response.json()
     if not data.get("ok"):
         raise RuntimeError(f"Telegram {method} failed: {data}")
+
+
+def call_coach(question: str, context: dict[str, Any], *, job_id: str | None = None,
+               now: datetime | None = None) -> CoachRunResult:
+    if not COACH_ANALYSIS_V3_ENABLED:
+        return call_ollama(question, context, job_id=job_id, now=now)
+    from .coach_deterministic import deterministic_response, safe_response
+    try:
+        structured = deterministic_response(question, compact_context(context, now=now),
+            now=now or datetime.now(ZoneInfo('Europe/Madrid')), max_chars=ANSWER_MAX_CHARS)
+    except ValueError:
+        # V3 must never fall through to the legacy prescriptive fallback.
+        structured = safe_response()
+        print(json.dumps({'type': 'coach_v3_context_unresolved', 'code': 'INVALID_CONTEXT'}))
+    return CoachRunResult(structured.answer, structured.model_dump(mode='json'), 'deterministic')
 
 
 def call_ollama(question: str, context: dict[str, Any], *, job_id: str | None = None,
@@ -1342,8 +1358,10 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
         context["wattwise_live"] = fetch_wattwise_context()
         enqueued_at = job_created_at(job)
         try:
-            coach_result = call_ollama(question, context, job_id=job_id, now=enqueued_at)
+            coach_result = call_coach(question, context, job_id=job_id, now=enqueued_at)
         except (httpx.HTTPError, ValueError) as exc:
+            if COACH_ANALYSIS_V3_ENABLED:
+                raise
             coach_result = CoachRunResult(
                 answer=basic_fallback_answer(
                     question,

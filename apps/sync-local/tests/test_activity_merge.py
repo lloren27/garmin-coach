@@ -30,6 +30,29 @@ def activity(
 
 
 class ActivityMergeTests(unittest.TestCase):
+    def test_garmin_strava_copy_with_pauses_counts_once(self) -> None:
+        garmin = activity("edge", "garmin", "2026-10-05T17:46:29+02:00", 40.66, 6156)
+        strava = activity("strava:edge", "strava", "2026-10-05T15:46:29Z", 40.66, 9808)
+        garmin['sport'] = strava['sport'] = 'cycling'
+        garmin['avg_hr'] = strava['avg_hr'] = 112
+        merged = merge_activities([garmin], [], [strava])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]['duration_s'], 6156)
+        self.assertEqual(merged[0]['km'], 40.66)
+        self.assertEqual({r['source'] for r in merged[0]['source_records']}, {'garmin', 'strava'})
+
+    def test_duration_mismatch_requires_exact_recording_evidence(self) -> None:
+        garmin = activity("edge", "garmin", "2026-10-05T17:46:29+02:00", 40.66, 6156)
+        garmin['avg_hr'] = 112
+        for changes in ({'started_at': '2026-10-05T17:48:29+02:00'},
+                        {'km': 42}, {'km': 0}, {'km': None}, {'sport': 'other'},
+                        {'avg_hr': None}, {'avg_hr': 140}):
+            with self.subTest(changes=changes):
+                strava = activity("strava:edge", "strava", garmin['started_at'], 40.66, 9808)
+                strava['avg_hr'] = 112
+                strava.update(changes)
+                self.assertEqual(len(merge_activities([garmin], [], [strava])), 2)
+
     def test_garmin_normalization_adds_source_and_offset_aware_start(self) -> None:
         normalized = normalize_activities(
             [

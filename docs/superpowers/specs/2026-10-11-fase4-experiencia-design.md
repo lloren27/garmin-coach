@@ -1,93 +1,104 @@
 # Fase 4: experiencia simple y entrenador único
 
-Fecha: 11 de octubre de 2026.
-Estado: diseño para revisión. El enfoque gradual está aprobado; este documento no implica implementación ni despliegue.
+Fecha: 11 de octubre de 2026. Revisión 2, tras revisión del usuario.
+Estado: diseño revisado para revisión; sin implementación ni activación en producción.
 
-## Objetivo y punto de partida
+## Base y objetivo
 
-El usuario debe poder preguntar por texto, voz o un comando antiguo sin elegir entre criterios deportivos diferentes. La fase 4 simplifica la ayuda, conserva los registros deterministas y cierra E14 mediante equivalencia verificable de rutas y resultados.
+La fase 4 simplifica la experiencia sin prometer capacidades que el entrenador todavía no tiene. El cierre de fase 3 está guardado en `5e4880f`, con código, pruebas y evidencias. El primer borrador de fase 4 ya estaba en el historial; no se reescribe. Los cambios posteriores parten de esta base limpia y separada.
 
-El cierre de fase 3 del 10 de octubre permite continuar, pero mantiene E14 pendiente. `route_message` responde localmente a numerosos comandos deportivos; texto, voz, `/coach` y `/ajustar` llegan a la cola. `COACH_QUESTIONS` existe, pero contiene entradas de plan cuyo significado ya no coincide con el contrato vigente. No se reutilizará íntegramente sin revisar cada intención.
+Se han repetido 288 pruebas del worker y 30 del arnés con el entorno virtual del proyecto, todas correctas. No se ha repetido en esta revisión la suite PostgreSQL del bot ni se certifica producción. E14 sigue pendiente.
 
-Además, `build_ai_brief` consume funciones que también generan respuestas locales. Suprimir las ramas del enrutador no permite borrar automáticamente esas funciones. El worker selecciona el análisis V3 mediante `COACH_ANALYSIS_V3_ENABLED`; la fase 3 no certificó su activación en producción.
+## Decisión 1: espera con respaldo de datos
 
-El árbol de trabajo contiene cambios y evidencias del cierre de fase 3 sin commit. Se preservarán y se usarán como base de las verificaciones; los cambios de fase 4 se identificarán por separado.
+Se elige conservar una vista determinista de datos como respaldo. Las recomendaciones de los alias migrados dependen del worker del Mac; las vistas de datos, el plan guardado, el estado y los registros siguen disponibles desde Railway. Esta dependencia es un cambio explícito frente a las respuestas locales instantáneas actuales.
 
-## Decisión y alternativas
+- Acuse inmediato tras persistir el trabajo: «Consulta en cola. El entrenador responderá cuando el procesamiento local esté disponible. Puedes consultar /estado». Si guardar falla, no se anuncia que está en cola.
+- A los 120 segundos sin respuesta final, un único aviso por trabajo: «Tu consulta sigue pendiente. Estos son los últimos datos disponibles; no son una valoración del entrenador», acompañado de una vista factual pertinente o de la ausencia explícita de datos. El umbral es configurable y no promete un plazo de respuesta.
+- El trabajo sigue pendiente: mostrar datos no lo completa, cancela ni crea otro trabajo. Al terminar se entrega la respuesta final por el flujo existente. Un fallo definitivo se comunica como fallo.
+- El aviso se despacha desde el bot/API en Railway, nunca desde el worker cuya ausencia se intenta explicar. Se incorpora un barrido periódico de trabajos vencidos al ciclo de vida de la API, con marca persistente y reclamación atómica para evitar avisos concurrentes. No basta un temporizador en memoria por consulta. Tras reiniciar, se recuperan avisos vencidos aún pendientes.
+- Se comprueba otra vez el estado antes de enviar el aviso para minimizar la carrera con la finalización. Telegram no ofrece entrega exactamente una vez: se documentará la ventana residual entre envío y persistencia, sin prometer una garantía absoluta.
 
-Se adopta la migración gradual aprobada: unificar alias, introducir ayuda y accesos guiados, y retirar opiniones duplicadas después de verificar sus sustitutos. Cambiar solo la ayuda dejaría E14 abierto. Sustituir todas las rutas y eliminar sus dependencias a la vez dificultaría localizar regresiones.
+El respaldo presenta fechas, procedencia, actividades y métricas registradas, y plan persistido cuando corresponda. No incluye puntuaciones de riesgo inventadas, recomendaciones, conclusiones de recuperación ni prescripciones. No reutiliza íntegramente los antiguos formateadores deportivos: varios contienen opinión.
 
-La arquitectura de despliegue sigue siendo bot/API en Railway y worker en el Mac. Esta fase no añade un servicio ni una segunda interpretación de reserva en el bot.
+## Decisión 2: activación reversible y gradual
 
-## 1. Entrada común al entrenador
+Se añade `COACH_ALIAS_ROUTING_ENABLED`, apagado por defecto, independiente de `COACH_ANALYSIS_V3_ENABLED`. Apagado conserva las rutas actuales. Encendido solo permite migrar una lista explícita de alias que hayan superado su evaluación; no convierte todos los comandos a la vez.
 
-Un adaptador de comandos del bot convierte los alias deportivos en consultas canónicas antes de crear el trabajo. El worker sigue siendo el punto común de interpretación, validación y respuesta. El adaptador no calcula recomendaciones.
+La activación requiere V3 activo y evaluado en el worker real, capacidad comprobada por alias, avisos de demora y respaldo operativos. Copiar la variable V3 al bot no demuestra qué motor ejecuta el Mac. Los trabajos de alias migrados deben exigir V3 mediante metadatos de compatibilidad; el worker valida ese requisito antes de procesar y no los deriva silenciosamente a Ollama antiguo. Si no cumple, se informa incompatibilidad y se ofrece la vista factual. Desplegar primero un worker que entienda este requisito es condición de activación.
 
-| Entrada | Comportamiento |
-| --- | --- |
-| Texto libre, `/coach pregunta` | Consulta al servicio común. `/coach` solo muestra ejemplos. |
-| Voz o audio | Trascripción y procesamiento por el mismo servicio; conserva su modalidad de respuesta. |
-| `/hoy`, `/semana`, `/ultima`, `/proximo`, `/fatiga`, `/salud`, `/carga`, `/tendencia`, `/feedback`, `/bici`, `/malaga` | Alias de consulta con intención y periodo definidos. |
-| `/running`, `/correr`, `/carga_running` | Misma consulta centrada en carrera. |
-| `/potencia`, `/wattwise` | Misma consulta centrada en potencia ciclista. |
-| `/ajustar` y sus argumentos | Solicitud explícita de propuesta según las validaciones de fase 2; nunca aplicación implícita. |
-| `/plan`, `/plan_semana` | Lectura directa del plan vigente. |
-| `/plan nuevo`, `/plan_semana nuevo` | Creación explícita por el flujo existente. |
+La reversión consiste en apagar el interruptor del adaptador y reiniciar/recargar la configuración de la API según el despliegue. Los nuevos mensajes recuperan la ruta anterior; los trabajos ya encolados mantienen su requisito de motor y no se duplican. No requiere `git revert`.
 
-Los argumentos se conservan y se identifican como información del usuario. Una fecha o periodo explícito sustituye el periodo predeterminado del alias, evitando preguntas contradictorias como «hoy» y «ayer» en la misma consulta. Sin argumentos, `/feedback` se refiere al último día con entrenamiento y `/ultima` a la última actividad y sus sesiones del día. `/semana` consulta la semana y el plan vigente, sin crear uno.
+No se elimina ninguna rama local hasta tener V3 activo, evaluación aceptada de los alias afectados y comprobación de reversión. Mientras se necesite volver a esas ramas, se conservan. Su retirada será un entregable condicionado, posiblemente posterior al despliegue de fase 5. Este documento no declara completada esa retirada.
 
-La normalización admite mayúsculas y sufijos Telegram como `/feedback@MiBot`. Los alias de consulta no adquieren permiso de modificación por incluir una frase imperativa en el texto canónico. `/ajustar` conserva la detección de negaciones y los controles existentes. Una petición ambigua recibe la aclaración del servicio común.
+## Capacidades por alias
 
-Las consultas comparten construcción de contexto, reloj del trabajo, fuentes, plan e historial. La equivalencia se mide con datos y reloj fijados; no exige respuestas idénticas entre trabajos procesados con datos distintos. Si el Mac no procesa el trabajo, la consulta permanece en el flujo de cola existente y el bot no inventa una respuesta deportiva local.
+Inspección de `coach_findings.py` y sondeo real de `resolve_intent`, con reloj 2026-10-11 12:00 Europe/Madrid. Las preguntas siguientes son candidatas evaluadas por el resolutor, no un catálogo ya conectado. Resolver `analyze_day` no demuestra que existan hallazgos adecuados ni filtros por deporte. «Semana» resolvió del 5 al 11 de octubre; los selectores de última actividad/día necesitan la instantánea para concretar fechas.
 
-## 2. Ayuda y registros
+| Alias | Pregunta canónica candidata | Resolución observada | Hallazgos disponibles y carencias | Respuesta prevista / decisión |
+| --- | --- | --- | --- | --- |
+| `/hoy` | Analiza mi entrenamiento de hoy. | `analyze_day`, 11/10 | Comparación sesión/actividad, ritmo medio, bienestar y síntomas; no recomendación general para el resto del día | Candidato: análisis del día con límites y aclaraciones. |
+| `/ultima` | Analiza mi última actividad. | `analyze_activity`, `latest_activity` | Comparación duración/distancia y correspondencia con plan | Candidato: explicar comparación sin dar sesión por cumplida si es ambigua. |
+| `/feedback` | Analiza mi último día de entrenamiento. | `analyze_day`, `latest_training_day` | Actividades, comparación, separación de deportes, bienestar y síntomas | Candidato: análisis del último día, sin prescripción no soportada. |
+| `/salud` | Analiza mi recuperación hoy. | `analyze_day`, 11/10 | `WELLNESS_OBSERVATION_AVAILABLE`, ausencia de referencia y tendencia no evaluable | Vista factual: sueño, reposo y estrés; no afirmar recuperación. |
+| `/fatiga` | Valora mi fatiga hoy. | `analyze_day`, 11/10 | No hay hallazgo de fatiga acumulada validado | Vista factual, sin calificación de fatiga ni recomendación. |
+| `/carga` | Analiza mi carga esta semana. | `analyze_day`, 5–11/10 | Separación de deportes; sin valoración agregada de carga | Vista de métricas disponibles por deporte y escala, sin suma entre escalas. |
+| `/tendencia` | Analiza mi tendencia esta semana. | `analyze_day`, 5–11/10 | `WELLNESS_TREND_NOT_ASSESSABLE`; sin modelo de tendencia validado | Serie de datos fechados, sin conclusión de evolución. |
+| `/semana` | Analiza mi entrenamiento esta semana. | `analyze_day`, 5–11/10 | Comparaciones diarias no equivalen a balance semanal ni planificación | Vista de actividades de la semana y plan vigente; sin balance prescriptivo. |
+| `/proximo` | Recomienda mi próximo entrenamiento mañana. | `clarify`, `UNSUPPORTED_PARAPHRASE` | Sin prescripción general validada de duración/intensidad | Próxima sesión guardada o ausencia de plan; se comunica que no es recomendación recalculada. No se adopta mañana como fecha implícita. |
+| `/running`, `/correr`, `/carga_running` | Analiza mi running esta semana. | `analyze_day`, 5–11/10 | Sin hallazgos de evolución/ACWR validados ni filtro garantizado por esta frase | Vista de carrera y métricas existentes con unidades, sin interpretación de riesgo. |
+| `/bici` | Analiza mi ciclismo esta semana. | `analyze_day`, 5–11/10 | Sin evaluación ciclista específica validada | Vista factual de ciclismo. |
+| `/potencia`, `/wattwise` | Analiza mi potencia en bici hoy. | `analyze_day`, 11/10 | El catálogo inspeccionado no interpreta FTP/TSS/IF/VI | Vista Wattwise con fechas y métricas disponibles, sin recomendación. |
+| `/malaga` | Valora mi preparación para la maratón de Málaga hoy. | `analyze_day`, 11/10 | Sin hallazgos específicos de preparación para objetivo | Vista del objetivo confirmado y plan vigente; sin pronóstico de preparación. |
+| `/ajustar` | `/ajustar mañana` (entrada actual conservada) | `clarify`, `UNSUPPORTED_PARAPHRASE` en sondeo directo | Contrato de autorización existe; esto no acredita propuestas V3 útiles | Fuera del adaptador inicial. Mantener compatibilidad y evaluar normalización e intención antes de migrarlo. Nunca aplicar implícitamente. |
 
-`/start` y `/help` presentan seis entradas: `/coach`, `/plan`, `/sync`, `/estado`, `/registro` y `/help`, con ejemplos breves de texto y voz. Se comunica que los comandos anteriores siguen funcionando; `/help comandos` ofrece la lista de compatibilidad y sus significados actualizados.
+Solo `/hoy`, `/ultima` y `/feedback` son candidatos iniciales, todavía sujetos a evaluación de salida completa. Los demás alias pasan a vistas factuales únicamente cuando esas vistas estén probadas y la transición se active de forma explícita; con el interruptor apagado se conserva el comportamiento actual. Se documenta la pérdida deliberada de recomendaciones antiguas. No se amplía el catálogo deportivo de V3 de forma implícita para completar esta fase.
 
-`/registro` ofrece un menú textual de comandos utilizables en Telegram. Los subcomandos `/registro fuerza`, `/registro molestias`, `/registro perfil` y `/registro pruebas` muestran instrucciones y ejemplos de las operaciones existentes. Esta primera versión no necesita botones, callbacks ni estado de conversación persistente.
+`/plan` y `/plan_semana` mantienen lectura directa, y la variante `nuevo` creación explícita. No se reutiliza íntegramente `COACH_QUESTIONS`: contiene significados de plan obsoletos. Los comandos de registro conservan sus validaciones y escrituras.
 
-Abrir un menú o una ayuda no escribe datos. Guardar sigue requiriendo los comandos explícitos existentes: `/fuerza`, `/checkin`, `/perfil` y los de pruebas de esfuerzo. Las pruebas pendientes mantienen su flujo de revisión y aplicación. Un subcomando desconocido muestra las opciones válidas sin crear un trabajo de análisis.
+## Traducción y contexto
 
-## 3. Estado operativo
+El adaptador normaliza mayúsculas y sufijos Telegram, conserva argumentos y no obtiene autorización de modificación del texto que él mismo genera. Una fecha explícita sustituye el ámbito predeterminado. Conflictos o ámbitos no soportados requieren aclaración, sin descartarlos silenciosamente.
 
-`/estado` muestra la información disponible de frescura y errores por proveedor y ámbito, la última sincronización y su petición pendiente. Distingue datos ausentes, ausencia de actividad, información antigua, fallo y proveedor sin configurar, siguiendo la semántica de fase 1.
+Texto, `/coach`, voz transcrita y alias migrados usan el servicio común y la misma construcción de contexto. Las comparaciones de aceptación fijan reloj e instantánea. El respaldo factual no se incorpora como otra opinión al contexto del entrenador.
 
-Las fechas se presentan en Europe/Madrid y la fecha de recepción no sustituye la fecha de los datos. Se muestran errores resumidos y seguros, sin trazas ni credenciales. Si no existe evidencia fiable de disponibilidad del worker, se indica «disponibilidad no confirmada»; una sincronización reciente no demuestra que el Mac esté despierto ahora. No se añade un heartbeat en esta fase.
+`build_ai_brief` depende de formateadores locales: se inventarían sus consumidores y se separan hechos de recomendaciones antes de cualquier eliminación. Se preservan cálculos, fuentes, perfil, pruebas aplicadas, plan e historial. Las rutas de compatibilidad retenidas se enumeran en el cierre.
 
-`/status` y `/syncinfo` conservan sus lecturas compatibles y remiten a `/estado` para la vista conjunta. Los modos `/sync zepp` y `/sync cmf` siguen siendo compatibles. La ayuda describe la dependencia del procesamiento local sin prometer una latencia fija no medida.
+## Ayuda, registros y estado
 
-## 4. Retirada de opiniones duplicadas
+`/help` y `/start` muestran `/coach`, `/plan`, `/sync`, `/estado`, `/registro` y `/help`, con ejemplos. `/help comandos` distingue claramente alias de análisis, vistas de datos y operaciones de registro. La ayuda debe reflejar el modo activo, sin anunciar migraciones aún apagadas.
 
-Primero se eliminan las ramas de respuesta deportiva directa del enrutador. Después se inventarían las referencias a sus formateadores, a `format_natural_coach`, a `build_ai_brief` y a las reservas del worker.
+`/registro` ofrece opciones textuales de fuerza, molestias, perfil y pruebas; sus subcomandos muestran instrucciones y ejemplos. Abrir una ayuda nunca escribe datos ni encola una consulta. Los comandos existentes siguen siendo las operaciones explícitas de guardado.
 
-Se conservan los cálculos, datos y formatos transaccionales utilizados. Los resúmenes que alimentan contexto deben contener hechos y analítica, sin introducir otra recomendación prescriptiva. Una función solo se elimina tras sustituir sus consumidores y comprobar la regresión correspondiente.
+`/estado` combina estado por proveedor y ámbito con señales de cola ya persistidas:
 
-La ruta antigua del worker asociada al interruptor V3 se mantiene mientras sea necesaria para compatibilidad y reversión. Debe figurar explícitamente como ruta de compatibilidad, con sus consumidores y condición de retirada. No se declarará eliminada toda opinión paralela si queda alguna activa o necesaria. La activación en producción y la retirada definitiva de compatibilidad dependen de la validación y despliegue de fase 5.
+- Número de trabajos pendientes y en ejecución del chat autorizado.
+- Hora de creación y antigüedad del pendiente más antiguo; si no hay pendientes, lo indica.
+- Última finalización correcta y último fallo del chat, diferenciados. Un fallo no se presenta como trabajo respondido correctamente.
+- Hora de recogida del trabajo en curso, cuando exista; indica demora observada sin afirmar que el Mac está dormido.
 
-## Entregables y orden
+Se emplean `created_at`, `claimed_at`, `completed_at` y `status` tanto en almacenamiento de ficheros como PostgreSQL. No se expone texto de consultas ni actividad de otros chats. Si no hay historial se dice explícitamente. La fecha del último éxito es evidencia histórica, no prueba de disponibilidad actual.
 
-1. Adaptador de alias y pruebas de equivalencia E14, preservando las intenciones del plan.
-2. Ayuda reducida, registro guiado y estado operativo de solo lectura.
-3. Sustitución de consumidores de opiniones locales, retirada comprobada y tabla de compatibilidad en documentación.
-4. Informe de cierre con evidencia, código conservado por compatibilidad y límites operativos.
+La vista conserva frescura, último intento/éxito y errores seguros por fuente, distingue ausencia de actividad de ausencia de datos y usa Europe/Madrid. `/status`, `/syncinfo` y modos antiguos de `/sync` siguen compatibles. No se añade heartbeat ni servicio externo.
 
-Los módulos nuevos se limitarán a la traducción de comandos y presentación de ayuda/estado cuando facilite su prueba. No se hará una reorganización general de `coach.py` ni del worker.
+## Entregables y aceptación
 
-## Criterios de aceptación y verificación
+1. Base de fase 3 guardada; matriz de capacidades y pruebas de intención/fechas con preguntas canónicas y humanas.
+2. Vistas factuales, estado de cola, acuse y aviso de demora persistente; pruebas con worker ausente y reinicios.
+3. Adaptador apagado por defecto, lista de candidatos, requisito V3 y reversión probada. Activación solo tras evaluación y coordinación API/worker.
+4. Ayuda y registros coherentes con el modo activo; documentación de la transición.
+5. Retirada condicionada de duplicados e informe de lo conservado, sin declarar cumplidos criterios pendientes.
 
-- Para cada alias deportivo, el bot crea exactamente un trabajo y no ejecuta el formateador deportivo local. Se comprueban argumentos, fechas, sufijos y comandos desconocidos.
-- E14 compara un alias, su pregunta canónica por texto, `/coach` y voz con transcripción simulada sobre la misma instantánea y reloj. Deben coincidir intención, periodo, hechos relevantes, decisiones y permisos. En V3 se verifica la salida estructurada; en la ruta de compatibilidad se verifica el mismo punto de entrada sin exigir igualdad literal de prosa.
-- La prueba cubre todos los alias y sus grupos, no solo `/feedback`. Ningún alias anuncia soporte que el resolver no pueda interpretar: antes de conectarlo se verifica su pregunta y, si procede, se ajusta su traducción o el reconocimiento compartido con regresiones.
-- Consultar `/plan` no crea versiones; `/plan nuevo` conserva la creación explícita. Consultar, proponer y aplicar siguen separados. Se mantienen las regresiones E15a/b y las negaciones de `/ajustar`.
-- La ayuda, el estado y los menús funcionan sin worker y sin persistir cambios. Los registros conservan sus validaciones y escrituras explícitas.
-- `/estado` se prueba con fuentes válidas, tardías, parciales, fallidas y ausentes; no atribuye datos Strava a Garmin ni afirma disponibilidad sin evidencia.
-- El contexto conserva actividades, bienestar, fuerza, perfil, pruebas aplicadas, plan y procedencia al retirar formateadores. No reaparecen recomendaciones locales como fallback del bot.
-- Se ejecutan las suites afectadas de bot y worker, las regresiones del cierre de fase 3 y la auditoría E14 con su criterio original. Las pruebas de persistencia usan PostgreSQL desechable.
+### E14: equivalencia semántica, no solo traducción
 
-La voz simulada no certifica Whisper, síntesis ni entrega real de Telegram. Los resultados locales no certifican producción. Las pruebas se ejecutarán durante la implementación; este diseño no afirma resultados nuevos.
+Se conserva el criterio histórico del auditor. Conectar un alias y comparar con la misma frase generada es solo una prueba del adaptador. La aceptación exige por cada candidato:
 
-## Compatibilidad y reversión
+- Aserciones independientes de intención, selector, fechas concretas, hechos, limitaciones, decisiones y ausencia de permisos de escritura.
+- Paráfrasis humanas no generadas por el adaptador: «¿Cómo fue mi entreno de hoy?», «Dame tu opinión sobre la última salida» y «¿Qué tal el último día que entrené?». Son casos por verificar, no afirmaciones de soporte actual. Si fallan, el alias no se activa hasta resolver o declarar la limitación.
+- Fechas explícitas, cambio de día en Madrid, negaciones, preguntas ambiguas y argumentos que contradicen el ámbito predeterminado.
+- Misma pregunta humana por texto, `/coach` y voz con transcripción simulada; misma instantánea y reloj. Se comprueba la salida estructurada y su utilidad, no solo la creación del trabajo.
+- Los alias retenidos como datos no se cuentan como equivalentes a análisis. Si el criterio histórico exige equivalencia para todos, E14 se informa parcial/incumplido hasta resolver o aprobar explícitamente el nuevo alcance; no se cambia el auditor para obtener un aprobado.
 
-La documentación relacionará cada comando antiguo con su destino, indicará que las consultas deportivas ahora esperan al worker y conservará la sintaxis de registro. No se fija una fecha de eliminación de alias.
+Se prueban ambas posiciones del interruptor, V3 apagado/incompatible, trabajos previos a reversión, ausencia de worker, aviso único durante operación normal y carreras con finalización. La integración de avisos verifica recuperación tras reinicio y reclamación concurrente. Se comprueba que las vistas no llaman al modelo ni producen recomendaciones.
 
-La implementación se dividirá por entregable para permitir revertir ayuda o enrutamiento sin modificar historial ni registros. La configuración del motor no cambia como efecto lateral de unificar alias. La fase 5 coordinará API, worker y activación; la fase 4 debe dejar explícita la configuración bajo la que se obtuvo cada evidencia.
+Se ejecutan las suites afectadas, las regresiones de fase 3 y E15a/b; persistencia solo en PostgreSQL desechable. Voz simulada no certifica Whisper ni Telegram real. Activación y evaluación en producción requieren evidencia propia y permanecen coordinadas con la fase 5.

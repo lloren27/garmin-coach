@@ -11,6 +11,7 @@ from .plan_intent import requests_plan_change
 from .pending_changes import create_pending_change, allowed_now
 from .proposal_repository import FileProposalRepository, PostgresProposalRepository
 from .ai_contracts import validate_deterministic_output
+from .queue_status import QueueSnapshot
 
 
 DATA_DIR = Path("data")
@@ -1494,3 +1495,31 @@ def ensure_schema(conn: Any) -> None:
         document jsonb not null,
         created_at timestamptz not null default now()
     )''')
+
+
+
+def load_queue_snapshot(chat_id: str, *, now: datetime) -> QueueSnapshot:
+    from .queue_status import read_snapshot
+    return read_snapshot(chat_id, now=now, database_url=DATABASE_URL, path=AI_JOBS_FILE)
+
+
+def load_operational_documents() -> tuple[dict | None, dict | None]:
+    """Operational view must never initialize schema through legacy loaders."""
+    if DATABASE_URL:
+        import psycopg
+        try:
+            with psycopg.connect(DATABASE_URL) as conn:
+                conn.execute('SET TRANSACTION READ ONLY')
+                rows = conn.execute('SELECT key, document FROM sync_state WHERE key IN (%s,%s)',
+                                    ('latest', 'sync_request')).fetchall()
+            values = dict(rows)
+            return values.get('latest'), values.get('sync_request')
+        except (psycopg.OperationalError, psycopg.errors.UndefinedTable, psycopg.errors.InsufficientPrivilege):
+            return None, None
+    def read(path):
+        try:
+            value = json.loads(path.read_text())
+            return value if isinstance(value, dict) else None
+        except (OSError, ValueError):
+            return None
+    return read(SYNC_FILE), read(SYNC_REQUEST_FILE)

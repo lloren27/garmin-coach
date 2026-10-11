@@ -268,6 +268,17 @@ Salida: sistema mantenible, documentación acorde al comportamiento y procedimie
 de recuperación probado. La reorganización de archivos acompañará las fases
 anteriores cuando facilite sus cambios; no se concentrará toda al final.
 
+### Ampliación posterior — Recuperar valoraciones de carga y tendencia
+
+Añadido el 11 de octubre de 2026 como continuación explícita de la fase 4. La transición a vistas de datos supone una retirada temporal de valoraciones de fatiga, carga, tendencia, balance semanal y potencia, importantes para la preparación de maratón. No se considera una eliminación definitiva de esas capacidades.
+
+- Definir referencias personales, ventanas comparables y cobertura mínima por deporte y métrica.
+- Ampliar el catálogo con hechos y hallazgos verificables de carga y tendencia, manteniendo separadas las escalas; incorporar después las valoraciones de fatiga, balance semanal y potencia que esas evidencias permitan.
+- Evaluar intención, fechas, límites y utilidad con preguntas humanas y casos de historial insuficiente antes de reactivar cada valoración.
+- Extender la equivalencia E14 conforme se reincorporen capacidades. El cierre previsto de fase 4 es **E14 parcial**: `/hoy`, `/ultima` y `/feedback` migrados y los demás alias deportivos como vistas factuales, con `/ajustar` conservado en su flujo específico. El criterio histórico global sigue incumplido y el auditor no se redefine.
+
+Esta ampliación tendrá diseño y evaluación propios después de la entrega acotada de fase 4; su activación se coordinará con la consolidación y despliegue de fase 5. Su documentación no implica implementación ni fecha de entrega comprometida.
+
 ## 8. Criterios de aceptación
 
 | Caso | Resultado esperado |

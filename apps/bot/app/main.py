@@ -52,6 +52,10 @@ from .coach import (
     parse_checkin,
     parse_profile,
 )
+from .experience import format_help as experience_help, format_registration_help, format_operational_status
+from .store import load_queue_snapshot, load_operational_documents
+from .queue_status import empty_snapshot
+from datetime import datetime, timezone
 from .config import settings
 from .store import (
     claim_next_ai_job,
@@ -443,15 +447,25 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
 
 
 def route_message(text: str, user_id: str | None = None, chat_id: str | None = None) -> str:
+    command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
+    args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
+    if command == "/start":
+        return experience_help()
+    if command == "/help":
+        return experience_help(detailed=args.lower() == 'comandos') if args.lower() in ('', 'comandos') else "Uso: /help o /help comandos"
+    if command == "/registro":
+        return format_registration_help(args)
+    if command == "/estado":
+        if args:
+            return "Uso: /estado"
+        now = datetime.now(timezone.utc)
+        sync, request = load_operational_documents()
+        return format_operational_status(
+            sync, request, load_queue_snapshot(str(chat_id), now=now) if chat_id else empty_snapshot(), now=now)
     sync = load_sync()
     profile = load_profile()
     ai_chat_id = chat_id or user_id or "telegram"
     owner_id = chat_id or user_id or "telegram"
-    command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
-    args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
-    if command in {"/start", "/help"}:
-        return format_help()
-    
     if command in {"/plan_semana", "/plan"}:
         if not args:
             plan = load_active_training_plan(owner_id)

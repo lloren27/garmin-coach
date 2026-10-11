@@ -1,6 +1,6 @@
 # Fase 4: experiencia simple y entrenador único
 
-Fecha: 11 de octubre de 2026. Revisión 5, con concreciones para el plan técnico.
+Fecha: 11 de octubre de 2026. Revisión 6, con separación 2a/2b y ajustes del primer plan.
 Estado: diseño revisado para revisión; sin implementación ni activación en producción.
 
 ## Base y objetivo
@@ -31,15 +31,15 @@ Los alias migrados sin argumentos usan una selección factual fija: `/hoy`, dato
 
 ### Respuestas tardías
 
-Se conserva el trabajo y su reloj de creación; no se cambia la interpretación de «hoy» o «mañana» al despertar el Mac. Si transcurren **6 horas o más** entre creación y entrega, o cambia la fecha local en Europe/Madrid, la respuesta lleva un prefijo visible: «Respuesta tardía a tu consulta del {fecha y hora}. Se refiere al contexto temporal de esa consulta; no es una recomendación actualizada para hoy. Si todavía la necesitas, vuelve a preguntar». Se muestran además las fechas absolutas resueltas por el worker; no se traslada una recomendación antigua al presente.
+Se conserva el trabajo y su reloj de creación; no se cambia la interpretación de «hoy» o «mañana» al despertar el Mac. Si transcurren **6 horas o más** entre creación y entrega, o cambia la fecha local en Europe/Madrid **y han transcurrido más de 30 minutos**, la respuesta lleva un prefijo visible: «Respuesta tardía a tu consulta del {fecha y hora}. Se refiere al contexto temporal de esa consulta; no es una recomendación actualizada para hoy. Si todavía la necesitas, vuelve a preguntar». Se muestran además las fechas absolutas resueltas por el worker; no se traslada una recomendación antigua al presente.
 
-Esta nota se aplica a las consultas deportivas del mismo alcance que los avisos, tanto en ficheros como en PostgreSQL y aunque los avisos estén apagados. Se incorpora también a la respuesta de voz y a su texto visible. No se reencola automáticamente ni se aplica un cambio de plan por antigüedad: permanecen los controles de autorización y caducidad de propuestas existentes. Se comprueba al entregar, no solo al recoger, para cubrir una ejecución larga. La antigüedad se calcula con el reloj de creación persistido; si falta o es inválido se indica «fecha de consulta no disponible; vigencia temporal no confirmada» sin inventarla. Esta implementación pertenece al entregable 2, no al primero de solo lectura.
+Esta nota se aplica a las consultas deportivas del mismo alcance que los avisos, tanto en ficheros como en PostgreSQL y aunque los avisos estén apagados. Se incorpora también a la respuesta de voz y a su texto visible. No se reencola automáticamente ni se aplica un cambio de plan por antigüedad: permanecen los controles de autorización y caducidad de propuestas existentes. Se comprueba al entregar, no solo al recoger, para cubrir una ejecución larga. La antigüedad se calcula con el reloj de creación persistido; si falta o es inválido se indica «fecha de consulta no disponible; vigencia temporal no confirmada» sin inventarla. Esta implementación pertenece al entregable 2a, no al primero de solo lectura.
 
 ### Activación independiente del aviso
 
-`COACH_DELAY_NOTICE_SECONDS` queda **vacío o a 0 por defecto**: el barrido no se inicia y no envía avisos. Un entero positivo configura el umbral; valores negativos o inválidos se rechazan como configuración incorrecta. No se habilita como efecto lateral de migrar el esquema, desplegar el entregable 2 ni activar V3.
+`COACH_DELAY_NOTICE_SECONDS` queda **vacío o a 0 por defecto**: el barrido no se inicia y no envía avisos. Un entero positivo configura el umbral; valores negativos o inválidos se rechazan como configuración incorrecta. No se habilita como efecto lateral de migrar el esquema, desplegar el entregable 2b ni activar V3.
 
-Se enciende únicamente después de superar las pruebas de operación normal, concurrencia, recuperación y latencia del entregable 2. Para apagarlo se vuelve a 0 y se reinicia/recarga la API; se detiene la programación de envíos y se cancelan intentos aún no enviados. Una petición ya aceptada por Telegram no se puede retirar. Conservar el acuse inmediato y `/estado` no depende de este ajuste. La activación de alias migrados exige que este aviso ya esté operativo, pero las mejoras de solo lectura del entregable 1 son independientes.
+Se enciende únicamente después de superar las pruebas de operación normal, concurrencia, recuperación y latencia del entregable 2b. Para apagarlo se vuelve a 0 y se reinicia/recarga la API; se detiene la programación de envíos y se cancelan intentos aún no enviados. Una petición ya aceptada por Telegram no se puede retirar. Conservar el acuse inmediato y `/estado` no depende de este ajuste. La activación de alias migrados exige que este aviso ya esté operativo, pero las mejoras de solo lectura del entregable 1 son independientes.
 
 ### Cálculo del umbral y límites de la evidencia
 
@@ -124,18 +124,21 @@ La vista conserva frescura, último intento/éxito y errores seguros por fuente,
 ## Entregables y aceptación
 
 1. **Simplificación visible de solo lectura:** ayuda reducida, `/registro` textual y `/estado` con señales de cola, sin depender del interruptor del adaptador ni de V3. Se prueban con ambos backends; la ayuda describe el comportamiento vigente. Incluye la base de fase 3 y la matriz de capacidades. Puede entregarse antes de activar cualquier migración deportiva.
-2. **Persistencia y experiencia de espera:** prerrequisito antes de implementar este entregable: disponer de PostgreSQL desechable y repetir la suite completa del bot, incluidas las pruebas de persistencia sin omisiones. Después, ensayo de copia/restauración, migración aditiva, lectores compatibles, productores, vistas factuales fechadas, avisos con reclamación atómica y máximo de tres intentos, y notas de respuesta tardía a partir de 6 horas o cambio de fecha local. Se vuelve a ejecutar la suite tras el cambio. No se difiere la verificación PostgreSQL al cierre.
+2a. **Acuse y respuesta tardía, sin migración:** sustituir el acuse existente e incorporar la nota al entregar, usando el reloj de creación ya persistido. Funciona con ficheros y PostgreSQL; se verifica con las suites habituales, incluidos límites de 30 minutos/6 horas y texto/voz. Desplegar primero los lectores/consumidores compatibles de la respuesta y después los productores que añaden la nota, sin nuevos campos de persistencia ni alterar validación de la respuesta estructurada. La nota es presentación de entrega, no contenido deportivo nuevo. Desplegar y observar 2a antes de empezar 2b: verificar acuse único, respuesta normal sin nota, caso tardío y voz mediante evidencia de entrega controlada, sin mensajes espontáneos de prueba. Registrar versiones y observaciones; si no hay evidencia de operación, 2b no comienza. La nota no tiene interruptor propio; ante regresión se revierte la versión compatible de 2a.
+
+2b. **Migración y avisos:** prerrequisitos: 2a desplegado y observado, PostgreSQL desechable disponible y suite completa del bot correcta sin omisiones. Ensayar copia/restauración, migración aditiva, lectores compatibles, productores, vistas factuales fechadas y avisos con reclamación atómica y máximo de tres intentos. Repetir la suite tras el cambio. Barrido apagado por defecto; activación independiente tras sus pruebas. No se difiere la verificación PostgreSQL al cierre.
+
 3. **Adaptador apagado por defecto:** tres candidatos, requisito V3, evaluación semántica y reversión comprobada. Activación solo con capacidad y latencia verificadas, avisos operativos y coordinación API/worker. Transición explícita del resto de alias deportivos a vistas de datos.
 4. **Cierre con E14 parcial esperado:** evidencia separada de los tres alias migrados, vistas sin opinión y capacidades retiradas temporalmente. Si la activación de producción sigue pendiente, se declara por separado; ni siquiera el estado parcial se da por probado sin sus pruebas. Retirada de duplicados condicionada a conservar una reversión efectiva.
 
 ### Criterios obligatorios del aviso
 
 - Cero avisos antes del umbral y cero avisos para trabajos finalizados a tiempo. Se reproduce el presupuesto de recogida de 60 s más el máximo observado de la muestra de fase 3 y el perfil de latencia del motor que se activará.
-- **Exactamente un aviso por trabajo demorado en operación normal**, aunque haya varios barridos o procesos concurrentes. Esta prueba es criterio de aceptación del entregable 2 y condición de activación del 3.
+- **Exactamente un aviso por trabajo demorado en operación normal**, aunque haya varios barridos o procesos concurrentes. Esta prueba es criterio de aceptación del entregable 2b y condición de activación del 3.
 - Configuración vacía/0: ningún barrido ni aviso. Un solo acuse existente actualizado por texto, `/coach`, voz y alias; pruebas de selección fija por alias sin argumentos y resumen genérico para texto, voz y alias con argumentos, sin resolutor en el bot.
 - Concesión de 120 s, plazo total de envío de 15 s y confirmación posterior: pruebas de error HTTP, `ok=false`, timeout y caída tras aceptación; esta última puede duplicar el aviso y se documenta como excepción.
 - Tres confirmaciones perdidas como máximo: ningún cuarto intento tras caducidad, reinicio o reactivación; caída previa al envío consume intento.
-- Nota de respuesta tardía a las 6 horas exactas, tras cambio de fecha local y tras dos días de espera; reloj original y fechas absolutas conservados en texto y voz, sin reencolado ni aplicación automática.
+- Nota de respuesta tardía a las 6 horas exactas, tras cambio de fecha local con espera mayor de 30 minutos y tras dos días de espera; sin nota por cambio de día con espera de 30 minutos exactos o menor (incluido 23:55 → 00:00:20); reloj original y fechas absolutas conservados en texto y voz, sin reencolado ni aplicación automática.
 - Recuperación de concesiones caducadas y de avisos pendientes tras reinicio; prueba de carrera con finalización. Se mantiene documentado el límite de entrega exactamente una vez de Telegram ante caída entre envío y confirmación persistida.
 - El respaldo incluye hasta qué sincronización llega, su antigüedad y fechas/fuentes de las observaciones. Datos ausentes o fecha desconocida se expresan sin inventarlos.
 - Copia restaurada, migración y lectores compatibles conservan trabajos pendientes e históricos. Los tests de PostgreSQL no se omiten por falta de infraestructura.

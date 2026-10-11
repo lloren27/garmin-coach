@@ -1,0 +1,537 @@
+[
+  {
+    "case_id": "E01-pace",
+    "baseline": {
+      "case_id": "E01-pace",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_85204a33e552427a863e738969b44524",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_85204a33e552427a863e738969b44524",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "response_hash": "e4b33f65a3bd6c01af078570b91f8edd7bd77d7303f5288aa72b0e17faa070c7",
+      "latency_seconds": 18.1629
+    }
+  },
+  {
+    "case_id": "E01-volume",
+    "baseline": {
+      "case_id": "E01-volume",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_6116cce3ba8e4598982eed5d6326739d",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_6116cce3ba8e4598982eed5d6326739d",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "response_hash": "aeedd677dee5da70777e01edfb70009bf397ea4acfb195558173aaf9af3f8bc4",
+      "latency_seconds": 9.1972
+    }
+  },
+  {
+    "case_id": "E01-sleep",
+    "baseline": {
+      "case_id": "E01-sleep",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_f1fe1c7d357c4535990daef78a0c7f08",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_f1fe1c7d357c4535990daef78a0c7f08",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "response_hash": "2de2a663ff3be7996a70faca3a5a7ba0647b60686405efccf3356fc30b6f8a0d",
+      "latency_seconds": 9.2508
+    }
+  },
+  {
+    "case_id": "E01-plan",
+    "baseline": {
+      "case_id": "E01-plan",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_6a25506f56454c709fb59af8b2f4e728",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "¿Qué día o actividad quieres consultar?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "¿Qué día o actividad quieres consultar?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_6a25506f56454c709fb59af8b2f4e728",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "response_hash": "61998d6e39c3dfaa159e434627712706ca54065c1879a968de46cf753fc77347",
+      "latency_seconds": 9.4174
+    }
+  },
+  {
+    "case_id": "R01-pace",
+    "baseline": {
+      "case_id": "R01-pace",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_5482e8f27d7e4495b157cbdec0a6d23e",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_5482e8f27d7e4495b157cbdec0a6d23e",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "response_hash": "a61c622b19e10912522c304c0ddd3901149360896b02049f172500c97700eddc",
+      "latency_seconds": 9.3081
+    }
+  },
+  {
+    "case_id": "R01-distance",
+    "baseline": {
+      "case_id": "R01-distance",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_76fc66b7634e4a02a4b22b28c9c31ef8",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "¿Qué día o actividad quieres consultar?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "¿Qué día o actividad quieres consultar?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_76fc66b7634e4a02a4b22b28c9c31ef8",
+          "component_index": 0,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "response_hash": "8402bb838fb4dd1f4ae300c337b109803d389656a379321fc2540eb105a7b77e",
+      "latency_seconds": 9.3603
+    }
+  },
+  {
+    "case_id": "E01",
+    "baseline": {
+      "case_id": "E01",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_ab58c4f6f0b1413399b74db5fc902897",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:PLAN_ACTIVITY_MAGNITUDE_MISMATCH:0"
+          ],
+          "follow_up": "CONFIRM_PLAN_MATCH"
+        },
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_ab58c4f6f0b1413399b74db5fc902897",
+          "component_index": 1,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "2026-10-03:\n1:45:04 registrados (garmin) frente a 35–45 min previstos (plan). La diferencia es grande; puede no tratarse de la misma sesión.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?\n\n¿Qué día o actividad quieres consultar?"
+    },
+    "model": {
+      "status": "invalid_selection",
+      "answer": null,
+      "selections": null,
+      "response_hash": "123f6f1b92e08872ef85b89597137c60ae385fab878008a196c1d9bc85a8d108",
+      "error": "MODEL_SELECTION_INVALID",
+      "latency_seconds": 35.7926
+    }
+  },
+  {
+    "case_id": "E07",
+    "baseline": {
+      "case_id": "E07",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_65371a3e41114836b77f162d8861fc07",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:PLAN_MATCH_INSUFFICIENT_DATA:0",
+            "c0:DATA_COVERAGE_INCOMPLETE:4"
+          ],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "2026-10-03:\nFaltan datos comparables para relacionar la actividad con el plan.\nLa cobertura de datos es incompleta; falta información para valorar la actividad.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+    },
+    "model": {
+      "status": "invalid_selection",
+      "answer": null,
+      "selections": null,
+      "response_hash": "bb47af7d3638cae8706889d5796faee974747d3f310eada692cf3a2851c8b2f6",
+      "error": "MODEL_SELECTION_INVALID",
+      "latency_seconds": 23.6699
+    }
+  },
+  {
+    "case_id": "E08",
+    "baseline": {
+      "case_id": "E08",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_881dcae2ec3f4ebdaf4ea0818e57927b",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:NO_PLAN_FOR_SCOPE:0"
+          ],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "2026-10-03:\nNo hay una sesión compatible disponible en este contexto para comparar.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "2026-10-03:\nNo hay una sesión compatible disponible en este contexto para comparar.\nRitmo medio: 5:15 min/km (garmin, 2026-10-03). Se calcula con la duración registrada, cuya inclusión de pausas no consta. El promedio no demuestra cumplimiento de bloques.\nNo se ha establecido una referencia personal comparable.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_881dcae2ec3f4ebdaf4ea0818e57927b",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:NO_PLAN_FOR_SCOPE:0",
+            "c0:PACE_BLOCKS_NOT_COMPARABLE:1",
+            "c0:WELLNESS_BASELINE_UNAVAILABLE:3"
+          ],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "response_hash": "d99f9843f5f2e1936044ca7675853992798627f2a53a79b23072059168e73848",
+      "latency_seconds": 24.4766
+    }
+  },
+  {
+    "case_id": "E09",
+    "baseline": {
+      "case_id": "E09",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_d382e671c961423ebb2fd0a3a72dc473",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:MULTISPORT_COMPONENTS_SEPARATE:7"
+          ],
+          "follow_up": null
+        },
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_d382e671c961423ebb2fd0a3a72dc473",
+          "component_index": 1,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "2026-10-03:\ncycling: 1:10:00 (garmin, 2026-10-03); running: 1:45:04 (garmin, 2026-10-03); strength: 30:00 (zepp, 2026-10-03). Las cargas de deportes y escalas distintas se mantienen separadas; no se suman TRIMP, TSS y carga muscular.\n\n2026-10-04:\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+    },
+    "model": {
+      "status": "invalid_selection",
+      "answer": null,
+      "selections": null,
+      "response_hash": "01cfaff2dc51dd73bae2dae97425d2916b22c65ac3387514b90ff30ae3283bf9",
+      "error": "MODEL_SELECTION_INVALID",
+      "latency_seconds": 44.0029
+    }
+  },
+  {
+    "case_id": "E10",
+    "baseline": {
+      "case_id": "E10",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_969ed89afbae45fcb1665f0bb59ea64b",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:SYMPTOM_REPORTED:0",
+            "c0:SESSION_SAFETY_NOT_ASSESSABLE:1"
+          ],
+          "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+        }
+      ],
+      "answer": "2026-10-04:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "2026-10-04:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_969ed89afbae45fcb1665f0bb59ea64b",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:SYMPTOM_REPORTED:0",
+            "c0:SESSION_SAFETY_NOT_ASSESSABLE:1"
+          ],
+          "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+        }
+      ],
+      "response_hash": "320f0f3a16b23357876c0ae8f8dee5be7e640a0009ea4b1c2fb803294a274600",
+      "latency_seconds": 12.984
+    }
+  },
+  {
+    "case_id": "E13",
+    "baseline": {
+      "case_id": "E13",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_3eb4112c9fbb49c0873da30e6bddc884",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:WELLNESS_OBSERVATION_AVAILABLE:2",
+            "c0:WELLNESS_BASELINE_UNAVAILABLE:3",
+            "c0:WELLNESS_TREND_NOT_ASSESSABLE:4"
+          ],
+          "follow_up": "REVIEW_HISTORY_WINDOW"
+        }
+      ],
+      "answer": "2026-10-03:\npulso en reposo 39 bpm (zepp, 2026-10-03); sueño 430 min (zepp, 2026-10-03); puntuación de sueño 78 score (zepp, 2026-10-03); estrés 22 score (zepp, 2026-10-03).\nNo se ha establecido una referencia personal comparable.\nEstas mediciones aisladas no permiten concluir una tendencia ni una mejor recuperación.\n¿Dispones de un histórico personal comparable de sueño y pulso?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "2026-10-03:\nNo se ha establecido una referencia personal comparable.\nEstas mediciones aisladas no permiten concluir una tendencia ni una mejor recuperación.\n¿Dispones de un histórico personal comparable de sueño y pulso?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_3eb4112c9fbb49c0873da30e6bddc884",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:WELLNESS_BASELINE_UNAVAILABLE:3",
+            "c0:WELLNESS_TREND_NOT_ASSESSABLE:4"
+          ],
+          "follow_up": "REVIEW_HISTORY_WINDOW"
+        }
+      ],
+      "response_hash": "8ffedadac3b26cc17f8fad9fc74b49b8e51943dd0f5656e2c8973dbd69bf9068",
+      "latency_seconds": 28.8725
+    }
+  },
+  {
+    "case_id": "R01",
+    "baseline": {
+      "case_id": "R01",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_9dbcb54fbee7416db900a254f4428c11",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:DISTANCE_BELOW_PLAN:1",
+            "c0:PLAN_MATCH_UNCONFIRMED:0"
+          ],
+          "follow_up": "CONFIRM_PLAN_MATCH"
+        }
+      ],
+      "answer": "2026-10-03:\nSi corresponde a la sesión prevista: 11,01 km registrados (garmin) frente a 17 km previstos (plan). Diferencia: −5,99 km (−35,2 % respecto al objetivo o límite más cercano).\nLa correspondencia con el plan todavía no está confirmada.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "2026-10-03:\nLa correspondencia con el plan todavía no está confirmada.\nSi corresponde a la sesión prevista: 11,01 km registrados (garmin) frente a 17 km previstos (plan). Diferencia: −5,99 km (−35,2 % respecto al objetivo o límite más cercano).\nRitmo medio: 5:05 min/km (garmin, 2026-10-03). Se calcula con la duración registrada, cuya inclusión de pausas no consta. El promedio no demuestra cumplimiento de bloques.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_9dbcb54fbee7416db900a254f4428c11",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:PLAN_MATCH_UNCONFIRMED:0",
+            "c0:DISTANCE_BELOW_PLAN:1",
+            "c0:PACE_BLOCKS_NOT_COMPARABLE:2"
+          ],
+          "follow_up": "CONFIRM_PLAN_MATCH"
+        }
+      ],
+      "response_hash": "c153ff688eb043a0944a36bcddff6f8461a2a306a60d9b071b1d02363d47f2c6",
+      "latency_seconds": 21.279
+    }
+  },
+  {
+    "case_id": "E01-mixto",
+    "baseline": {
+      "case_id": "E01-mixto",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_b8229dd5a5f048468ae1726a893e3c06",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:PLAN_ACTIVITY_MAGNITUDE_MISMATCH:0"
+          ],
+          "follow_up": "CONFIRM_PLAN_MATCH"
+        },
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_b8229dd5a5f048468ae1726a893e3c06",
+          "component_index": 1,
+          "finding_ids": [],
+          "follow_up": "PROVIDE_MISSING_CONTEXT"
+        }
+      ],
+      "answer": "2026-10-03:\n1:45:04 registrados (garmin) frente a 35–45 min previstos (plan). La diferencia es grande; puede no tratarse de la misma sesión.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?\n\n2026-10-04:\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?"
+    },
+    "model": {
+      "status": "invalid_selection",
+      "answer": null,
+      "selections": null,
+      "response_hash": "e519d57f084692c61449e20da7ddd7a0fcb90b816edc7b042033a655635e5fad",
+      "error": "MODEL_SELECTION_INVALID",
+      "latency_seconds": 39.5247
+    }
+  },
+  {
+    "case_id": "E10-mixto",
+    "baseline": {
+      "case_id": "E10-mixto",
+      "status": "valid",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:SYMPTOM_REPORTED:5",
+            "c0:SESSION_SAFETY_NOT_ASSESSABLE:6"
+          ],
+          "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+        },
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+          "component_index": 1,
+          "finding_ids": [
+            "c1:SYMPTOM_REPORTED:0",
+            "c1:SESSION_SAFETY_NOT_ASSESSABLE:1"
+          ],
+          "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+        }
+      ],
+      "answer": "2026-10-03:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?\n\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?"
+    },
+    "model": {
+      "status": "valid",
+      "answer": "2026-10-03:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\nNo hay una sesión compatible disponible en este contexto para comparar.\n¿La molestia continúa y cuándo aparece?\n\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?",
+      "selections": [
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+          "component_index": 0,
+          "finding_ids": [
+            "c0:SYMPTOM_REPORTED:5",
+            "c0:SESSION_SAFETY_NOT_ASSESSABLE:6",
+            "c0:NO_PLAN_FOR_SCOPE:0"
+          ],
+          "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+        },
+        {
+          "schema_version": "1",
+          "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+          "component_index": 1,
+          "finding_ids": [
+            "c1:SYMPTOM_REPORTED:0",
+            "c1:SESSION_SAFETY_NOT_ASSESSABLE:1"
+          ],
+          "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+        }
+      ],
+      "response_hash": "a543bb89d0be5c7d2de59dd9910dad88e2fd094875c2db611623b121a814f2ed",
+      "latency_seconds": 44.1279
+    }
+  }
+]

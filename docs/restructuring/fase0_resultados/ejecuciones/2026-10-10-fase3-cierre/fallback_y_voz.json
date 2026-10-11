@@ -1,0 +1,103 @@
+{
+  "resultado": "cumple",
+  "observado": {
+    "checks": {
+      "same_question": true,
+      "same_context": true,
+      "completed": true,
+      "fallback_marked": true,
+      "answer_present": true
+    },
+    "outputs": [
+      {
+        "question": "Analiza mi entrenamiento de hoy",
+        "context": {
+          "coach_brief": {
+            "intents": [
+              "latest"
+            ],
+            "primary_intent": "latest",
+            "sections": [
+              {
+                "title": "ultima_actividad",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "salud",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "carga",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "running",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "tendencia",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              }
+            ],
+            "strength_load": null,
+            "strength_load_current": null,
+            "instructions": "Responde solo en espanol, sin Markdown, sin titulares ### y sin inventar datos. Usa estas lecturas calculadas como fuente principal. Si el usuario pide feedback de un dia, usa todas las actividades de esa fecha y no descartes running, bici ni fuerza. Cruza las lecturas con el contexto completo y explica los datos que sustentan el consejo. Redacta frases completas en español con tildes, comas y puntos, aptas para lectura en voz alta. Distancias en km, running en min/km, ciclismo en km/h y W."
+          },
+          "wattwise_live": null
+        },
+        "completion": {
+          "status": "completed",
+          "answer": "No tengo una fecha válida de sincronización para confirmar tu estado actual. Usa /sync para actualizar los datos.\n\nNo he podido completar el análisis del modelo. Esta es una lectura básica de los datos disponibles.\n\nSobre la ultima actividad.",
+          "structured_output": null,
+          "output_source": "deterministic_fallback"
+        }
+      },
+      {
+        "question": "Analiza mi entrenamiento de hoy",
+        "context": {
+          "coach_brief": {
+            "intents": [
+              "latest"
+            ],
+            "primary_intent": "latest",
+            "sections": [
+              {
+                "title": "ultima_actividad",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "salud",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "carga",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "running",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              },
+              {
+                "title": "tendencia",
+                "content": "Todavia no tengo datos sincronizados desde Garmin."
+              }
+            ],
+            "strength_load": null,
+            "strength_load_current": null,
+            "instructions": "Responde solo en espanol, sin Markdown, sin titulares ### y sin inventar datos. Usa estas lecturas calculadas como fuente principal. Si el usuario pide feedback de un dia, usa todas las actividades de esa fecha y no descartes running, bici ni fuerza. Cruza las lecturas con el contexto completo y explica los datos que sustentan el consejo. Redacta frases completas en español con tildes, comas y puntos, aptas para lectura en voz alta. Distancias en km, running en min/km, ciclismo en km/h y W."
+          },
+          "wattwise_live": null
+        },
+        "completion": {
+          "status": "completed",
+          "answer": "No tengo una fecha válida de sincronización para confirmar tu estado actual. Usa /sync para actualizar los datos.\n\nNo he podido completar el análisis del modelo. Esta es una lectura básica de los datos disponibles.\n\nSobre la ultima actividad.",
+          "structured_output": null,
+          "output_source": "deterministic_fallback",
+          "transcript": "Analiza mi entrenamiento de hoy"
+        }
+      }
+    ]
+  },
+  "limitacion": "Texto y voz transcrita con transporte interceptado. No prueba precisión Whisper ni envío Telegram.",
+  "seconds": 0.002
+}

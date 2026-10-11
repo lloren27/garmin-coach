@@ -1,0 +1,32 @@
+{
+  "case_id": "E01-volume",
+  "baseline": {
+    "case_id": "E01-volume",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_6116cce3ba8e4598982eed5d6326739d",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_6116cce3ba8e4598982eed5d6326739d",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "response_hash": "aeedd677dee5da70777e01edfb70009bf397ea4acfb195558173aaf9af3f8bc4",
+    "latency_seconds": 9.1972
+  }
+}

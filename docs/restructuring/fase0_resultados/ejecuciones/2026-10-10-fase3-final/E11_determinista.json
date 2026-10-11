@@ -1,0 +1,76 @@
+{
+  "resultado": "cumple",
+  "observado": [
+    {
+      "id": "2f64c92c-45dd-4783-8746-8f96974d6c1a",
+      "revision": 1,
+      "sessions": [
+        {
+          "id": "7c55bf0c-af63-495f-870f-a108d5c51840",
+          "date": "2026-10-03",
+          "status": "planned",
+          "sport": "running",
+          "session_type": "easy_run",
+          "intensity": "easy",
+          "duration_min": 35,
+          "duration_max": 45,
+          "training_plan_id": "2f64c92c-45dd-4783-8746-8f96974d6c1a",
+          "owner_id": "audit",
+          "sequence": 0,
+          "optional": false,
+          "created_at": "2026-10-03T20:00:00+00:00",
+          "updated_at": "2026-10-03T20:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "id": "2f64c92c-45dd-4783-8746-8f96974d6c1a",
+      "revision": 1,
+      "sessions": [
+        {
+          "id": "7c55bf0c-af63-495f-870f-a108d5c51840",
+          "date": "2026-10-03",
+          "status": "planned",
+          "sport": "running",
+          "session_type": "easy_run",
+          "intensity": "easy",
+          "duration_min": 35,
+          "duration_max": 45,
+          "training_plan_id": "2f64c92c-45dd-4783-8746-8f96974d6c1a",
+          "owner_id": "audit",
+          "sequence": 0,
+          "optional": false,
+          "created_at": "2026-10-03T20:00:00+00:00",
+          "updated_at": "2026-10-03T20:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "id": "2f64c92c-45dd-4783-8746-8f96974d6c1a",
+      "revision": 1,
+      "sessions": [
+        {
+          "id": "7c55bf0c-af63-495f-870f-a108d5c51840",
+          "date": "2026-10-03",
+          "status": "planned",
+          "sport": "running",
+          "session_type": "easy_run",
+          "intensity": "easy",
+          "duration_min": 35,
+          "duration_max": 45,
+          "training_plan_id": "2f64c92c-45dd-4783-8746-8f96974d6c1a",
+          "owner_id": "audit",
+          "sequence": 0,
+          "optional": false,
+          "created_at": "2026-10-03T20:00:00+00:00",
+          "updated_at": "2026-10-03T20:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "limitacion": "Generador sustituido por plan fijo; se ejecutan enrutador y persistencia reales en ficheros.",
+  "id": "E11",
+  "seconds": 0.002,
+  "events": "",
+  "fixture_sha256": "008d260990ad5c41b0da5509528d8968e8d418ef0678bce0e7ed8562f43028a3"
+}

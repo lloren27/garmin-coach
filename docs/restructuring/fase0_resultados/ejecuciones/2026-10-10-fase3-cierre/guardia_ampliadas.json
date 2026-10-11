@@ -1,0 +1,8 @@
+{
+  "blocked_events": [
+    "write",
+    "secret_read",
+    "network"
+  ],
+  "expected_self_checks": 3
+}

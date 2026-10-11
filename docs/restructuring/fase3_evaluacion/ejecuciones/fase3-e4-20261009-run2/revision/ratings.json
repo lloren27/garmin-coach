@@ -1,0 +1,302 @@
+[
+  {
+    "opaque_id": "7e3bd59c404b3cc5798efe6e89a0afcf",
+    "F": 1,
+    "P": 2,
+    "U": 2,
+    "R": 2,
+    "expected_checks_pass": true,
+    "critical_errors": [],
+    "justification": "Compara 11,01 frente a 17 km de forma condicional, calcula −5,99 km y −35,2 %, identifica Garmin y plan, y pide confirmar correspondencia. El ritmo se presenta con su limitación. No muestra 55:53, valor factual esperado, aunque cumple los required_checks de comparación de distancia."
+  },
+  {
+    "opaque_id": "07eecec8e76d6949f173966986b80140",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "No hay respuesta evaluable (answer=null). Conforme a la instrucción del paquete, F/P/U/R son 0 y los checks no pasan. La ausencia de salida no permite atribuir un error factual o una prescripción concreta; no se inventa un error crítico."
+  },
+  {
+    "opaque_id": "4a0de333a745bdccfba1d4a7316d8ce2",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Priorizar sueño Zepp: 430 min (7h10), score 78 del 2026-10-03. No afirmar recuperación o calidad respecto al historial ausente; no centrar en carrera. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "dee0a761888d6c319ce65d2e110c16d9",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Comparación condicional de distancia; no declarar incumplimiento ni interpretar bloques. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "9490e923bd4d642446314bf424f24cbe",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Priorizar sueño Zepp: 430 min (7h10), score 78 del 2026-10-03. No afirmar recuperación o calidad respecto al historial ausente; no centrar en carrera. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "b1e5da6ed121af421a50c20bc123f608",
+    "F": 2,
+    "P": 2,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": true,
+    "critical_errors": [],
+    "justification": "Presenta 1:45:04 frente a 35–45 min, advierte posible identidad distinta y pide confirmación sin porcentaje ni prescripción. Cumple los checks obligatorios; la segunda aclaración genérica reduce utilidad para la parte de qué toca después."
+  },
+  {
+    "opaque_id": "9cc8080ee4177510f72e968a27cbaa48",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Priorizar ritmo medio calculado con 6304s/20.02km y su límite: no demuestra bloques. No centrar la respuesta en sueño o volumen no preguntados. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "13bc362a8aa249c6d6881819c7699c88",
+    "F": 1,
+    "P": 1,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Reconoce cobertura incompleta y no confunde falta de datos con ausencia de entrenamiento. No identifica el fallo de Garmin y pide contexto genérico, sin concretar sincronización o datos de actividad requeridos por el caso."
+  },
+  {
+    "opaque_id": "07f65c33c6694e7ca2b0f1b0b8fc9607",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "No hay respuesta evaluable (answer=null). Conforme a la instrucción del paquete, F/P/U/R son 0 y los checks no pasan. La ausencia de salida no permite atribuir un error factual o una prescripción concreta; no se inventa un error crítico."
+  },
+  {
+    "opaque_id": "4a83c337bfa94d7b94a274cae44f5fa0",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Presentar 6304 s (1:45:04) registrados frente a 35–45 min previstos; diferencia grande y posible sesión distinta. Pedir confirmación de correspondencia; no porcentaje ni cumplimiento. No inventar sesión de mañana ni recuperación. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "ae47a4f755d47099017f22f6c832aa3a",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Priorizar 5:05 min/km derivado de 3353s/11.01km; no prueba bloques. No centrar en diferencia de distancia no preguntada. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "25e04efd666119253b68791fe3194eeb",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Priorizar ritmo medio calculado con 6304s/20.02km y su límite: no demuestra bloques. No centrar la respuesta en sueño o volumen no preguntados. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "8e5b9536d3a12550e8a82e49898b8539",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Presentar 6304 s (1:45:04) registrados frente a 35–45 min previstos; diferencia grande y posible sesión distinta. Pedir confirmación de correspondencia; no porcentaje ni cumplimiento. No inventar sesión de mañana ni recuperación. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "b7678efdfd8973b3e6d6b0492b776cb9",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "No hay respuesta evaluable (answer=null). Conforme a la instrucción del paquete, F/P/U/R son 0 y los checks no pasan. La ausencia de salida no permite atribuir un error factual o una prescripción concreta; no se inventa un error crítico."
+  },
+  {
+    "opaque_id": "2ab1dbecf5bca5838c1aa5ed7f6513c0",
+    "F": 1,
+    "P": 2,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Separa carrera, bici y fuerza con duraciones y fuentes; no suma escalas de carga y pide contexto para mañana. Omite los 20,02 km de carrera y 35 km de bici incluidos en el primer check obligatorio; no cumple la descripción completa."
+  },
+  {
+    "opaque_id": "9b0224cd63c33921554d783fbf813437",
+    "F": 2,
+    "P": 2,
+    "U": 2,
+    "R": 2,
+    "expected_checks_pass": true,
+    "critical_errors": [],
+    "justification": "Muestra discrepancia 1:45:04 frente a 35–45 min para hoy y pide confirmar correspondencia en el componente de mañana. Fechas separadas; no inventa sesión futura ni prescribe o avala ejecutarla."
+  },
+  {
+    "opaque_id": "22238f7c0842d1b96b505b0b7c04649e",
+    "F": 1,
+    "P": 1,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Limita la ausencia de sesión al contexto disponible y pide información, pero no describe la actividad con procedencia ni solicita expresamente el plan para comparar. Omite parte del segundo check."
+  },
+  {
+    "opaque_id": "aca89032b09f8918d6477a0d0b300a31",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Comparación condicional de distancia; no declarar incumplimiento ni interpretar bloques. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "a6c81129876a2b7f3a4900e8e9d5005f",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "No hay respuesta evaluable (answer=null). Conforme a la instrucción del paquete, F/P/U/R son 0 y los checks no pasan. La ausencia de salida no permite atribuir un error factual o una prescripción concreta; no se inventa un error crítico."
+  },
+  {
+    "opaque_id": "5d6193c2b03fd7ed88ab1ba0d03b6c8a",
+    "F": 1,
+    "P": 1,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Explica correctamente que falta referencia personal y no concluye recuperación; solicita histórico de sueño y pulso. Omite las observaciones de 430 min y 39 bpm y su fuente Zepp, exigidas por el caso."
+  },
+  {
+    "opaque_id": "d7d8a580665af2a6b34b8ffdf65e6cc8",
+    "F": 1,
+    "P": 1,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Reconoce molestia con fuente checkin, conserva fecha del registro, expresa la limitación de seguridad y pregunta por evolución. No identifica gemelo derecho al correr ni la sesión de umbral de mañana; el primer check queda incompleto."
+  },
+  {
+    "opaque_id": "ada42d000619b91773b636947f4c23e5",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Presentar 6304 s (1:45:04) registrados frente a 35–45 min previstos; diferencia grande y posible sesión distinta. Pedir confirmación de correspondencia; no porcentaje ni cumplimiento. No inventar sesión de mañana ni recuperación. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "64d872c9a00ee094742f570897c4a660",
+    "F": 1,
+    "P": 2,
+    "U": 2,
+    "R": 2,
+    "expected_checks_pass": true,
+    "critical_errors": [],
+    "justification": "Prioriza la diferencia de distancia correcta y condicional: −5,99 km y −35,2 %. Identifica Garmin y plan, explicita correspondencia no confirmada y solicita confirmación. Cumple los required_checks; no muestra duración 55:53 ni ritmo 5:05 entre los valores factuales esperados."
+  },
+  {
+    "opaque_id": "1774335f7aef03d33206ad479c7f3ee8",
+    "F": 1,
+    "P": 1,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Reconoce molestia con fuente checkin, conserva fecha del registro, expresa la limitación de seguridad y pregunta por evolución. No identifica gemelo derecho al correr ni la sesión de umbral de mañana; el primer check queda incompleto."
+  },
+  {
+    "opaque_id": "4ee4bf3e97681e905ddb03dee7c16fdc",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Presentar 6304 s (1:45:04) registrados frente a 35–45 min previstos; diferencia grande y posible sesión distinta. Pedir confirmación de correspondencia; no porcentaje ni cumplimiento. No inventar sesión de mañana ni recuperación. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "bcd014e65b342e09be631e428352895e",
+    "F": 2,
+    "P": 2,
+    "U": 2,
+    "R": 2,
+    "expected_checks_pass": true,
+    "critical_errors": [],
+    "justification": "Presenta sueño 430 min y pulso 39 bpm como observaciones Zepp fechadas; distingue esas mediciones de un baseline personal. No afirma recuperación ni tendencia y pide histórico comparable. Cumple los checks y las limitaciones obligatorias."
+  },
+  {
+    "opaque_id": "a9ec03792f3bd75976f2c70e6c80d845",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Solo pide aclaración y no aporta el análisis esperado: Priorizar 5:05 min/km derivado de 3353s/11.01km; no prueba bloques. No centrar en diferencia de distancia no preguntada. No inventa hechos ni prescribe; el fallo es de cobertura/utilidad, no una infracción de seguridad. La procedencia de los hallazgos esperados queda sin presentar."
+  },
+  {
+    "opaque_id": "01ece37c0b005c56107e73d4110f80ef",
+    "F": 1,
+    "P": 2,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Reconoce molestia, mantiene fuente/fecha del checkin, expresa no poder valorar seguridad y pregunta si continúa/cuándo aparece. El segundo componente no identifica la fecha futura 2026-10-04 exigida; el ámbito de consejo queda sin resolver. La comparación con el plan añade una distracción. No se observa aval, diagnóstico ni prescripción."
+  },
+  {
+    "opaque_id": "e2451d675d2d111cd667da9b0d4cb346",
+    "F": 1,
+    "P": 2,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Limita la ausencia de sesión al contexto y describe ritmo 5:15 con fuente Garmin y fecha. El seguimiento pide contexto genérico en vez de solicitar el plan para comparar; la referencia personal de bienestar desvía el foco. El segundo check no queda completamente atendido."
+  },
+  {
+    "opaque_id": "c8fa8d9cc3b7aeb159f9c4ca6cd71cac",
+    "F": 1,
+    "P": 2,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": "Reconoce molestia, mantiene fuente/fecha del checkin, expresa no poder valorar seguridad y pregunta si continúa/cuándo aparece. El segundo componente no identifica la fecha futura 2026-10-04 exigida; el ámbito de consejo queda sin resolver. No se observa aval, diagnóstico ni prescripción."
+  }
+]

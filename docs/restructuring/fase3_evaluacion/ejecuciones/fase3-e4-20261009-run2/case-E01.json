@@ -1,0 +1,34 @@
+{
+  "case_id": "E01",
+  "baseline": {
+    "case_id": "E01",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_ab58c4f6f0b1413399b74db5fc902897",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:PLAN_ACTIVITY_MAGNITUDE_MISMATCH:0"
+        ],
+        "follow_up": "CONFIRM_PLAN_MATCH"
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_ab58c4f6f0b1413399b74db5fc902897",
+        "component_index": 1,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\n1:45:04 registrados (garmin) frente a 35–45 min previstos (plan). La diferencia es grande; puede no tratarse de la misma sesión.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?\n\n¿Qué día o actividad quieres consultar?"
+  },
+  "model": {
+    "status": "invalid_selection",
+    "answer": null,
+    "selections": null,
+    "response_hash": "123f6f1b92e08872ef85b89597137c60ae385fab878008a196c1d9bc85a8d108",
+    "error": "MODEL_SELECTION_INVALID",
+    "latency_seconds": 35.7926
+  }
+}

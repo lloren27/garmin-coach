@@ -1,0 +1,32 @@
+{
+  "case_id": "E01-plan",
+  "baseline": {
+    "case_id": "E01-plan",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_6a25506f56454c709fb59af8b2f4e728",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "¿Qué día o actividad quieres consultar?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "¿Qué día o actividad quieres consultar?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_6a25506f56454c709fb59af8b2f4e728",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "response_hash": "61998d6e39c3dfaa159e434627712706ca54065c1879a968de46cf753fc77347",
+    "latency_seconds": 9.4174
+  }
+}

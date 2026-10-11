@@ -1,0 +1,15 @@
+{
+  "protocol_version": "fase3-v2",
+  "parent_manifest_sha256": "cd43210d439c25d7a8bf93579ce936d83b116ffead42fe78d2698e71fa84caf0",
+  "status": "pre_generation",
+  "question_overrides": {
+    "E01-pace": "¿qué tal el ritmo hoy?",
+    "E01-volume": "¿cumplí el volumen hoy?",
+    "E01-sleep": "¿cómo dormí hoy?",
+    "E01-plan": "¿qué diferencia hubo con el plan hoy?",
+    "R01-pace": "¿qué tal el ritmo hoy?",
+    "R01-distance": "¿qué diferencia de distancia hubo frente al plan hoy?"
+  },
+  "inherits": ["facts", "clocks", "expectations", "selector_map", "rubric", "budgets", "win_rule"],
+  "reason": "Hacer explícito el ámbito temporal para comparar selección sobre hechos disponibles; conservar V1 y no atribuir superioridad de selección a aclaraciones previas al selector."
+}

@@ -131,7 +131,8 @@ def fallback_and_voice():
     def capture(job_id, payload):
         captures.append(copy.deepcopy(payload))
         return {'ok': True}
-    with patch.object(worker, 'start_telegram_processing_indicator', return_value=None), \
+    with patch.object(worker, 'COACH_ANALYSIS_V3_ENABLED', False), \
+         patch.object(worker, 'start_telegram_processing_indicator', return_value=None), \
          patch.object(worker, 'stop_telegram_processing_indicator'), \
          patch.object(worker, 'fetch_wattwise_context', return_value=None), \
          patch.object(worker, 'download_telegram_audio', return_value=audit.TMP/'synthetic.ogg'), \
@@ -141,6 +142,7 @@ def fallback_and_voice():
          patch.object(worker, 'call_ollama', side_effect=ValueError('synthetic invalid model output')) as model:
         for voice in (False, True):
             job = {'id': 'synthetic-audit', 'chat_id': 'audit', 'response_mode': 'text',
+                   'created_at': audit.NOW.isoformat(),
                    'text': '' if voice else 'Analiza mi entrenamiento de hoy'}
             if voice:
                 job['audio_file_id'] = 'synthetic-voice'

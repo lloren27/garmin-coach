@@ -1,0 +1,267 @@
+[
+  {
+    "case_id": "E01-pace",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_85204a33e552427a863e738969b44524",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+  },
+  {
+    "case_id": "E01-volume",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_6116cce3ba8e4598982eed5d6326739d",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+  },
+  {
+    "case_id": "E01-sleep",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_f1fe1c7d357c4535990daef78a0c7f08",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+  },
+  {
+    "case_id": "E01-plan",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_6a25506f56454c709fb59af8b2f4e728",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "¿Qué día o actividad quieres consultar?"
+  },
+  {
+    "case_id": "R01-pace",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_5482e8f27d7e4495b157cbdec0a6d23e",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+  },
+  {
+    "case_id": "R01-distance",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_76fc66b7634e4a02a4b22b28c9c31ef8",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "¿Qué día o actividad quieres consultar?"
+  },
+  {
+    "case_id": "E01",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_ab58c4f6f0b1413399b74db5fc902897",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:PLAN_ACTIVITY_MAGNITUDE_MISMATCH:0"
+        ],
+        "follow_up": "CONFIRM_PLAN_MATCH"
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_ab58c4f6f0b1413399b74db5fc902897",
+        "component_index": 1,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\n1:45:04 registrados (garmin) frente a 35–45 min previstos (plan). La diferencia es grande; puede no tratarse de la misma sesión.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?\n\n¿Qué día o actividad quieres consultar?"
+  },
+  {
+    "case_id": "E07",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_65371a3e41114836b77f162d8861fc07",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:PLAN_MATCH_INSUFFICIENT_DATA:0",
+          "c0:DATA_COVERAGE_INCOMPLETE:4"
+        ],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\nFaltan datos comparables para relacionar la actividad con el plan.\nLa cobertura de datos es incompleta; falta información para valorar la actividad.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+  },
+  {
+    "case_id": "E08",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_881dcae2ec3f4ebdaf4ea0818e57927b",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:NO_PLAN_FOR_SCOPE:0"
+        ],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\nNo hay una sesión compatible disponible en este contexto para comparar.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+  },
+  {
+    "case_id": "E09",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_d382e671c961423ebb2fd0a3a72dc473",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:MULTISPORT_COMPONENTS_SEPARATE:7"
+        ],
+        "follow_up": null
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_d382e671c961423ebb2fd0a3a72dc473",
+        "component_index": 1,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\ncycling: 1:10:00 (garmin, 2026-10-03); running: 1:45:04 (garmin, 2026-10-03); strength: 30:00 (zepp, 2026-10-03). Las cargas de deportes y escalas distintas se mantienen separadas; no se suman TRIMP, TSS y carga muscular.\n\n2026-10-04:\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+  },
+  {
+    "case_id": "E10",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_969ed89afbae45fcb1665f0bb59ea64b",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:SYMPTOM_REPORTED:0",
+          "c0:SESSION_SAFETY_NOT_ASSESSABLE:1"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-04:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?"
+  },
+  {
+    "case_id": "E13",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_3eb4112c9fbb49c0873da30e6bddc884",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:WELLNESS_OBSERVATION_AVAILABLE:2",
+          "c0:WELLNESS_BASELINE_UNAVAILABLE:3",
+          "c0:WELLNESS_TREND_NOT_ASSESSABLE:4"
+        ],
+        "follow_up": "REVIEW_HISTORY_WINDOW"
+      }
+    ],
+    "answer": "2026-10-03:\npulso en reposo 39 bpm (zepp, 2026-10-03); sueño 430 min (zepp, 2026-10-03); puntuación de sueño 78 score (zepp, 2026-10-03); estrés 22 score (zepp, 2026-10-03).\nNo se ha establecido una referencia personal comparable.\nEstas mediciones aisladas no permiten concluir una tendencia ni una mejor recuperación.\n¿Dispones de un histórico personal comparable de sueño y pulso?"
+  },
+  {
+    "case_id": "R01",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_9dbcb54fbee7416db900a254f4428c11",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:DISTANCE_BELOW_PLAN:1",
+          "c0:PLAN_MATCH_UNCONFIRMED:0"
+        ],
+        "follow_up": "CONFIRM_PLAN_MATCH"
+      }
+    ],
+    "answer": "2026-10-03:\nSi corresponde a la sesión prevista: 11,01 km registrados (garmin) frente a 17 km previstos (plan). Diferencia: −5,99 km (−35,2 % respecto al objetivo o límite más cercano).\nLa correspondencia con el plan todavía no está confirmada.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?"
+  },
+  {
+    "case_id": "E01-mixto",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b8229dd5a5f048468ae1726a893e3c06",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:PLAN_ACTIVITY_MAGNITUDE_MISMATCH:0"
+        ],
+        "follow_up": "CONFIRM_PLAN_MATCH"
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b8229dd5a5f048468ae1726a893e3c06",
+        "component_index": 1,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\n1:45:04 registrados (garmin) frente a 35–45 min previstos (plan). La diferencia es grande; puede no tratarse de la misma sesión.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?\n\n2026-10-04:\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?"
+  },
+  {
+    "case_id": "E10-mixto",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:SYMPTOM_REPORTED:5",
+          "c0:SESSION_SAFETY_NOT_ASSESSABLE:6"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+        "component_index": 1,
+        "finding_ids": [
+          "c1:SYMPTOM_REPORTED:0",
+          "c1:SESSION_SAFETY_NOT_ASSESSABLE:1"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?\n\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?"
+  }
+]

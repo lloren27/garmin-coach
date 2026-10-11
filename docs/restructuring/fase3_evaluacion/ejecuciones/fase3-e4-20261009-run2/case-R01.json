@@ -1,0 +1,39 @@
+{
+  "case_id": "R01",
+  "baseline": {
+    "case_id": "R01",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_9dbcb54fbee7416db900a254f4428c11",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:DISTANCE_BELOW_PLAN:1",
+          "c0:PLAN_MATCH_UNCONFIRMED:0"
+        ],
+        "follow_up": "CONFIRM_PLAN_MATCH"
+      }
+    ],
+    "answer": "2026-10-03:\nSi corresponde a la sesión prevista: 11,01 km registrados (garmin) frente a 17 km previstos (plan). Diferencia: −5,99 km (−35,2 % respecto al objetivo o límite más cercano).\nLa correspondencia con el plan todavía no está confirmada.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "2026-10-03:\nLa correspondencia con el plan todavía no está confirmada.\nSi corresponde a la sesión prevista: 11,01 km registrados (garmin) frente a 17 km previstos (plan). Diferencia: −5,99 km (−35,2 % respecto al objetivo o límite más cercano).\nRitmo medio: 5:05 min/km (garmin, 2026-10-03). Se calcula con la duración registrada, cuya inclusión de pausas no consta. El promedio no demuestra cumplimiento de bloques.\n¿Puedes confirmar qué actividad corresponde a la sesión prevista?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_9dbcb54fbee7416db900a254f4428c11",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:PLAN_MATCH_UNCONFIRMED:0",
+          "c0:DISTANCE_BELOW_PLAN:1",
+          "c0:PACE_BLOCKS_NOT_COMPARABLE:2"
+        ],
+        "follow_up": "CONFIRM_PLAN_MATCH"
+      }
+    ],
+    "response_hash": "c153ff688eb043a0944a36bcddff6f8461a2a306a60d9b071b1d02363d47f2c6",
+    "latency_seconds": 21.279
+  }
+}

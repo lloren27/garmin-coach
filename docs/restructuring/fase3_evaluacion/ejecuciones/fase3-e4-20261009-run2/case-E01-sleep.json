@@ -1,0 +1,32 @@
+{
+  "case_id": "E01-sleep",
+  "baseline": {
+    "case_id": "E01-sleep",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_f1fe1c7d357c4535990daef78a0c7f08",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_f1fe1c7d357c4535990daef78a0c7f08",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "response_hash": "2de2a663ff3be7996a70faca3a5a7ba0647b60686405efccf3356fc30b6f8a0d",
+    "latency_seconds": 9.2508
+  }
+}

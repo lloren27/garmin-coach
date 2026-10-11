@@ -1,0 +1,128 @@
+{
+  "mapping": {
+    "9cc8080ee4177510f72e968a27cbaa48": {
+      "case_id": "E01-pace",
+      "source": "baseline"
+    },
+    "25e04efd666119253b68791fe3194eeb": {
+      "case_id": "E01-pace",
+      "source": "model"
+    },
+    "8e5b9536d3a12550e8a82e49898b8539": {
+      "case_id": "E01-volume",
+      "source": "baseline"
+    },
+    "4ee4bf3e97681e905ddb03dee7c16fdc": {
+      "case_id": "E01-volume",
+      "source": "model"
+    },
+    "4a0de333a745bdccfba1d4a7316d8ce2": {
+      "case_id": "E01-sleep",
+      "source": "baseline"
+    },
+    "9490e923bd4d642446314bf424f24cbe": {
+      "case_id": "E01-sleep",
+      "source": "model"
+    },
+    "ada42d000619b91773b636947f4c23e5": {
+      "case_id": "E01-plan",
+      "source": "baseline"
+    },
+    "4a83c337bfa94d7b94a274cae44f5fa0": {
+      "case_id": "E01-plan",
+      "source": "model"
+    },
+    "a9ec03792f3bd75976f2c70e6c80d845": {
+      "case_id": "R01-pace",
+      "source": "baseline"
+    },
+    "ae47a4f755d47099017f22f6c832aa3a": {
+      "case_id": "R01-pace",
+      "source": "model"
+    },
+    "dee0a761888d6c319ce65d2e110c16d9": {
+      "case_id": "R01-distance",
+      "source": "baseline"
+    },
+    "aca89032b09f8918d6477a0d0b300a31": {
+      "case_id": "R01-distance",
+      "source": "model"
+    },
+    "b1e5da6ed121af421a50c20bc123f608": {
+      "case_id": "E01",
+      "source": "baseline"
+    },
+    "07f65c33c6694e7ca2b0f1b0b8fc9607": {
+      "case_id": "E01",
+      "source": "model"
+    },
+    "13bc362a8aa249c6d6881819c7699c88": {
+      "case_id": "E07",
+      "source": "baseline"
+    },
+    "b7678efdfd8973b3e6d6b0492b776cb9": {
+      "case_id": "E07",
+      "source": "model"
+    },
+    "22238f7c0842d1b96b505b0b7c04649e": {
+      "case_id": "E08",
+      "source": "baseline"
+    },
+    "e2451d675d2d111cd667da9b0d4cb346": {
+      "case_id": "E08",
+      "source": "model"
+    },
+    "2ab1dbecf5bca5838c1aa5ed7f6513c0": {
+      "case_id": "E09",
+      "source": "baseline"
+    },
+    "07eecec8e76d6949f173966986b80140": {
+      "case_id": "E09",
+      "source": "model"
+    },
+    "1774335f7aef03d33206ad479c7f3ee8": {
+      "case_id": "E10",
+      "source": "baseline"
+    },
+    "d7d8a580665af2a6b34b8ffdf65e6cc8": {
+      "case_id": "E10",
+      "source": "model"
+    },
+    "bcd014e65b342e09be631e428352895e": {
+      "case_id": "E13",
+      "source": "baseline"
+    },
+    "5d6193c2b03fd7ed88ab1ba0d03b6c8a": {
+      "case_id": "E13",
+      "source": "model"
+    },
+    "64d872c9a00ee094742f570897c4a660": {
+      "case_id": "R01",
+      "source": "baseline"
+    },
+    "7e3bd59c404b3cc5798efe6e89a0afcf": {
+      "case_id": "R01",
+      "source": "model"
+    },
+    "9b0224cd63c33921554d783fbf813437": {
+      "case_id": "E01-mixto",
+      "source": "baseline"
+    },
+    "a6c81129876a2b7f3a4900e8e9d5005f": {
+      "case_id": "E01-mixto",
+      "source": "model"
+    },
+    "c8fa8d9cc3b7aeb159f9c4ca6cd71cac": {
+      "case_id": "E10-mixto",
+      "source": "baseline"
+    },
+    "01ece37c0b005c56107e73d4110f80ef": {
+      "case_id": "E10-mixto",
+      "source": "model"
+    }
+  },
+  "mapping_hash": "c28ba92765ca97ef0b97bdffe8e85b648cef34009b3ffcb5d5ab7c4f26f0179a",
+  "run_hash": "cd68ef622496daaadb035e8e79127136b14742cf9ef31e2a124be56874be1a4e",
+  "review_hash": "b8a10d27c762c25f322906912dce6388b256f5700317d3e60bb8cbbae53859b2",
+  "review_dir": "/private/tmp/fase3-e4-revision-run2b"
+}

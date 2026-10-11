@@ -1,0 +1,38 @@
+{
+  "case_id": "E10",
+  "baseline": {
+    "case_id": "E10",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_969ed89afbae45fcb1665f0bb59ea64b",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:SYMPTOM_REPORTED:0",
+          "c0:SESSION_SAFETY_NOT_ASSESSABLE:1"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-04:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "2026-10-04:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_969ed89afbae45fcb1665f0bb59ea64b",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:SYMPTOM_REPORTED:0",
+          "c0:SESSION_SAFETY_NOT_ASSESSABLE:1"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      }
+    ],
+    "response_hash": "320f0f3a16b23357876c0ae8f8dee5be7e640a0009ea4b1c2fb803294a274600",
+    "latency_seconds": 12.984
+  }
+}

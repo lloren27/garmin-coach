@@ -1,0 +1,39 @@
+{
+  "case_id": "E13",
+  "baseline": {
+    "case_id": "E13",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_3eb4112c9fbb49c0873da30e6bddc884",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:WELLNESS_OBSERVATION_AVAILABLE:2",
+          "c0:WELLNESS_BASELINE_UNAVAILABLE:3",
+          "c0:WELLNESS_TREND_NOT_ASSESSABLE:4"
+        ],
+        "follow_up": "REVIEW_HISTORY_WINDOW"
+      }
+    ],
+    "answer": "2026-10-03:\npulso en reposo 39 bpm (zepp, 2026-10-03); sueño 430 min (zepp, 2026-10-03); puntuación de sueño 78 score (zepp, 2026-10-03); estrés 22 score (zepp, 2026-10-03).\nNo se ha establecido una referencia personal comparable.\nEstas mediciones aisladas no permiten concluir una tendencia ni una mejor recuperación.\n¿Dispones de un histórico personal comparable de sueño y pulso?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "2026-10-03:\nNo se ha establecido una referencia personal comparable.\nEstas mediciones aisladas no permiten concluir una tendencia ni una mejor recuperación.\n¿Dispones de un histórico personal comparable de sueño y pulso?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_3eb4112c9fbb49c0873da30e6bddc884",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:WELLNESS_BASELINE_UNAVAILABLE:3",
+          "c0:WELLNESS_TREND_NOT_ASSESSABLE:4"
+        ],
+        "follow_up": "REVIEW_HISTORY_WINDOW"
+      }
+    ],
+    "response_hash": "8ffedadac3b26cc17f8fad9fc74b49b8e51943dd0f5656e2c8973dbd69bf9068",
+    "latency_seconds": 28.8725
+  }
+}

@@ -1,0 +1,15 @@
+{"case_id": "E01-pace", "status": "valid", "latency_seconds": 18.1629}
+{"case_id": "E01-volume", "status": "valid", "latency_seconds": 9.1972}
+{"case_id": "E01-sleep", "status": "valid", "latency_seconds": 9.2508}
+{"case_id": "E01-plan", "status": "valid", "latency_seconds": 9.4174}
+{"case_id": "R01-pace", "status": "valid", "latency_seconds": 9.3081}
+{"case_id": "R01-distance", "status": "valid", "latency_seconds": 9.3603}
+{"case_id": "E01", "status": "invalid_selection", "latency_seconds": 35.7926}
+{"case_id": "E07", "status": "invalid_selection", "latency_seconds": 23.6699}
+{"case_id": "E08", "status": "valid", "latency_seconds": 24.4766}
+{"case_id": "E09", "status": "invalid_selection", "latency_seconds": 44.0029}
+{"case_id": "E10", "status": "valid", "latency_seconds": 12.984}
+{"case_id": "E13", "status": "valid", "latency_seconds": 28.8725}
+{"case_id": "R01", "status": "valid", "latency_seconds": 21.279}
+{"case_id": "E01-mixto", "status": "invalid_selection", "latency_seconds": 39.5247}
+{"case_id": "E10-mixto", "status": "valid", "latency_seconds": 44.1279}

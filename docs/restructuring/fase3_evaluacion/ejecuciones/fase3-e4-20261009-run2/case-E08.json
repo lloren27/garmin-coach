@@ -1,0 +1,38 @@
+{
+  "case_id": "E08",
+  "baseline": {
+    "case_id": "E08",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_881dcae2ec3f4ebdaf4ea0818e57927b",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:NO_PLAN_FOR_SCOPE:0"
+        ],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\nNo hay una sesión compatible disponible en este contexto para comparar.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "2026-10-03:\nNo hay una sesión compatible disponible en este contexto para comparar.\nRitmo medio: 5:15 min/km (garmin, 2026-10-03). Se calcula con la duración registrada, cuya inclusión de pausas no consta. El promedio no demuestra cumplimiento de bloques.\nNo se ha establecido una referencia personal comparable.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_881dcae2ec3f4ebdaf4ea0818e57927b",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:NO_PLAN_FOR_SCOPE:0",
+          "c0:PACE_BLOCKS_NOT_COMPARABLE:1",
+          "c0:WELLNESS_BASELINE_UNAVAILABLE:3"
+        ],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "response_hash": "d99f9843f5f2e1936044ca7675853992798627f2a53a79b23072059168e73848",
+    "latency_seconds": 24.4766
+  }
+}

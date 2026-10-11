@@ -82,6 +82,12 @@ def build_catalog(snapshot, component_index, question):
     by_id = {f.id: f for f in facts.facts}
     component = snapshot.intent.components[component_index]
 
+    def activity_detail(refs):
+        selected = [f for f in facts.facts if f.source != 'training_plan'
+                    and f.metric in {'duration_s', 'distance_km'} and set(f.source_refs) & set(refs)]
+        return '; '.join(f'{f.sport}: {duration(f.value) if f.metric == "duration_s" else number(f.value) + " km"}'
+                         f' ({f.source}, {f.date.isoformat()})' for f in selected), tuple(f.id for f in selected)
+
     def add(code, text, refs=(), day=None, sources=(), certainty='observed', dependencies=(), mandatory=False):
         identifier = f'c{component_index}:{code}:{len(findings)}'
         source_refs = tuple(sorted(set(sources) | {r for ref in refs for r in by_id[ref].source_refs}))
@@ -99,7 +105,10 @@ def build_catalog(snapshot, component_index, question):
         elif state is MatchState.INSUFFICIENT_DATA:
             add('PLAN_MATCH_INSUFFICIENT_DATA', 'Faltan datos comparables para relacionar la actividad con el plan.', day=match.date, sources=match.activity_refs + match.session_refs)
         elif state is MatchState.NONE and not match.session_refs:
-            add('NO_PLAN_FOR_SCOPE', 'No hay una sesión compatible disponible en este contexto para comparar.', day=match.date, sources=match.activity_refs)
+            detail, refs = activity_detail(match.activity_refs)
+            add('NO_PLAN_FOR_SCOPE', 'No hay una sesión compatible disponible en este contexto para comparar.'
+                + (' Actividad registrada: ' + detail + '.' if detail else '')
+                + ' ¿Puedes aportar el plan para compararlo?', refs, day=match.date, sources=match.activity_refs)
         dependency = ()
         if state is MatchState.CANDIDATE:
             dependency = (add('PLAN_MATCH_UNCONFIRMED', 'La correspondencia con el plan todavía no está confirmada.', day=match.date, sources=match.activity_refs + match.session_refs, certainty='candidate'),)
@@ -112,6 +121,11 @@ def build_catalog(snapshot, component_index, question):
                 actual = f'{number(comp.observed)} km'
                 target = f'{number(comp.lower)} km'
             base = f'{actual} registrados ({source}) frente a {target} previstos (plan).'
+            if comp.metric == 'distance':
+                duration_facts = [f for f in facts.facts if f.metric == 'duration_s'
+                                  and f.source != 'training_plan' and set(f.source_refs) & set(match.activity_refs)]
+                if len(duration_facts) == 1:
+                    base += f' Duración registrada: {duration(duration_facts[0].value)} ({duration_facts[0].source}).'
             if state is MatchState.IMPLAUSIBLE_SINGLE:
                 if comp.outside_band:
                     add('PLAN_ACTIVITY_MAGNITUDE_MISMATCH', base + ' La diferencia es grande; puede no tratarse de la misma sesión.', comp.operand_refs, match.date, certainty='uncertain')
@@ -123,7 +137,8 @@ def build_catalog(snapshot, component_index, question):
                           f'Diferencia: {"−" if comp.delta < 0 else "+"}{duration(abs(comp.delta)) if comp.metric == "duration" else number(abs(comp.delta)) + " km"} '
                           f'({"−" if comp.percent < 0 else "+"}{number(abs(comp.percent), 1)} % respecto al objetivo o límite más cercano).')
                 prefix = 'Si corresponde a la sesión prevista: ' if dependency else ''
-                add(code, prefix + base + ' ' + change, comp.operand_refs, match.date,
+                add(code, prefix + base + ' ' + change,
+                    comp.operand_refs + (tuple(f.id for f in duration_facts) if comp.metric == 'distance' else ()), match.date,
                     certainty='candidate' if dependency else 'confirmed', dependencies=dependency)
 
     for fact in facts.facts:
@@ -132,6 +147,8 @@ def build_catalog(snapshot, component_index, question):
                 'Se calcula con la duración registrada, cuya inclusión de pausas no consta. El promedio no demuestra cumplimiento de bloques.', (fact.id,), fact.date)
     wellness = [f for f in facts.facts if f.metric in {'total_minutes', 'score', 'resting_hr', 'stress_avg'} and f.source not in {'training_plan', 'derived'}]
     if wellness:
+        if 'sleep' in focus_families(question):
+            wellness.sort(key=lambda f: ({'total_minutes': 0, 'score': 1}.get(f.metric, 2), f.id))
         labels = {'total_minutes': 'sueño', 'score': 'puntuación de sueño', 'resting_hr': 'pulso en reposo', 'stress_avg': 'estrés'}
         detail = '; '.join(f'{labels[f.metric]} {number(f.value)} {f.unit.value} ({f.source}, {f.date.isoformat()})' for f in wellness)
         add('WELLNESS_OBSERVATION_AVAILABLE', detail + '.', tuple(f.id for f in wellness))
@@ -139,11 +156,11 @@ def build_catalog(snapshot, component_index, question):
         add('WELLNESS_BASELINE_UNAVAILABLE', 'No se ha establecido una referencia personal comparable.', tuple(f.id for f in wellness), mandatory=baseline)
         add('WELLNESS_TREND_NOT_ASSESSABLE', 'Estas mediciones aisladas no permiten concluir una tendencia ni una mejor recuperación.', tuple(f.id for f in wellness), mandatory=baseline)
     if 'MULTISPORT_COMPONENTS_SEPARATE' in facts.limitations:
-        activities = [f for f in facts.facts if f.metric == 'duration_s' and f.source != 'training_plan']
-        text = '; '.join(f'{f.sport}: {duration(f.value)} ({f.source}, {f.date.isoformat()})' for f in activities)
+        activities = [f for f in facts.facts if f.metric in {'duration_s', 'distance_km'} and f.source != 'training_plan']
+        text = '; '.join(f'{f.sport}: {duration(f.value) if f.metric == "duration_s" else number(f.value) + " km"} ({f.source}, {f.date.isoformat()})' for f in activities)
         add('MULTISPORT_COMPONENTS_SEPARATE', text + '. Las cargas de deportes y escalas distintas se mantienen separadas; no se suman TRIMP, TSS y carga muscular.', tuple(f.id for f in activities))
     if 'DATA_COVERAGE_INCOMPLETE' in facts.limitations:
-        add('DATA_COVERAGE_INCOMPLETE', 'La cobertura de datos es incompleta; falta información para valorar la actividad.', mandatory=True)
+        add('DATA_COVERAGE_INCOMPLETE', 'La cobertura de datos es incompleta; falta información para valorar la actividad. ¿Puedes sincronizar o aportar el registro de actividad?', mandatory=True)
     if 'ACTIVITY_NOT_RECORDED' in facts.limitations:
         add('ACTIVITY_NOT_RECORDED', 'No consta actividad en el ámbito con cobertura comprobada.', mandatory=True)
     # Context for advice keeps its original evidence date; it never becomes an
@@ -156,7 +173,18 @@ def build_catalog(snapshot, component_index, question):
     if applicable:
         refs = tuple(e.id for e in applicable)
         dates = ', '.join(sorted({e.date for e in applicable}))
-        add('SYMPTOM_REPORTED', f'Hay una molestia registrada (checkin, {dates}); falta precisar su evolución.', sources=refs)
+        details = '; '.join(f'«{text}»' for e in applicable for text in e.symptom_details)
+        symptom_text = f'Hay una molestia registrada (checkin, {dates}); falta precisar su evolución.'
+        if details:
+            symptom_text += ' Texto referido: ' + details + '.'
+        target_sessions = [s for s in snapshot.sessions.values()
+                           if s.get('date') in {d.isoformat() for d in component.advice_dates}
+                           and s.get('status') in (None, 'planned')
+                           and not s.get('completed_activity_id')]
+        for session in target_sessions:
+            if session.get('intensity') == 'threshold':
+                symptom_text += f' La sesión prevista para {session["date"]} figura como umbral (plan); esto no avala realizarla.'
+        add('SYMPTOM_REPORTED', symptom_text, sources=refs + tuple('session:' + s['id'] for s in target_sessions if s.get('intensity') == 'threshold'))
         if component.advice_dates or component.clarification_code is not None or any(t in tokens(question) for t in ('umbral', 'seguro', 'sesion')):
             symptom_id = findings[-1].id
             required.append(symptom_id)
@@ -164,7 +192,7 @@ def build_catalog(snapshot, component_index, question):
     return FindingCatalog(facts, tuple(findings), tuple(required), question)
 
 
-def _follow_up(findings):
+def _follow_up(findings, question=''):
     codes = {f.code for f in findings}
     if codes & {'SYMPTOM_REPORTED', 'SESSION_SAFETY_NOT_ASSESSABLE'}:
         return 'CLARIFY_SYMPTOM_CONTEXT'
@@ -173,7 +201,8 @@ def _follow_up(findings):
     if not codes or codes & {'DATA_COVERAGE_INCOMPLETE', 'PLAN_MATCH_INSUFFICIENT_DATA', 'NO_PLAN_FOR_SCOPE'}:
         return 'PROVIDE_MISSING_CONTEXT'
     if codes & {'WELLNESS_BASELINE_UNAVAILABLE', 'WELLNESS_TREND_NOT_ASSESSABLE'}:
-        return 'REVIEW_HISTORY_WINDOW'
+        if any(t in tokens(question) for t in ('costumbre', 'recuperado', 'recuperacion', 'historial', 'habitual', 'tendencia')):
+            return 'REVIEW_HISTORY_WINDOW'
     return None
 
 
@@ -192,7 +221,7 @@ def select_findings(catalog, question):
     selected.extend(i for i in catalog.required_ids if i not in selected)
     chosen = [by_id[i] for i in selected]
     result = AnalysisSelection('1', catalog.facts.snapshot_id, catalog.facts.component_index,
-                               tuple(selected), _follow_up(chosen))
+                               tuple(selected), _follow_up(chosen, question))
     validate_selection(catalog, result)
     return result
 
@@ -214,7 +243,7 @@ def validate_selection(catalog, selection):
         raise ValueError('SELECTION_REQUIRED_LIMITATION_MISSING')
     if len(set(ids) - set(catalog.required_ids) - dependencies) > SELECTOR['max_focus_findings']:
         raise ValueError('SELECTION_BUDGET_EXCEEDED')
-    if selection.follow_up != _follow_up([by_id[i] for i in ids]):
+    if selection.follow_up != _follow_up([by_id[i] for i in ids], catalog.question):
         raise ValueError('SELECTION_FOLLOW_UP_INVALID')
 
 

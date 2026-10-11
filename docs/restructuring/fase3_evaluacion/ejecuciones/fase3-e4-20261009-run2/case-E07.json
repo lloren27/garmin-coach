@@ -1,0 +1,28 @@
+{
+  "case_id": "E07",
+  "baseline": {
+    "case_id": "E07",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_65371a3e41114836b77f162d8861fc07",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:PLAN_MATCH_INSUFFICIENT_DATA:0",
+          "c0:DATA_COVERAGE_INCOMPLETE:4"
+        ],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\nFaltan datos comparables para relacionar la actividad con el plan.\nLa cobertura de datos es incompleta; falta información para valorar la actividad.\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+  },
+  "model": {
+    "status": "invalid_selection",
+    "answer": null,
+    "selections": null,
+    "response_hash": "bb47af7d3638cae8706889d5796faee974747d3f310eada692cf3a2851c8b2f6",
+    "error": "MODEL_SELECTION_INVALID",
+    "latency_seconds": 23.6699
+  }
+}

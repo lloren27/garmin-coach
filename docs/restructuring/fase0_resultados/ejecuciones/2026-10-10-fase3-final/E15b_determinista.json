@@ -1,0 +1,13 @@
+{
+  "resultado": "cumple",
+  "observado": {
+    "pending_status": "PENDING",
+    "plan_unchanged": true,
+    "proposals_unchanged": false
+  },
+  "limitacion": "Persistencia de ficheros; PostgreSQL no evaluado.",
+  "id": "E15b",
+  "seconds": 0.004,
+  "events": "",
+  "fixture_sha256": "77b12da87e41ef03918644dd28f31d425e85b39aa62dd0632b805122fde78647"
+}

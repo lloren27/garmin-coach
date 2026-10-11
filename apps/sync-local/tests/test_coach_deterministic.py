@@ -98,7 +98,7 @@ class DeterministicTests(unittest.TestCase):
         row = fixture('E10-mixto')
         wire = self.response('E10-mixto', row['pregunta'])
         self.assertIn('No puedo valorar si es seguro hacerla', wire.answer)
-        self.assertIsNone(wire.decisions[1].date)  # Existing resolver leaves this paraphrase unresolved.
+        self.assertEqual(wire.decisions[1].date.isoformat(), '2026-10-04')
         self.assertEqual(wire.decisions[1].action, 'ask_user')
 
     def test_change_request_does_not_erase_safety(self):

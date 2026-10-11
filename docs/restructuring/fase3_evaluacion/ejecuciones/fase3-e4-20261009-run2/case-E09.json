@@ -1,0 +1,34 @@
+{
+  "case_id": "E09",
+  "baseline": {
+    "case_id": "E09",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_d382e671c961423ebb2fd0a3a72dc473",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:MULTISPORT_COMPONENTS_SEPARATE:7"
+        ],
+        "follow_up": null
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_d382e671c961423ebb2fd0a3a72dc473",
+        "component_index": 1,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\ncycling: 1:10:00 (garmin, 2026-10-03); running: 1:45:04 (garmin, 2026-10-03); strength: 30:00 (zepp, 2026-10-03). Las cargas de deportes y escalas distintas se mantienen separadas; no se suman TRIMP, TSS y carga muscular.\n\n2026-10-04:\n¿Puedes aportar los datos o el contexto que faltan para esta consulta?"
+  },
+  "model": {
+    "status": "invalid_selection",
+    "answer": null,
+    "selections": null,
+    "response_hash": "01cfaff2dc51dd73bae2dae97425d2916b22c65ac3387514b90ff30ae3283bf9",
+    "error": "MODEL_SELECTION_INVALID",
+    "latency_seconds": 44.0029
+  }
+}

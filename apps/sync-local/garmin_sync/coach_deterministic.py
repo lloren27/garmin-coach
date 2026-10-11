@@ -1,6 +1,6 @@
 """V3 deterministic service; no generation, storage or mutation authority."""
 from .ai_contracts import CoachDecision, CoachStructuredResponse, CoachEvidence
-from .coach_findings import build_catalog, select_findings, render_selection, FOLLOW_UPS
+from .coach_findings import build_catalog, select_findings, render_selection, validate_selection, FOLLOW_UPS
 from .coach_generation_context import build_snapshot
 from .coach_intent import clarification_prompt, CoachIntent
 
@@ -20,11 +20,20 @@ def safe_response(snapshot=None):
 
 def deterministic_response(question, compact, *, now, max_chars=3200):
     snapshot = build_snapshot(question, compact, now=now)
+    catalogs = tuple(build_catalog(snapshot, index, question) for index in range(len(snapshot.intent.components)))
+    selections = tuple(select_findings(catalog, question) for catalog in catalogs)
+    return render_selected_response(snapshot, catalogs, selections, max_chars=max_chars)
+
+
+def render_selected_response(snapshot, catalogs, selections, *, max_chars=3200):
+    """Assemble validated selections identically for baseline and offline experiment."""
+    if len(catalogs) != len(snapshot.intent.components) or len(selections) != len(catalogs):
+        raise ValueError('SELECTION_COMPONENTS_INVALID')
     parts, decisions, evidence = [], [], {}
     mismatch_seen = False
     for index, component in enumerate(snapshot.intent.components):
-        catalog = build_catalog(snapshot, index, question)
-        selection = select_findings(catalog, question)
+        catalog, selection = catalogs[index], selections[index]
+        validate_selection(catalog, selection)
         codes = {f.code for f in catalog.findings if f.id in selection.finding_ids}
         for finding in catalog.findings:
             if finding.id not in selection.finding_ids:

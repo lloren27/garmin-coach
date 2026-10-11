@@ -252,6 +252,13 @@ _RECOMMENDATION = re.compile(_INTENT_SIGNAL_PATTERNS[4][1])
 _LATEST_ACTIVITY = re.compile(r"\b(?:ultima\s+actividad|actividad\s+mas\s+reciente)\b")
 _LATEST_TRAINING_DAY = re.compile(r"\b(?:ultimo\s+dia\s+de\s+entrenamiento|ultimo\s+dia\s+que\s+entrene)\b")
 _CHANGE_START = re.compile(r"^(?:no\s+)?(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b")
+_FOCUSED_ANALYSIS = re.compile(
+    r"^(?:¿\s*)?(?:que\s+tal\s+el\s+ritmo|como\s+dormi|cumpli\s+el\s+volumen|"
+    r"que\s+diferencia(?:\s+de\s+(?:distancia|duracion|volumen))?\s+hubo\s+(?:con\s+el|frente\s+al)\s+plan)\b"
+)
+_SESSION_ADVICE_QUESTION = re.compile(
+    r"^(?:dime\s*:\s*)?¿\s*(?:hago|(?:debo|deberia|puedo)\s+hacer)\s+la\s+sesion\b"
+)
 _RECOGNIZED_CLAUSE_STARTS = (
     re.compile(r"^(?:no\s+)?(?:analiza|analizar|analices|revisa|revisar|repasa|repasar|valora|valorar)\b"),
     re.compile(r"^(?:no\s+)?(?:dime|consulta|revisa)\b"),
@@ -265,12 +272,14 @@ _RECOGNIZED_CLAUSE_STARTS = (
 
 
 def _starts_recognized_clause(text: str) -> bool:
-    return any(pattern.search(text.lstrip(" \t¿¡\"'")) for pattern in _RECOGNIZED_CLAUSE_STARTS)
+    return bool(_FOCUSED_ANALYSIS.search(text.strip()) or _SESSION_ADVICE_QUESTION.search(text.strip())) or any(pattern.search(text.lstrip(" \t¿¡\"'")) for pattern in _RECOGNIZED_CLAUSE_STARTS)
 
 
 def _contains_intent_signal(text: str) -> bool:
     normalized = _normalize(text)
     return any((
+        _FOCUSED_ANALYSIS.search(normalized.strip()),
+        _SESSION_ADVICE_QUESTION.search(normalized.strip()),
         _ANALYSIS_VERB.search(normalized),
         _NEGATED_ANALYSIS.search(normalized),
         _POSITIVE_CHANGE.search(normalized),
@@ -391,6 +400,12 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
         return _clarify(ClarificationCode.INVALID_DATE)
     today = now.astimezone(_MADRID).date()
     retrospective_dates = any(day <= today for day in dates_for_hint)
+    if _FOCUSED_ANALYSIS.search(normalized.strip()):
+        if any(day > today for day in dates_for_hint):
+            return _clarify(ClarificationCode.CONFLICTING_SCOPE)
+        return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
+    if _SESSION_ADVICE_QUESTION.search(normalized.strip()):
+        return _make_component(CoachIntent.RECOMMEND_NEXT, clause, now)
     analysis_signal = _ANALYSIS_VERB.search(normalized) or (_RETROSPECTIVE_QUESTION.search(normalized) and retrospective_dates)
     if analysis_signal:
         if has_plan_object and any(day > today for day in dates_for_hint):

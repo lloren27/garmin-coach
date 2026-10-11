@@ -1,0 +1,302 @@
+[
+  {
+    "opaque_id": "7e3bd59c404b3cc5798efe6e89a0afcf",
+    "F": 2,
+    "P": 2,
+    "U": 1,
+    "R": 1,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "07eecec8e76d6949f173966986b80140",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "4a0de333a745bdccfba1d4a7316d8ce2",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "dee0a761888d6c319ce65d2e110c16d9",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "9490e923bd4d642446314bf424f24cbe",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "b1e5da6ed121af421a50c20bc123f608",
+    "F": 2,
+    "P": 2,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "9cc8080ee4177510f72e968a27cbaa48",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "13bc362a8aa249c6d6881819c7699c88",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "07f65c33c6694e7ca2b0f1b0b8fc9607",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "4a83c337bfa94d7b94a274cae44f5fa0",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "ae47a4f755d47099017f22f6c832aa3a",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "25e04efd666119253b68791fe3194eeb",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "8e5b9536d3a12550e8a82e49898b8539",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "b7678efdfd8973b3e6d6b0492b776cb9",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "2ab1dbecf5bca5838c1aa5ed7f6513c0",
+    "F": 2,
+    "P": 2,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "9b0224cd63c33921554d783fbf813437",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "22238f7c0842d1b96b505b0b7c04649e",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "aca89032b09f8918d6477a0d0b300a31",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "a6c81129876a2b7f3a4900e8e9d5005f",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "5d6193c2b03fd7ed88ab1ba0d03b6c8a",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "d7d8a580665af2a6b34b8ffdf65e6cc8",
+    "F": 0,
+    "P": 1,
+    "U": 1,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "ada42d000619b91773b636947f4c23e5",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "64d872c9a00ee094742f570897c4a660",
+    "F": 2,
+    "P": 2,
+    "U": 0,
+    "R": 1,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "1774335f7aef03d33206ad479c7f3ee8",
+    "F": 1,
+    "P": 1,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "4ee4bf3e97681e905ddb03dee7c16fdc",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "bcd014e65b342e09be631e428352895e",
+    "F": 2,
+    "P": 2,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "a9ec03792f3bd75976f2c70e6c80d845",
+    "F": 0,
+    "P": 0,
+    "U": 0,
+    "R": 0,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "01ece37c0b005c56107e73d4110f80ef",
+    "F": 2,
+    "P": 2,
+    "U": 2,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "e2451d675d2d111cd667da9b0d4cb346",
+    "F": 2,
+    "P": 2,
+    "U": 0,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  },
+  {
+    "opaque_id": "c8fa8d9cc3b7aeb159f9c4ca6cd71cac",
+    "F": 2,
+    "P": 2,
+    "U": 2,
+    "R": 2,
+    "expected_checks_pass": false,
+    "critical_errors": [],
+    "justification": ""
+  }
+]

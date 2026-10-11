@@ -38,6 +38,7 @@ class EvidenceRecord:
     collected_at: str | None = None
     freshness: str = 'unknown'
     duplicate_candidates: tuple = ()
+    symptom_details: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,7 +134,11 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
             row['distance_km'] = row['km']
         if kind == 'wellness' and 'value' in row:
             row[str(index)] = row.pop('value')
+        symptom_details = ()
         if kind == 'checkin':
+            symptom_details = tuple(' '.join(row[k].split())[:240] for k in ('pain', 'soreness')
+                                    if isinstance(row.get(k), str) and row[k].strip().lower()
+                                    not in {'', 'no', 'sin dolor', 'sin molestias', 'ninguno', 'ninguna'})
             for field in ('pain', 'soreness'):
                 value = row.get(field)
                 if isinstance(value, str) and value.strip():
@@ -157,7 +162,7 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
             source_device=row.get('source_device'))] if kind == 'activity' else [])
         evidence[key] = EvidenceRecord(key, kind, origin, observed, freeze(facts), sport,
             row.get('source_device'), freeze(origins), row.get('collected_at') or extra.get('generated_at'), freshness,
-            freeze(row.get('duplicate_candidates') or []))
+            freeze(row.get('duplicate_candidates') or []), symptom_details)
     for i, row in enumerate(extra.get('recent_activities') or []): add('activity', row, i, 'unknown')
     wellness = extra.get('wellness') or {}
     effective = wellness.get('effective', wellness)

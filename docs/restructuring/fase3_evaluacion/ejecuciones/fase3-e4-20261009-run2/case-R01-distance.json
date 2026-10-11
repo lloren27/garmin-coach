@@ -1,0 +1,32 @@
+{
+  "case_id": "R01-distance",
+  "baseline": {
+    "case_id": "R01-distance",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_76fc66b7634e4a02a4b22b28c9c31ef8",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "¿Qué día o actividad quieres consultar?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "¿Qué día o actividad quieres consultar?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_76fc66b7634e4a02a4b22b28c9c31ef8",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "response_hash": "8402bb838fb4dd1f4ae300c337b109803d389656a379321fc2540eb105a7b77e",
+    "latency_seconds": 9.3603
+  }
+}

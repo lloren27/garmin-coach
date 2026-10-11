@@ -1,0 +1,59 @@
+{
+  "case_id": "E10-mixto",
+  "baseline": {
+    "case_id": "E10-mixto",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:SYMPTOM_REPORTED:5",
+          "c0:SESSION_SAFETY_NOT_ASSESSABLE:6"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+        "component_index": 1,
+        "finding_ids": [
+          "c1:SYMPTOM_REPORTED:0",
+          "c1:SESSION_SAFETY_NOT_ASSESSABLE:1"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      }
+    ],
+    "answer": "2026-10-03:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?\n\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "2026-10-03:\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\nNo hay una sesión compatible disponible en este contexto para comparar.\n¿La molestia continúa y cuándo aparece?\n\nHay una molestia registrada (checkin, 2026-10-03); falta precisar su evolución.\nNo puedo valorar si es seguro hacerla.\n¿La molestia continúa y cuándo aparece?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+        "component_index": 0,
+        "finding_ids": [
+          "c0:SYMPTOM_REPORTED:5",
+          "c0:SESSION_SAFETY_NOT_ASSESSABLE:6",
+          "c0:NO_PLAN_FOR_SCOPE:0"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      },
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_b09052e9d6ce40eb890ff20fd3dd02f1",
+        "component_index": 1,
+        "finding_ids": [
+          "c1:SYMPTOM_REPORTED:0",
+          "c1:SESSION_SAFETY_NOT_ASSESSABLE:1"
+        ],
+        "follow_up": "CLARIFY_SYMPTOM_CONTEXT"
+      }
+    ],
+    "response_hash": "a543bb89d0be5c7d2de59dd9910dad88e2fd094875c2db611623b121a814f2ed",
+    "latency_seconds": 44.1279
+  }
+}

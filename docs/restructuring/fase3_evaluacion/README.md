@@ -1,5 +1,10 @@
 # Fase 3 — Protocolo previo a generación, V1
 
+**Estado actualizado (2026-10-10):** ver [verificación del entregable 6](informe-cierre-entregable6.md).
+La corrida real `fase3-e4-20261009-run2` se completó tras el bloqueo inicial.
+Se mantiene la ruta determinista como candidata, sin activación de producción.
+Las secciones siguientes conservan el estado histórico de cada entrega.
+
 Entregable 1 terminado: fixtures, expectativas, mapa de foco y rúbrica fijados.
 No se ha generado, seleccionado ni puntuado ninguna respuesta del coach.
 
@@ -88,3 +93,81 @@ No se han ejecutado las suites de bot/worker, E15 en persistencia ni PostgreSQL;
 quedan **no evaluados en este entregable**. Las pruebas de este paquete verifican
 la integridad del criterio, no certifican todavía el comportamiento del producto.
 No se han modificado flags, alias ni configuración de servicios.
+
+## Entregable 4: arnés experimental
+
+`experiment.py` prepara los seis contrastes y nueve controles de V1, guarda la
+baseline antes de llamar a Ollama y realiza una única petición por pregunta,
+incluidos todos sus componentes. `experiment_ollama.py` aplica los presupuestos
+congelados y comprueba el digest/configuración antes y después de cada llamada.
+No importa el worker, no carga `.env` y no accede a persistencia o Telegram.
+
+Desde la raíz, con Ollama local disponible:
+
+```sh
+apps/sync-local/.venv/bin/python docs/restructuring/fase3_evaluacion/experiment.py \
+  --output docs/restructuring/fase3_evaluacion/ejecuciones/NOMBRE_UNICO
+```
+
+Un directorio existente se rechaza. Cada caso se guarda como `started` antes de
+la llamada y se completa atómicamente: una interrupción no dispara reintentos.
+Las selecciones inválidas son fallos del modelo; errores HTTP/transporte son
+`no_evaluado`. No hay reparaciones ni sustitución por la baseline. El manifiesto
+incluye hashes de código, entradas, peticiones, configuración y protocolo;
+los logs no contienen preguntas ni respuestas crudas. Los resultados y el
+paquete de revisión contienen únicamente salidas y fixtures sintéticos de V1.
+
+Exportar la revisión con clave fuera del directorio del revisor:
+
+```sh
+apps/sync-local/.venv/bin/python docs/restructuring/fase3_evaluacion/experiment_review.py export \
+  --run docs/restructuring/fase3_evaluacion/ejecuciones/NOMBRE_UNICO \
+  --review /tmp/fase3-revision \
+  --key /tmp/fase3-clave/key.json
+```
+
+El revisor solo recibe `review.json` y `ratings-template.json`. Completa todos
+los campos del segundo en `ratings.json`; no consulta la ejecución ni la clave.
+La revisión ciega no equivale a revisión estadísticamente independiente. Si la
+puntúa un agente, se declara como revisión automatizada, sin atribuirla a una
+persona ni presentarla como validación externa.
+
+Cerrar puntuaciones antes de revelar el origen:
+
+```sh
+apps/sync-local/.venv/bin/python docs/restructuring/fase3_evaluacion/experiment_review.py seal \
+  --review /tmp/fase3-revision --ratings /tmp/fase3-revision/ratings.json
+apps/sync-local/.venv/bin/python docs/restructuring/fase3_evaluacion/experiment_review.py evaluate \
+  --run docs/restructuring/fase3_evaluacion/ejecuciones/NOMBRE_UNICO \
+  --key /tmp/fase3-clave/key.json --ratings /tmp/fase3-revision/ratings.json
+```
+
+El sello detecta modificaciones posteriores; no es almacenamiento inmutable
+frente a alguien que reescriba también todos los sellos. Sin puntuaciones
+completas no se emite victoria. Un empate conserva el selector determinista;
+una corrida con errores de infraestructura queda pendiente. La recomendación
+calculada no integra ni activa Ollama: esa decisión pertenece al entregable 5.
+
+Pruebas del arnés (sin red):
+
+```sh
+apps/sync-local/.venv/bin/python -m unittest discover \
+  -s docs/restructuring/fase3_evaluacion -p 'test_*.py' -v
+```
+
+La matriz de rutas/flags, E15, PostgreSQL y el cierre de los 32 casos completos
+pertenecen a la evaluación global de fase 3. Los indicadores de flags del
+manifiesto describen la selección validada offline; no certifican haber probado
+el enrutamiento del worker ni haber activado esos flags en producción.
+
+### Estado de la corrida `fase3-e4-20261009`
+
+El preflight de Ollama confirmó `garmin-coach:9b` y el digest
+`17a5b58e68fd425bc6a86a443686fc81f92a86667f0b654423c0f91d686de623`, con los
+presupuestos V1. La corrida real no pudo iniciar desde este entorno: la revisión
+automática de permisos agotó la cuota y rechazó la escalada necesaria para
+conectar con el servicio local; la ejecución sin escalada recibió `Operation not
+permitted`. No se generó ninguna salida ni se creó una clave de revisión. Esto
+es un bloqueo de infraestructura/permiso, no un resultado a favor o en contra de
+Ollama. La corrida queda pendiente y debe repetirse con acceso autorizado al
+servicio local.

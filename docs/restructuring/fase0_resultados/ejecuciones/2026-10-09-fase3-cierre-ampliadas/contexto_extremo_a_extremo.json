@@ -1,0 +1,287 @@
+{
+  "resultado": "cumple",
+  "entrada": {
+    "sync": {
+      "received_at": "2026-10-03T22:00:00+02:00",
+      "payload": {
+        "generated_at": "2026-10-03T22:00:00+02:00",
+        "summary": {
+          "activities": [
+            {
+              "id": "synthetic-st1",
+              "source": "strava",
+              "source_device": "CMF Watch 3 Pro",
+              "date": "2026-10-03",
+              "sport": "running",
+              "km": 8,
+              "duration_s": 2500
+            }
+          ]
+        },
+        "activity_provider_status": {
+          "strava": {
+            "status": "ok"
+          },
+          "garmin": {
+            "status": "network_error"
+          }
+        },
+        "wellness": {
+          "schema_version": 2,
+          "effective": {
+            "date": "2026-10-01",
+            "resting_hr": {
+              "source": "zepp",
+              "value": 45
+            }
+          },
+          "provider_status": {
+            "zepp": {
+              "status": "auth_error",
+              "last_success_at": "2026-10-01"
+            }
+          }
+        }
+      }
+    },
+    "wattwise_live": {
+      "status": "unavailable"
+    }
+  },
+  "compact": {
+    "coach_brief": {},
+    "extra_context": {
+      "change_proposal_allowed_now": false,
+      "proposal_evidence_sources": [],
+      "current_time": "2026-10-03T22:00:00+02:00",
+      "data_freshness": {
+        "status": "current",
+        "date": "2026-10-03",
+        "notice": null,
+        "instruction": "La sincronización es de hoy; comprueba también las fechas de cada medición y actividad."
+      },
+      "activity_provider_status": {
+        "strava": {
+          "status": "ok"
+        },
+        "garmin": {
+          "status": "network_error"
+        }
+      },
+      "last_sync": "2026-10-03T22:00:00+02:00",
+      "generated_at": "2026-10-03T22:00:00+02:00",
+      "race": null,
+      "profile": {},
+      "training_plan": null,
+      "summary": {
+        "weekly": null,
+        "runs_count_28d": null,
+        "median_run_km_56d": null,
+        "runs_count_120d": null,
+        "km_28d": null,
+        "km_56d": null,
+        "avg_weekly_km_8w": null,
+        "longest_120d": null,
+        "today": null,
+        "week": null,
+        "sports": null,
+        "fatigue": null,
+        "running_load": null,
+        "next_workout": null
+      },
+      "recent_activities": [
+        {
+          "id": "synthetic-st1",
+          "source": "strava",
+          "source_device": "CMF Watch 3 Pro",
+          "date": "2026-10-03",
+          "sport": "running",
+          "km": 8,
+          "duration_s": 2500
+        }
+      ],
+      "wellness": {
+        "schema_version": 2,
+        "timezone": null,
+        "effective": {
+          "date": "2026-10-01",
+          "resting_hr": {
+            "source": "zepp",
+            "value": 45
+          }
+        },
+        "provider_status": {
+          "zepp": {
+            "status": "auth_error",
+            "last_success_at": "2026-10-01"
+          }
+        }
+      },
+      "physiology": {},
+      "checkins": [],
+      "history": [],
+      "history_note": "Último registro de cada día disponible; la sincronización puede tener varios registros diarios.",
+      "applied_lab_tests": [],
+      "wattwise_snapshot": null,
+      "wattwise_live": {
+        "status": "unavailable"
+      },
+      "strength_manual": null,
+      "strength_manual_current": null
+    }
+  },
+  "snapshot": {
+    "schema_version": "1",
+    "context_snapshot_id": "ctx_e3c92183e60945fca88a175be7c7b09a",
+    "current_time": "2026-10-03T22:00:00+02:00",
+    "intent": {
+      "primary_intent": "analyze_day",
+      "components": [
+        {
+          "intent": "analyze_day",
+          "selector": "by_date",
+          "observed_dates": [
+            "2026-10-03"
+          ],
+          "advice_dates": [],
+          "clarification_code": null
+        }
+      ]
+    },
+    "observed_dates": [
+      "2026-10-03"
+    ],
+    "advice_dates": [],
+    "available_sessions": [],
+    "available_evidence": [
+      {
+        "id": "activity:synthetic-st1",
+        "kind": "activity",
+        "source": "strava",
+        "date": "2026-10-03",
+        "sport": "running",
+        "facts": {
+          "duration_s": 2500,
+          "distance_km": 8
+        },
+        "source_device": "CMF Watch 3 Pro",
+        "source_records": [
+          {
+            "source": "strava",
+            "source_activity_id": "synthetic-st1",
+            "source_device": "CMF Watch 3 Pro"
+          }
+        ],
+        "duplicate_candidates": [],
+        "collected_at": "2026-10-03T22:00:00+02:00",
+        "freshness": "current"
+      },
+      {
+        "id": "wellness:resting_hr",
+        "kind": "wellness",
+        "source": "zepp",
+        "date": "2026-10-01",
+        "sport": null,
+        "facts": {
+          "resting_hr": 45
+        },
+        "source_device": null,
+        "source_records": [],
+        "duplicate_candidates": [],
+        "collected_at": "2026-10-03T22:00:00+02:00",
+        "freshness": "stale"
+      }
+    ],
+    "provider_status": {
+      "garmin.activities": {
+        "state": "provider_error",
+        "status": "network_error",
+        "scope": "activities",
+        "reason": null,
+        "last_attempt_at": "2026-10-03T22:00:00+02:00",
+        "last_success_at": null,
+        "period_start": null,
+        "period_end": null,
+        "failed_dates": [],
+        "records_received": null,
+        "error": "network_error"
+      },
+      "zepp.activities": {
+        "state": "unknown",
+        "status": "unknown",
+        "scope": "activities",
+        "reason": null,
+        "last_attempt_at": "2026-10-03T22:00:00+02:00",
+        "last_success_at": null,
+        "period_start": null,
+        "period_end": null,
+        "failed_dates": [],
+        "records_received": null,
+        "error": null
+      },
+      "strava.activities": {
+        "state": "available",
+        "status": "ok",
+        "scope": "activities",
+        "reason": null,
+        "last_attempt_at": "2026-10-03T22:00:00+02:00",
+        "last_success_at": null,
+        "period_start": null,
+        "period_end": null,
+        "failed_dates": [],
+        "records_received": null,
+        "error": null
+      },
+      "garmin.wellness": {
+        "state": "unknown",
+        "status": "unknown",
+        "scope": "wellness",
+        "reason": null,
+        "last_attempt_at": "2026-10-03T22:00:00+02:00",
+        "last_success_at": null,
+        "period_start": null,
+        "period_end": null,
+        "failed_dates": [],
+        "records_received": null,
+        "error": null
+      },
+      "zepp.wellness": {
+        "state": "provider_error",
+        "status": "auth_error",
+        "scope": "wellness",
+        "reason": null,
+        "last_attempt_at": "2026-10-03T22:00:00+02:00",
+        "last_success_at": "2026-10-01",
+        "period_start": null,
+        "period_end": null,
+        "failed_dates": [],
+        "records_received": null,
+        "error": "auth_error"
+      },
+      "wattwise": {
+        "state": "provider_error",
+        "status": "unavailable",
+        "scope": "analysis",
+        "reason": null,
+        "last_attempt_at": null,
+        "last_success_at": null,
+        "period_start": null,
+        "period_end": null,
+        "failed_dates": [],
+        "records_received": null,
+        "error": "unavailable"
+      }
+    },
+    "change_proposal_allowed_now": false,
+    "proposal_evidence_sources": [],
+    "freshness": "partial"
+  },
+  "observado": {
+    "strava_source": "strava",
+    "has_activity_provider_status_in_compact": true,
+    "has_wellness_provider_status_in_snapshot": true,
+    "freshness": "partial"
+  },
+  "limitacion": "Traza sintética; muestra tres pérdidas, no atestigua un trabajo de producción.",
+  "seconds": 0.001
+}

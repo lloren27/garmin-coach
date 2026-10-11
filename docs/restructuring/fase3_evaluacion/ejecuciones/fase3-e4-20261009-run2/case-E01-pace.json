@@ -1,0 +1,32 @@
+{
+  "case_id": "E01-pace",
+  "baseline": {
+    "case_id": "E01-pace",
+    "status": "valid",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_85204a33e552427a863e738969b44524",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?"
+  },
+  "model": {
+    "status": "valid",
+    "answer": "No he identificado qué quieres consultar. ¿Puedes concretarlo?",
+    "selections": [
+      {
+        "schema_version": "1",
+        "snapshot_id": "ctx_85204a33e552427a863e738969b44524",
+        "component_index": 0,
+        "finding_ids": [],
+        "follow_up": "PROVIDE_MISSING_CONTEXT"
+      }
+    ],
+    "response_hash": "e4b33f65a3bd6c01af078570b91f8edd7bd77d7303f5288aa72b0e17faa070c7",
+    "latency_seconds": 18.1629
+  }
+}

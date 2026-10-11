@@ -1,0 +1,25 @@
+{
+  "resultado": "no evaluable",
+  "observado": [
+    {
+      "rejected": true,
+      "codes": [
+        "PLAN_DATE_MISMATCH"
+      ],
+      "calls": 2
+    },
+    {
+      "rejected": true,
+      "codes": [
+        "INVALID_STRUCTURED_OUTPUT"
+      ],
+      "calls": 2
+    }
+  ],
+  "motivo": "Contrato actual prohíbe answer; prueba rechazo estructural, no detección semántica. No se invoca worker/fallback exterior.",
+  "subcomprobacion": "Reparación acotada y rechazo del campo extra verificables.",
+  "id": "E12",
+  "seconds": 0.013,
+  "events": "{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 1, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_5077b4a25cd540dfbed2016cb651daad\", \"code\": \"INVALID_STRUCTURED_OUTPUT\", \"phase\": \"structure\", \"path\": \"$\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 2, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_5077b4a25cd540dfbed2016cb651daad\", \"code\": \"PLAN_DATE_MISMATCH\", \"phase\": \"domain\", \"path\": \"decisions[0].date\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 1, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_67bccf72ecc44436b791608a45850e57\", \"code\": \"INVALID_STRUCTURED_OUTPUT\", \"phase\": \"structure\", \"path\": \"$\", \"severity\": \"retry_required\"}\n{\"type\": \"coach_validation_failure\", \"job\": null, \"attempt\": 2, \"schema_version\": \"1\", \"context_snapshot_id\": \"ctx_67bccf72ecc44436b791608a45850e57\", \"code\": \"INVALID_STRUCTURED_OUTPUT\", \"phase\": \"structure\", \"path\": \"$\", \"severity\": \"retry_required\"}\n",
+  "fixture_sha256": "b905320a6c0dc8e66936581ce0a2e2f540e8662a247d3ae35f774b3aa7571346"
+}

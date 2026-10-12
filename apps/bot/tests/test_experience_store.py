@@ -61,6 +61,11 @@ class QueueFileTests(unittest.TestCase):
         for row, key in [(job, 'created_at'), (claimed, 'claimed_at'), (done, 'completed_at')]:
             self.assertEqual(datetime.fromisoformat(row[key]).utcoffset().total_seconds(), 0)
 
+    def test_boundary_year_offsets_are_rejected_consistently(self):
+        values = ['0001-01-01T00:00:00+14:00', '9999-12-31T23:59:59-14:00']
+        self.path.write_text(json.dumps([{'chat_id':'a','status':'failed','completed_at':v} for v in values]))
+        self.assertEqual(store.load_queue_snapshot('a',now=NOW)['invalid_date_counts']['last_failed_at'],2)
+
     def test_calendar_offset_validation(self):
         values = ['2024-02-29T00:00:00Z', '2025-02-29T00:00:00Z', '2026-01-01T24:00:00Z',
                   '2026-01-01T00:00:00+14:01', '0000-01-01T00:00:00Z', '2026-01-01T00:00:60Z']
@@ -131,6 +136,9 @@ class QueuePostgresTests(unittest.TestCase):
                 '2026-01-01T00:00:00.500000Z','2026-01-01T00:00:00Z']
         for i,value in enumerate(values):
             self.conn.execute('INSERT INTO coach_ai_jobs(id,status,document) VALUES (%s,%s,%s)',(str(i),'completed',Jsonb({'chat_id':'a','completed_at':value})))
+        edges=['0001-01-01T00:00:00+14:00','9999-12-31T23:59:59-14:00']
+        for i,value in enumerate(edges):
+            self.conn.execute('INSERT INTO coach_ai_jobs(id,status,document) VALUES (%s,%s,%s)',('edge'+str(i),'completed',Jsonb({'chat_id':'a','completed_at':value})))
         q=store.load_queue_snapshot('a',now=NOW)
-        self.assertEqual(q['invalid_date_counts']['last_completed_at'],7)
+        self.assertEqual(q['invalid_date_counts']['last_completed_at'],9)
         self.assertEqual(q['last_completed_at'],'2026-01-01T00:00:00.500000+00:00')

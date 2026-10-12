@@ -119,8 +119,10 @@ def format_operational_status(sync: dict | None, sync_request: dict | None,
         for provider in providers:
             raw = _mapping(states.get(provider))
             status = raw.get('status')
-            if status == 'ok':
-                label = ('sin actividad' if scope == 'actividades' else 'sin datos') if raw.get('records_received') == 0 else 'datos disponibles'
+            if status == 'ok' and isinstance(raw.get('records_received'), int) and not isinstance(raw.get('records_received'), bool) and raw['records_received'] >= 0:
+                label = ('sin actividad' if scope == 'actividades' else 'sin datos') if raw['records_received'] == 0 else 'datos disponibles'
+            elif status == 'ok':
+                label = 'estado no disponible'
             elif status in errors:
                 label = 'error del proveedor'
             elif status in ('disabled','not_configured'):

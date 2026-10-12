@@ -66,3 +66,8 @@ class StatusTests(unittest.TestCase):
         text=experience.format_operational_status({'payload':payload},None,empty_snapshot(True),now=NOW)
         for label in ('datos parciales','sin configurar','sin actividad','Datos de un día anterior','2026-10-09 — 2026-10-10'):
             self.assertIn(label,text)
+
+    def test_ok_without_record_count_is_not_reported_as_available(self):
+        sync={'payload':{'activity_provider_status':{'garmin':{'status':'ok'}}}}
+        text=experience.format_operational_status(sync,None,empty_snapshot(True),now=NOW)
+        self.assertIn('Garmin · actividades: estado no disponible',text)

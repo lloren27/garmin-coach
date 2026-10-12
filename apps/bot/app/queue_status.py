@@ -34,7 +34,12 @@ def parse_date(value, now):
             h, m = int(value[-5:-3]), int(value[-2:])
             if h > 14 or m > 59 or (h == 14 and m):
                 return None
-        result = datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone.utc)
+        local = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        # datetime supports years 1..9999; reject boundary offsets that could
+        # normalize outside that range, matching the SQL guard below.
+        if local.year in (1, 9999) and local.utcoffset().total_seconds() != 0:
+            return None
+        result = local.astimezone(timezone.utc)
         return result if result <= now else None
     except (ValueError, OverflowError):
         return None
@@ -48,7 +53,8 @@ def _sql_date(expr):
       AND substring({expr},12,2)::int BETWEEN 0 AND 23
       AND substring({expr},15,2)::int BETWEEN 0 AND 59
       AND substring({expr},18,2)::int BETWEEN 0 AND 59
-      AND CASE WHEN right({expr},1)='Z' THEN true ELSE
+      AND CASE WHEN substring({expr},1,4)::int IN (1,9999) AND right({expr},6) NOT IN ('+00:00','-00:00') THEN false
+        WHEN right({expr},1)='Z' THEN true ELSE
         substring(right({expr},6),2,2)::int BETWEEN 0 AND 14 AND right({expr},2)::int BETWEEN 0 AND 59
         AND (substring(right({expr},6),2,2)::int<14 OR right({expr},2)::int=0) END
       THEN ({expr})::timestamptz END END'''

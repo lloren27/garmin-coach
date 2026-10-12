@@ -35,6 +35,14 @@ La instancia PostgreSQL de prueba fue desechable, PostgreSQL 16.15, con base y u
 
 El usuario confirmó el despliegue en producción. Railway confirma que el servicio `garmin-coach` en el entorno `production` está en `SUCCESS` con el commit `a7df9ea` (deployment `9bebcaf5-a1e2-451f-b863-a0da2fdd19d3`, 2026-10-12 21:24 UTC). El despliegue del worker local no se verifica mediante Railway. Antes del despliegue, el entregable 1 debía estar desplegado y `/estado` verificado. El orden previsto es API y luego worker; pausar el worker es opcional.
 
-Quedan por registrar observaciones de operación: acuse único, respuesta normal sin nota y voz normal. No se ha informado aún si estos tres comportamientos se han observado tras el despliegue.
+### Observación reportada tras el despliegue
 
-No se generarán trabajos ni mensajes artificiales en producción para probar tardanza. Si no ocurre una respuesta tardía de forma natural, se registrará como **no observado en producción**, cubierta por las pruebas locales. El entregable 2b no debe comenzar hasta que las observaciones de operación de 2a queden registradas y revisables.
+El usuario probó `/estado`, una pregunta por voz y `/coach analiza mi entrenamiento de hoy`:
+
+- `/estado` respondió con señales de sincronización y cola. Indicó 0 pendientes y 0 en ejecución, además de que no había consultas pendientes. La hora del pendiente más antiguo quedó como no disponible/no fiable; la última finalización correcta y el último fallo mostrados eran históricos. El propio comando aclaró que estas señales no confirman disponibilidad actual del Mac.
+- La consulta por voz recibió un solo acuse (“Audio recibido… Consulta recibida…”) y una respuesta de voz aproximadamente tres minutos después, sin nota de tardanza.
+- `/coach` recibió un solo acuse y contestó aproximadamente tres minutos después, sin nota de tardanza. La respuesta describió la sesión del 12/10/2026 (1:57:04, 22,01 km, ritmo calculado 5:19 min/km, FC media 141 y máxima 169) y aclaró que esos valores por sí solos no bastan para valorar esfuerzo sin zonas o sensaciones. No ofreció valoración personalizada.
+
+Esto confirma el acuse único y entregas normales de texto/voz sin aviso de tardanza. El texto observado coincide con el renderer factual ya existente y su limitación explícita. El reporte no permite establecer el valor efectivo de `COACH_ANALYSIS_V3_ENABLED` en el worker en ese momento ni distinguir si la prosa vino de la ruta legacy normal o de su reserva; esa valoración personalizada pertenece al alcance de Fase 3 y sigue dependiendo de que esa ruta esté activada y evaluada.
+
+No se reportó ninguna respuesta tardía natural: **no observada en producción**, cubierta por las pruebas locales. No se generarán trabajos ni mensajes artificiales en producción para probar tardanza. El despliegue y las observaciones normales de 2a quedan registrados; cualquier evaluación adicional de la respuesta personalizada se tramita en el alcance de Fase 3. El entregable 2b no debe comenzar hasta que las observaciones requeridas para 2a y sus condiciones de secuencia estén revisadas.

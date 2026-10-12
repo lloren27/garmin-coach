@@ -4,7 +4,7 @@ import io
 import copy
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import tempfile
 import unittest
@@ -58,7 +58,17 @@ class ResponseFlowTests(unittest.TestCase):
     def test_text_and_voice_use_model_and_same_answer_without_voice_truncation(self) -> None:
         answer = "Hoy te recomiendo un rodaje suave para facilitar la recuperación. " * 20
         captured = []
-        with patch.object(worker, "call_ollama", return_value=ollama_result(answer)) as model, patch.object(worker, "deterministic_answer") as direct, patch.object(worker, "download_telegram_audio", return_value=Path("audio.ogg")), patch.object(worker, "transcribe_audio", return_value="¿Qué hago mañana?"), patch.object(worker, "synthesize_voice", return_value=Path("voice.ogg")) as synth, patch.object(worker, "send_telegram_voice"):
+        voice_sends = []
+        telegram_sends = []
+
+        def capture_voice(chat_id, path, caption):
+            voice_sends.append((chat_id, path, caption))
+
+        def capture_telegram(method, payload):
+            telegram_sends.append((method, payload))
+            return {"ok": True}
+
+        with patch.object(worker, "call_ollama", return_value=ollama_result(answer)) as model, patch.object(worker, "deterministic_answer") as direct, patch.object(worker, "download_telegram_audio", return_value=Path("audio.ogg")), patch.object(worker, "transcribe_audio", return_value="¿Qué hago mañana?"), patch.object(worker, "synthesize_voice", return_value=Path("voice.ogg")) as synth, patch.object(worker, "send_telegram_voice", side_effect=capture_voice), patch.object(worker, "telegram_api", side_effect=capture_telegram):
             for job in ({"id": "text", "text": "¿Qué hago mañana?", "created_at": JOB_CREATED_AT}, {"id": "voice", "audio_file_id": "audio", "response_mode": "voice", "chat_id": "chat", "created_at": JOB_CREATED_AT}):
                 worker.process_job(job, {})
                 captured.append(self.post.call_args.args[1])
@@ -67,9 +77,16 @@ class ResponseFlowTests(unittest.TestCase):
             self.assertEqual(model.call_args_list[0].args[1], model.call_args_list[1].args[1])
             direct.assert_not_called()
             self.assertEqual([item["answer"] for item in captured], [answer, answer])
-            self.assertEqual(synth.call_args.args[0], answer)
-            self.assertTrue(captured[1]["notify_telegram"])
+            self.assertIn("Respuesta tardía", synth.call_args.args[0])
+            self.assertTrue(synth.call_args.args[0].endswith(answer))
+            self.assertEqual(captured[1]["notify_telegram"], False)
             self.assertEqual(captured[1]["transcript"], "¿Qué hago mañana?")
+            self.assertEqual(voice_sends[0][0], "chat")
+            self.assertIn("Respuesta tardía", voice_sends[0][2])
+            backups = [item for item in telegram_sends if item[0] == "sendMessage"]
+            self.assertEqual(len(backups), 1)
+            self.assertIn("Respuesta tardía", backups[0][1]["text"])
+            self.assertTrue(backups[0][1]["text"].endswith(answer))
 
     def test_model_unavailable_returns_labelled_basic_reading(self) -> None:
         with patch.object(worker, "call_ollama", side_effect=httpx.ConnectError("offline")), patch.object(worker, "deterministic_answer", return_value="Hoy mantén la carga suave."):
@@ -92,7 +109,126 @@ class ResponseFlowTests(unittest.TestCase):
             self.assertEqual(outputs[0]['answer'], outputs[1]['answer'])
             self.assertEqual(outputs[0]['structured_output'], outputs[1]['structured_output'])
             self.assertEqual(outputs[0]['output_source'], 'deterministic')
-            self.assertEqual(synth.call_args.args[0], outputs[0]['answer'])
+            self.assertIn('Respuesta tardía', synth.call_args.args[0])
+            self.assertTrue(synth.call_args.args[0].endswith(outputs[0]['answer']))
+
+    def test_shared_late_response_fixture_matches_worker_classification(self):
+        from garmin_sync.coach_job_time import job_created_at
+
+        details = getattr(worker, "late_response_details", None)
+        self.assertIsNotNone(details, "worker must expose its delivery timing classification")
+        fixture_path = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "late_response_cases.json"
+        cases = json.loads(fixture_path.read_text(encoding="utf-8"))
+        for case in cases:
+            with self.subTest(case=case["id"]):
+                now = datetime.fromisoformat(case["now"])
+                outcome, _full_note, _spoken_note = details(
+                    {"created_at": case.get("created_at")}, now=now
+                )
+                self.assertEqual(outcome, case["expected"])
+
+        with self.assertRaises(ValueError):
+            job_created_at({"created_at": "2026-10-11T10:00:00"})
+        self.assertIsNotNone(job_created_at({"created_at": "2026-10-11T10:00:00Z"}).tzinfo)
+
+    def test_recent_voice_is_sent_without_late_note(self):
+        answer = "Respuesta reciente."
+        created_at = datetime.now(timezone.utc).isoformat()
+        voice_sends = []
+        with patch.object(worker, "call_ollama", return_value=ollama_result(answer)), patch.object(
+            worker, "synthesize_voice", return_value=Path("voice.ogg")
+        ) as synth, patch.object(
+            worker, "send_telegram_voice", side_effect=lambda chat, path, caption: voice_sends.append(caption)
+        ), patch.object(worker, "telegram_api"):
+            worker.process_job(
+                {"id": "recent-voice", "text": "¿Qué hago?", "response_mode": "voice",
+                 "chat_id": "chat", "created_at": created_at},
+                {},
+            )
+
+        self.assertEqual(synth.call_args.args[0], answer)
+        self.assertEqual(voice_sends, [answer])
+        self.assertEqual(self.post.call_args.args[1]["answer"], answer)
+        self.assertFalse(self.post.call_args.args[1]["notify_telegram"])
+
+    def test_long_late_voice_caption_and_text_backup_keep_full_answer(self):
+        answer = "R" * 3500
+        telegram_sends = []
+
+        def capture_telegram(method, payload):
+            telegram_sends.append((method, payload))
+            return {"ok": True}
+
+        with patch.object(worker, "call_ollama", return_value=ollama_result(answer)), patch.object(
+            worker, "synthesize_voice", return_value=Path("voice.ogg")
+        ) as synth, patch.object(worker, "send_telegram_voice") as send_voice, patch.object(
+            worker, "telegram_api", side_effect=capture_telegram
+        ):
+            worker.process_job(
+                {"id": "late-long-voice", "text": "¿Qué hago?", "response_mode": "voice",
+                 "chat_id": "chat", "created_at": JOB_CREATED_AT},
+                {},
+            )
+
+        payload = self.post.call_args.args[1]
+        self.assertEqual(payload["answer"], answer)
+        self.assertFalse(payload["notify_telegram"])
+        caption = send_voice.call_args.args[2]
+        self.assertLessEqual(len(caption), 1024)
+        self.assertIn("Respuesta tardía", caption)
+        self.assertTrue(synth.call_args.args[0].endswith(answer))
+        backups = [item for item in telegram_sends if item[0] == "sendMessage"]
+        self.assertEqual(len(backups), 1)
+        text = backups[0][1]["text"]
+        self.assertIn("Respuesta tardía a tu consulta", text)
+        self.assertTrue(text.endswith(answer))
+        self.assertLessEqual(len(text), 4096)
+
+    def test_old_and_new_api_worker_models_never_duplicate_full_late_note(self):
+        from app.response_timing import format_late_delivery
+
+        job = {"created_at": JOB_CREATED_AT}
+        now = datetime.now(timezone.utc)
+        outcome, full_note, spoken_note = worker.late_response_details(job, now=now)
+        self.assertEqual(outcome, "late")
+        self.assertIsNotNone(full_note)
+
+        for api_new in (False, True):
+            for worker_new in (False, True):
+                for mode in ("text", "voice"):
+                    for answer in ("Respuesta breve.", "R" * 3500):
+                        with self.subTest(api_new=api_new, worker_new=worker_new,
+                                          mode=mode, length=len(answer)):
+                            delivered = []
+                            if mode == "text":
+                                delivered.append(
+                                    format_late_delivery(answer, job["created_at"], now=now)
+                                    if api_new else answer
+                                )
+                            elif worker_new:
+                                # The worker adds a short spoken note and either a full
+                                # caption or one full text backup; API sends nothing.
+                                delivered.append(f"{spoken_note}{answer}")
+                                if len(full_note + answer) <= 1000:
+                                    delivered.append(f"{full_note}{answer}")
+                                else:
+                                    delivered.append(f"{full_note}{answer}")
+                            else:
+                                # The legacy worker sends voice without a note and
+                                # requests text fallback only for a long answer.
+                                delivered.append(answer)
+                                if len(answer) > 1000:
+                                    delivered.append(
+                                        format_late_delivery(answer, job["created_at"], now=now)
+                                        if api_new else answer
+                                    )
+
+                            complete_note_count = sum(
+                                text.count(full_note.strip()) for text in delivered
+                            )
+                            self.assertLessEqual(complete_note_count, 1)
+                            if api_new and worker_new:
+                                self.assertEqual(complete_note_count, 1)
 
     def test_voice_failure_preserves_full_answer_as_text(self) -> None:
         answer = "Hoy te recomiendo descansar para recuperar. " * 30

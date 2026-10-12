@@ -32,6 +32,8 @@ BOT_APP_DIR = PROJECT_ROOT / "apps" / "bot"
 if str(BOT_APP_DIR) not in sys.path:
     sys.path.insert(0, str(BOT_APP_DIR))
 
+from app.response_timing import MADRID, UNKNOWN_VALIDITY_PREFIX, late_response_prefix
+
 try:
     from app.coach import build_ai_brief, format_natural_coach
 except Exception:
@@ -1321,6 +1323,39 @@ def complete_coach_job(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     raise AssertionError('unreachable')
 
 
+def late_response_details(
+    job: dict[str, Any], *, now: datetime
+) -> tuple[str, str | None, str | None]:
+    """Return classification, complete visible note, and short spoken note."""
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must be a timezone-aware datetime")
+    try:
+        created_at = job_created_at(job)
+    except ValueError:
+        return (
+            "unreliable",
+            UNKNOWN_VALIDITY_PREFIX,
+            "No se ha podido confirmar la vigencia temporal de esta respuesta. ",
+        )
+
+    prefix = late_response_prefix(created_at, now=now)
+    if prefix is None:
+        return "on_time", None, None
+    if prefix.startswith(UNKNOWN_VALIDITY_PREFIX):
+        return (
+            "unreliable",
+            prefix,
+            "No se ha podido confirmar la vigencia temporal de esta respuesta. ",
+        )
+
+    timestamp = created_at.astimezone(MADRID).strftime("%d/%m/%Y %H:%M")
+    spoken_note = (
+        f"Respuesta tardía. Consulta del {timestamp}; "
+        "la recomendación corresponde a ese momento. "
+    )
+    return "late", prefix, spoken_note
+
+
 def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
     job_id = job["id"]
     transcript = None
@@ -1383,6 +1418,12 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
             )
 
         answer = coach_result.answer
+        _timing_status, full_note, spoken_note = late_response_details(
+            job,
+            now=datetime.now(MADRID),
+        )
+        delivery_answer = f"{full_note}{answer}" if full_note else answer
+        spoken_answer = f"{spoken_note}{answer}" if spoken_note else answer
 
         payload: dict[str, Any] = {
             "status": "completed",
@@ -1398,14 +1439,22 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
             try:
                 VOICE_DIR.mkdir(parents=True, exist_ok=True)
                 with tempfile.TemporaryDirectory(prefix="garmin-coach-piper-", dir=str(VOICE_DIR)) as tmp:
-                    voice_path = synthesize_voice(answer, Path(tmp))
+                    voice_path = synthesize_voice(spoken_answer, Path(tmp))
                     if not voice_path:
                         payload["response_mode"] = "text"
                     if voice_path:
-                        send_telegram_voice(str(job["chat_id"]), voice_path, answer)
+                        caption = delivery_answer
+                        needs_text_backup = len(caption) > 1000
+                        if needs_text_backup and spoken_note:
+                            caption = f"{spoken_note.strip()} Respuesta completa en texto."
+                        send_telegram_voice(str(job["chat_id"]), voice_path, caption)
+                        if needs_text_backup:
+                            telegram_api(
+                                "sendMessage",
+                                {"chat_id": str(job["chat_id"]), "text": delivery_answer},
+                            )
                         payload["answer"] = answer
-                        # Telegram captions are limited; also deliver the full text when needed.
-                        payload["notify_telegram"] = len(answer) > 1000
+                        payload["notify_telegram"] = False
                         payload["response_mode"] = "voice"
             except Exception:
                 payload["answer"] = answer

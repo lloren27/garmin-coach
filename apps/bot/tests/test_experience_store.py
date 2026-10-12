@@ -50,6 +50,17 @@ class QueueFileTests(unittest.TestCase):
             self.assertFalse(store.load_queue_snapshot('a', now=NOW)['available'])
         self.assertFalse(store.load_queue_snapshot('', now=NOW)['available'])
 
+    def test_file_writers_preserve_aware_utc(self):
+        root = self.path.parent
+        for name, value in vars(store).copy().items():
+            if isinstance(value, Path) and (name.endswith('_FILE') or name == 'DATA_DIR'):
+                self.enterContext(patch.object(store, name, root if name == 'DATA_DIR' else root/value.name))
+        job = store.create_ai_job('writer', 'question')
+        claimed = store.claim_next_ai_job()
+        done = store.complete_ai_job(job['id'], answer='done')
+        for row, key in [(job, 'created_at'), (claimed, 'claimed_at'), (done, 'completed_at')]:
+            self.assertEqual(datetime.fromisoformat(row[key]).utcoffset().total_seconds(), 0)
+
     def test_calendar_offset_validation(self):
         values = ['2024-02-29T00:00:00Z', '2025-02-29T00:00:00Z', '2026-01-01T24:00:00Z',
                   '2026-01-01T00:00:00+14:01', '0000-01-01T00:00:00Z', '2026-01-01T00:00:60Z']

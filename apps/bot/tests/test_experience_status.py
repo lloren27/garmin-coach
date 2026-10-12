@@ -52,3 +52,17 @@ class StatusTests(unittest.TestCase):
             self.assertIn('Cola no disponible',main.route_message('/estado','u',None))
             load.assert_not_called()
             self.assertEqual(main.route_message('/estado extra','u','-10'),'Uso: /estado')
+
+    def test_authorized_webhook_uses_group_scope(self):
+        from unittest.mock import AsyncMock
+        with patch.object(main,'settings',SimpleNamespace(telegram_allowed_user_id='allowed',telegram_bot_token=None)), patch.object(main,'load_operational_documents',return_value=(None,None)), patch.object(main,'load_queue_snapshot',return_value=empty_snapshot(True)) as load, patch.object(main,'send_telegram_message',new_callable=AsyncMock):
+            with TestClient(main.app) as client:
+                response = client.post('/telegram/webhook',json={'message':{'from':{'id':'allowed'},'chat':{'id':-20},'text':'/estado'}})
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(load.call_args.args[0],'-20')
+
+    def test_partial_disabled_and_old_provider_success(self):
+        payload={'activity_provider_status':{'garmin':{'status':'partial'},'strava':{'status':'disabled'},'zepp':{'status':'ok','records_received':0,'last_success_at':'2026-10-10T10:00:00Z','period_start':'2026-10-09','period_end':'2026-10-10'}}}
+        text=experience.format_operational_status({'payload':payload},None,empty_snapshot(True),now=NOW)
+        for label in ('datos parciales','sin configurar','sin actividad','Datos de un día anterior','2026-10-09 — 2026-10-10'):
+            self.assertIn(label,text)

@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import unittest
+import asyncio
 from contextlib import ExitStack
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app import main
-from app.coach import build_ai_brief, format_week_plan
+from app.coach import (
+    build_ai_brief,
+    format_ai_queued,
+    format_voice_queued,
+    format_week_plan,
+)
+
+
+class _TelegramUpdate:
+    def __init__(self, message):
+        self.message = message
+
+    async def json(self):
+        return {"message": self.message}
 
 
 class CoachRoutingTests(unittest.TestCase):
@@ -23,8 +37,85 @@ class CoachRoutingTests(unittest.TestCase):
                 response = main.route_message(text, "user", "chat")
                 self.queue.assert_called_once()
                 self.assertEqual(self.queue.call_args.kwargs["chat_id"], "chat")
-                self.assertIn("análisis", response)
-                self.assertIn("40 y 70 segundos", response)
+                self.assertEqual(
+                    response,
+                    "Consulta recibida; te respondo en cuanto esté lista. Puedes consultar /estado",
+                )
+
+    def test_text_acknowledgement_has_no_timing_promise(self):
+        self.assertEqual(
+            format_ai_queued({}),
+            "Consulta recibida; te respondo en cuanto esté lista. Puedes consultar /estado",
+        )
+        self.assertNotIn("segundos", format_ai_queued({}))
+        self.assertNotIn("escribiendo", format_ai_queued({}))
+
+    def test_voice_acknowledgement_keeps_audio_duration_and_queue_context(self):
+        response = format_voice_queued({"audio_duration": 12})
+        self.assertIn("Audio recibido (12 s)", response)
+        self.assertIn("transcripción y análisis", response)
+        self.assertIn("/estado", response)
+        self.assertNotIn("40 y 70 segundos", response)
+
+    def test_webhook_sends_one_ack_after_enqueue_for_text_voice_and_audio(self):
+        for message in (
+            {"text": "¿Qué hago mañana?"},
+            {"voice": {"file_id": "voice-file", "duration": 12}},
+            {"audio": {"file_id": "audio-file", "duration": 12}},
+        ):
+            with self.subTest(message=message):
+                events = []
+
+                def create_job(**kwargs):
+                    events.append(("create", kwargs))
+                    return {"id": "job", "audio_duration": kwargs.get("audio_duration")}
+
+                async def send_message(chat_id, text):
+                    events.append(("send", chat_id, text))
+
+                update = _TelegramUpdate(
+                    {
+                        **message,
+                        "chat": {"id": 99},
+                        "from": {"id": 42},
+                    }
+                )
+                with patch.object(main, "create_ai_job", side_effect=create_job), patch.object(
+                    main, "send_telegram_message", new_callable=AsyncMock,
+                    side_effect=send_message,
+                ):
+                    asyncio.run(main.telegram_webhook(update))
+
+                self.assertEqual([event[0] for event in events], ["create", "send"])
+                self.assertEqual(events[1][1], 99)
+                self.assertIn("/estado", events[1][2])
+                self.assertEqual(events[1][2].count("Consulta recibida"), 1)
+
+    def test_lab_test_document_keeps_its_specific_single_ack(self):
+        events = []
+
+        def create_job(**kwargs):
+            events.append(("create", kwargs))
+            return {"id": "job", "document_name": "test.pdf"}
+
+        async def send_message(chat_id, text):
+            events.append(("send", chat_id, text))
+
+        update = _TelegramUpdate({
+            "document": {"file_id": "pdf-file", "file_name": "test.pdf", "mime_type": "application/pdf"},
+            "chat": {"id": 99},
+            "from": {"id": 42},
+        })
+        with patch.object(main, "create_ai_job", side_effect=create_job), patch.object(
+            main, "send_telegram_message", new_callable=AsyncMock,
+            side_effect=send_message,
+        ):
+            asyncio.run(main.telegram_webhook(update))
+
+        self.assertEqual([event[0] for event in events], ["create", "send"])
+        self.assertEqual(events[0][1]["source_kind"], "lab_test")
+        self.assertIn("Prueba de esfuerzo recibida", events[1][2])
+        self.assertNotIn("Consulta recibida", events[1][2])
 
     def test_help_reading_commands_respond_without_waiting_for_the_local_coach(self) -> None:
         """A command advertised by /help must not collapse into a generic AI reply."""

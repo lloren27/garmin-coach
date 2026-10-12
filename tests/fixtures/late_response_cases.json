@@ -1,0 +1,79 @@
+[
+  {
+    "id": "same-day-under-six-hours",
+    "created_at": "2026-10-11T09:00:00+02:00",
+    "now": "2026-10-11T13:59:00+02:00",
+    "expected": "on_time"
+  },
+  {
+    "id": "exactly-six-hours",
+    "created_at": "2026-10-11T09:00:00+02:00",
+    "now": "2026-10-11T15:00:00+02:00",
+    "expected": "late"
+  },
+  {
+    "id": "midnight-with-seconds-of-wait",
+    "created_at": "2026-10-11T23:55:00+02:00",
+    "now": "2026-10-12T00:00:20+02:00",
+    "expected": "on_time"
+  },
+  {
+    "id": "midnight-exactly-thirty-minutes",
+    "created_at": "2026-10-11T23:30:00+02:00",
+    "now": "2026-10-12T00:00:00+02:00",
+    "expected": "on_time"
+  },
+  {
+    "id": "midnight-thirty-minutes-one-second",
+    "created_at": "2026-10-11T23:29:59+02:00",
+    "now": "2026-10-12T00:00:00+02:00",
+    "expected": "late"
+  },
+  {
+    "id": "clock-drift-exactly-120-seconds",
+    "created_at": "2026-10-11T10:02:00+02:00",
+    "now": "2026-10-11T10:00:00+02:00",
+    "expected": "on_time"
+  },
+  {
+    "id": "clock-drift-121-seconds",
+    "created_at": "2026-10-11T10:02:01+02:00",
+    "now": "2026-10-11T10:00:00+02:00",
+    "expected": "unreliable"
+  },
+  {
+    "id": "two-days-late",
+    "created_at": "2026-10-10T10:00:00+02:00",
+    "now": "2026-10-12T10:00:00+02:00",
+    "expected": "late"
+  },
+  {
+    "id": "naive-timestamp",
+    "created_at": "2026-10-11T10:00:00",
+    "now": "2026-10-11T10:00:01+02:00",
+    "expected": "unreliable"
+  },
+  {
+    "id": "malformed-timestamp",
+    "created_at": "not-a-date",
+    "now": "2026-10-11T10:00:01+02:00",
+    "expected": "unreliable"
+  },
+  {
+    "id": "null-timestamp",
+    "created_at": null,
+    "now": "2026-10-11T10:00:01+02:00",
+    "expected": "unreliable"
+  },
+  {
+    "id": "missing-timestamp",
+    "now": "2026-10-11T10:00:01+02:00",
+    "expected": "unreliable"
+  },
+  {
+    "id": "date-only-without-zone",
+    "created_at": "2026-10-11",
+    "now": "2026-10-11T10:00:01+02:00",
+    "expected": "unreliable"
+  }
+]

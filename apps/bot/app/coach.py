@@ -58,38 +58,8 @@ COACH_QUESTIONS = {
 
 
 def format_help() -> str:
-    return (
-        "Comandos Garmin Coach\n"
-        "/hoy - estado del dia\n"
-        "/semana - balance y plan de los proximos 7 dias\n"
-        "/plan - consultar el plan vigente\n"
-        "/plan nuevo - crear un plan semanal con running, bici y fuerza\n"
-        "/ultima - ultima actividad\n"
-        "/proximo - entreno recomendado\n"
-        "/fatiga - riesgo de fatiga\n"
-        "/salud - recuperacion, reposo, calorias y procedencia de metricas\n"
-        "/carga - carga running/bici/fuerza\n"
-        "/running - carga especifica de carrera y ACWR\n"
-        "/tendencia - evolucion semanal\n"
-        "/feedback - conclusion de todas las actividades del dia\n"
-        "/coach - pregunta libre al entrenador local\n"
-        "/sync - solicita sincronizacion desde el Mac; usa /sync cmf para Strava\n"
-        "/perfil - guarda sexo, edad, peso, altura, FC, FTP y objetivos\n"
-        "/prueba_esfuerzo - sube PDF/DOCX de prueba deportiva\n"
-        "/pruebas - historico de pruebas de esfuerzo\n"
-        "/zonas - zonas actuales desde perfil/prueba\n"
-        "/aplicar_prueba - aplica la ultima propuesta al perfil\n"
-        "/corregir_prueba - corrige la prueba pendiente\n"
-        "/descartar_prueba - descarta la prueba pendiente\n"
-        "/checkin - guarda molestias, dolor o una nota relevante\n"
-        "/ajustar - adapta el proximo entreno con Garmin + molestias\n"
-        "/bici - resumen de ciclismo\n"
-        "/potencia - analisis Wattwise de potencia y carga ciclista\n"
-        "/fuerza - circuitos A/B y registro de pesos, reps y RIR\n"
-        "/malaga - foco Maraton de Malaga\n"
-        "/syncinfo - ultima sincronizacion\n"
-        "Tambien puedes mandar una nota de voz: el TrAIner la transcribe y el coach local responde."
-    )
+    from .experience import format_help as experience_help
+    return experience_help()
 
 
 def format_status(sync: dict[str, Any] | None) -> str:

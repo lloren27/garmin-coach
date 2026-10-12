@@ -13,6 +13,24 @@ Private Garmin-to-Telegram coaching assistant for marathon training.
 Garmin Connect -> Mac sync-local -> Railway API -> Telegram bot
 ```
 
+## Telegram: ayuda y estado
+
+`/help` muestra las seis entradas principales: `/coach`, `/plan`, `/sync`,
+`/estado`, `/registro` y `/help`. `/help comandos` enumera los accesos compatibles.
+
+- `/registro fuerza`, `/registro molestias`, `/registro perfil` y `/registro pruebas`
+  muestran instrucciones. Abrir la guía no guarda datos; los comandos indicados
+  siguen siendo las operaciones explícitas de registro.
+- `/estado` muestra fechas de los datos, estado por proveedor y ámbito, y la cola
+  del chat: pendientes, trabajos en ejecución y últimas finalizaciones/fallos.
+  Una fecha desconocida o una cola inaccesible se indica como tal. No confirma que
+  el Mac esté despierto y no escribe ni reclama trabajos.
+- `/plan` consulta sin modificar; `/plan nuevo` conserva la creación explícita.
+
+Los alias deportivos como `/feedback`, `/semana` y `/proximo` mantienen sus rutas
+locales actuales. Texto libre, `/coach` y voz conservan el flujo del worker.
+Este entregable no activa avisos de demora, notas tardías ni migración de alias.
+
 ## 1. Configure local secrets
 
 Do not paste secrets into chat. Run:

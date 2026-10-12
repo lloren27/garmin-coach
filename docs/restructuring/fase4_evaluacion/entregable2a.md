@@ -1,6 +1,6 @@
 # Fase 4 — evidencia del entregable 2a
 
-**Estado:** implementación local completada y suites verificadas. No desplegado ni observado en producción.
+**Estado:** implementación desplegada en producción según confirmación del usuario; suites verificadas. La conducta todavía no está observada/registrada.
 
 ## Alcance implementado
 
@@ -33,6 +33,8 @@ La instancia PostgreSQL de prueba fue desechable, PostgreSQL 16.15, con base y u
 
 ## Despliegue y observación
 
-Este entregable todavía no está desplegado. Antes de desplegarlo, el entregable 1 debe estar desplegado y `/estado` debe haberse verificado. El orden previsto es API y luego worker; pausar el worker es opcional. Después se observarán el acuse único, una respuesta normal sin nota y la voz en operación normal.
+El usuario confirmó el despliegue en producción. Railway confirma que el servicio `garmin-coach` en el entorno `production` está en `SUCCESS` con el commit `a7df9ea` (deployment `9bebcaf5-a1e2-451f-b863-a0da2fdd19d3`, 2026-10-12 21:24 UTC). El despliegue del worker local no se verifica mediante Railway. Antes del despliegue, el entregable 1 debía estar desplegado y `/estado` verificado. El orden previsto es API y luego worker; pausar el worker es opcional.
 
-No se generarán trabajos ni mensajes artificiales en producción para probar tardanza. Si no ocurre una respuesta tardía de forma natural, se registrará como **no observado en producción**, cubierta por las pruebas locales. El entregable 2b no debe comenzar hasta que el despliegue y la observación de 2a queden registrados y revisables.
+Quedan por registrar observaciones de operación: acuse único, respuesta normal sin nota y voz normal. No se ha informado aún si estos tres comportamientos se han observado tras el despliegue.
+
+No se generarán trabajos ni mensajes artificiales en producción para probar tardanza. Si no ocurre una respuesta tardía de forma natural, se registrará como **no observado en producción**, cubierta por las pruebas locales. El entregable 2b no debe comenzar hasta que las observaciones de operación de 2a queden registradas y revisables.

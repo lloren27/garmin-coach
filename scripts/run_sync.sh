@@ -7,13 +7,14 @@ LOG_DIR="$HOME/Library/Logs"
 LOCK_DIR="$HOME/Library/Application Support/Garmin Coach/sync.lock"
 STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 
+source "$PROJECT_ROOT/scripts/sync_lock.sh"
+
 mkdir -p "$LOG_DIR"
-mkdir -p "$(dirname "$LOCK_DIR")"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+if ! acquire_sync_lock "$LOCK_DIR"; then
   echo "[$STAMP] Sync already running, skipping"
   exit 0
 fi
-trap 'rmdir "$LOCK_DIR"' EXIT
+trap 'release_sync_lock "$LOCK_DIR"' EXIT
 
 cd "$SYNC_DIR"
 

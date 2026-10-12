@@ -53,6 +53,7 @@ from .coach import (
     parse_profile,
 )
 from .experience import format_help as experience_help, format_registration_help, format_operational_status
+from .response_timing import format_late_delivery
 from .store import load_queue_snapshot, load_operational_documents
 from .queue_status import empty_snapshot
 from datetime import datetime, timezone
@@ -369,9 +370,14 @@ async def complete_ai_job_endpoint(
 
     if chat_id and notify_telegram and not document.get('_completion_replayed'):
         if status == "completed" and answer:
+            delivery_answer = format_late_delivery(
+                answer,
+                document.get("created_at"),
+                now=datetime.now(timezone.utc),
+            )
             await send_telegram_message(
                 chat_id,
-                answer,
+                delivery_answer,
             )
 
         elif status == "failed":

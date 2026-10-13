@@ -154,6 +154,62 @@ def _factual_activity_line(activity: dict) -> str:
     return '; '.join(facts)
 
 
+def _factual_wellness_lines(wellness: dict, *, limit: int = 5) -> list[str]:
+    """Show a few dated, source-labelled measurements without interpretation."""
+    source_names = {'garmin': 'Garmin', 'zepp': 'Zepp'}
+
+    def source_label(metric: dict) -> str | None:
+        source = metric.get('source')
+        return source_names.get(source) if isinstance(source, str) else None
+
+    history = _mapping(wellness.get('history'))
+    days = []
+    for raw_day, row in history.items():
+        day = _factual_date(raw_day)
+        effective = _mapping(_mapping(row).get('effective'))
+        if day and effective:
+            days.append((day, effective))
+    if not days:
+        effective = _mapping(wellness.get('effective'))
+        day = _factual_date(effective.get('date'))
+        if day and effective:
+            days.append((day, effective))
+
+    lines: list[str] = []
+    for day, effective in sorted(days, key=lambda item: item[0], reverse=True):
+        facts = []
+        metrics = effective
+        resting = _mapping(metrics.get('resting_hr'))
+        value = _factual_number(resting.get('value'), minimum=30, maximum=250)
+        source = source_label(resting)
+        if value is not None and source:
+            facts.append(f'FC en reposo: {value:g} lpm ({source})')
+
+        steps = _mapping(metrics.get('steps'))
+        value = _factual_number(steps.get('value'), maximum=200000)
+        source = source_label(steps)
+        if value is not None and source:
+            facts.append(f'Pasos: {value:g} ({source})')
+
+        sleep = _mapping(metrics.get('sleep'))
+        value = _factual_number(sleep.get('total_minutes'), minimum=1, maximum=1440)
+        source = source_label(sleep)
+        if value is not None and source:
+            hours, minutes = divmod(int(value), 60)
+            facts.append(f'Sueño: {hours} h {minutes:02d} min ({source})')
+
+        stress = _mapping(metrics.get('stress'))
+        value = _factual_number(stress.get('avg'), maximum=100)
+        source = source_label(stress)
+        if value is not None and source:
+            facts.append(f'Estrés medio: {value:g} ({source})')
+
+        lines.extend(f'• {day} — {fact}' for fact in facts[:limit - len(lines)])
+        if len(lines) >= limit:
+            break
+    return lines
+
+
 def format_factual_view(sync: dict | None, *, scope: str, now: datetime) -> str:
     """Render bounded, source-labelled facts without invoking coaching logic."""
     if now.tzinfo is None:
@@ -186,13 +242,18 @@ def format_factual_view(sync: dict | None, *, scope: str, now: datetime) -> str:
     else:
         lines.append('No hay actividades disponibles en el resumen sincronizado.')
 
-    wellness_status = _mapping(_mapping(payload.get('wellness')).get('provider_status'))
+    wellness = _mapping(payload.get('wellness'))
+    wellness_lines = _factual_wellness_lines(wellness)
+    wellness_status = _mapping(wellness.get('provider_status'))
     wellness_sources = [
         {'garmin': 'Garmin', 'zepp': 'Zepp'}[provider]
         for provider in ('garmin', 'zepp')
         if _mapping(wellness_status.get(provider)).get('status') == 'ok'
     ]
-    if wellness_sources:
+    if wellness_lines:
+        lines.append('Mediciones recientes de bienestar:')
+        lines.extend(wellness_lines)
+    elif wellness_sources:
         lines.append('Bienestar: estado de proveedor correcto en ' + ', '.join(wellness_sources) + '.')
     else:
         lines.append('Bienestar: estado factual no disponible.')

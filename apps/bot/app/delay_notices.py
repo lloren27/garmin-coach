@@ -55,9 +55,7 @@ def missing_delay_notice_columns() -> tuple[str, ...]:
     if not is_postgres_backend(store.DATABASE_URL):
         return DELAY_NOTICE_COLUMNS
 
-    import psycopg
-
-    with psycopg.connect(store.DATABASE_URL, connect_timeout=5) as conn:
+    with store._connect_delay_notice_postgres() as conn:
         rows = conn.execute(
             """select column_name
                from information_schema.columns
@@ -146,7 +144,8 @@ def run_delay_notice_sweep_once(stop_event: threading.Event | None = None) -> in
         try:
             claim = store.claim_next_delay_notice_job(threshold_seconds=threshold_seconds)
         except Exception:
-            logger.exception("Delay-notice claim failed; sweep stopped")
+            if stop_event is None or not stop_event.is_set():
+                logger.exception("Delay-notice claim failed; sweep stopped")
             break
         if claim is None:
             break
@@ -158,7 +157,7 @@ def run_delay_notice_sweep_once(stop_event: threading.Event | None = None) -> in
             )
             if prepared is None:
                 continue
-            sync = store.load_sync()
+            sync = store.load_sync(delay_notice_timeout=True)
             notice = format_delay_notice(
                 prepared, sync, now=datetime.now(timezone.utc)
             )

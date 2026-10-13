@@ -31,6 +31,9 @@ VALID_SYNC_MODES = {"full", "zepp_activities", "strava_activities"}
 DELAY_NOTICE_LEASE_SECONDS = 120
 DELAY_NOTICE_MIN_SEND_REMAINING_SECONDS = 15
 DELAY_NOTICE_MAX_ATTEMPTS = 3
+DELAY_NOTICE_DB_CONNECT_TIMEOUT_SECONDS = 5
+DELAY_NOTICE_DB_STATEMENT_TIMEOUT_MS = 10000
+DELAY_NOTICE_DB_LOCK_TIMEOUT_MS = 5000
 STRENGTH_STATE_KEY = "strength_sessions"
 WELLNESS_DAILY_DDL = """
 create table if not exists wellness_daily (
@@ -84,9 +87,9 @@ def save_sync(payload: dict[str, Any]) -> dict[str, Any]:
     return document
 
 
-def load_sync() -> dict[str, Any] | None:
+def load_sync(*, delay_notice_timeout: bool = False) -> dict[str, Any] | None:
     if DATABASE_URL:
-        return load_sync_postgres()
+        return load_sync_postgres(delay_notice_timeout=delay_notice_timeout)
 
     if not SYNC_FILE.exists():
         return None
@@ -1041,10 +1044,27 @@ def save_sync_postgres(document: dict[str, Any]) -> None:
         )
 
 
-def load_sync_postgres() -> dict[str, Any] | None:
+def _connect_delay_notice_postgres():
+    """Open a delay-notice DB connection with finite connect/query/lock waits."""
     import psycopg
 
-    with psycopg.connect(DATABASE_URL) as conn:
+    conn = psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=DELAY_NOTICE_DB_CONNECT_TIMEOUT_SECONDS,
+    )
+    conn.execute(f"SET statement_timeout = '{DELAY_NOTICE_DB_STATEMENT_TIMEOUT_MS}ms'")
+    conn.execute(f"SET lock_timeout = '{DELAY_NOTICE_DB_LOCK_TIMEOUT_MS}ms'")
+    return conn
+
+
+def load_sync_postgres(*, delay_notice_timeout: bool = False) -> dict[str, Any] | None:
+    import psycopg
+
+    if delay_notice_timeout:
+        conn = _connect_delay_notice_postgres()
+    else:
+        conn = psycopg.connect(DATABASE_URL)
+    with conn:
         ensure_schema(conn)
         row = conn.execute(
             "select document from sync_state where key = %s",
@@ -1239,10 +1259,8 @@ def claim_next_delay_notice_job(*, threshold_seconds: int) -> DelayNoticeClaim |
     if not DATABASE_URL:
         raise RuntimeError("delay notices require the PostgreSQL backend")
 
-    import psycopg
-
     claim_token = uuid.uuid4().hex
-    with psycopg.connect(DATABASE_URL) as conn:
+    with _connect_delay_notice_postgres() as conn:
         with conn.transaction():
             row = conn.execute(
                 """
@@ -1301,9 +1319,7 @@ def prepare_delay_notice_send(job_id: str, claim_token: str) -> DelayNoticeClaim
     if not DATABASE_URL:
         raise RuntimeError("delay notices require the PostgreSQL backend")
 
-    import psycopg
-
-    with psycopg.connect(DATABASE_URL) as conn:
+    with _connect_delay_notice_postgres() as conn:
         row = conn.execute(
             """
             select id,
@@ -1348,9 +1364,7 @@ def mark_delay_notice_sent(job_id: str, claim_token: str) -> bool:
     if not DATABASE_URL:
         raise RuntimeError("delay notices require the PostgreSQL backend")
 
-    import psycopg
-
-    with psycopg.connect(DATABASE_URL) as conn:
+    with _connect_delay_notice_postgres() as conn:
         row = conn.execute(
             """
             update coach_ai_jobs

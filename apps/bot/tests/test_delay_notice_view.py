@@ -103,6 +103,60 @@ class DelayNoticeViewTests(unittest.TestCase):
         self.assertIn("No hay actividades", result)
         self.assertNotIn("PRIVATE ERROR", result)
 
+    def test_factual_view_includes_recent_wellness_measurements_with_date_and_source(self):
+        self.sync["payload"]["wellness"] = {
+            "provider_status": {
+                "garmin": {"status": "api_error"},
+                "zepp": {"status": "api_error"},
+            },
+            "history": {
+                "2026-10-10": {
+                    "effective": {
+                        "date": "2026-10-10",
+                        "resting_hr": {"value": 47, "unit": "bpm", "source": "zepp"},
+                        "steps": {"value": 8532, "unit": "steps", "source": "garmin"},
+                        "sleep": {"total_minutes": 452, "source": "zepp"},
+                        "stress": {"avg": 22, "source": "zepp"},
+                    }
+                }
+            },
+        }
+
+        result = experience.format_factual_view(
+            self.sync, scope="latest_available", now=NOW
+        )
+
+        self.assertIn("2026-10-10", result)
+        self.assertIn("FC en reposo: 47 lpm (Zepp)", result)
+        self.assertIn("Pasos: 8532 (Garmin)", result)
+        self.assertIn("Sueño: 7 h 32 min (Zepp)", result)
+        self.assertIn("Estrés medio: 22 (Zepp)", result)
+        self.assertNotIn("estado factual no disponible", result)
+
+    def test_wellness_view_ignores_invalid_or_untrusted_values_and_is_bounded(self):
+        self.sync["payload"]["wellness"] = {
+            "history": {
+                f"2026-10-{day:02d}": {
+                    "effective": {
+                        "resting_hr": {"value": 9999, "source": "zepp"},
+                        "steps": {"value": 100000000, "source": "garmin"},
+                        "stress": {"avg": 22, "source": "PRIVATE SOURCE"},
+                    }
+                }
+                for day in range(1, 12)
+            },
+            "provider_status": {"garmin": {"status": "error"}},
+        }
+
+        result = experience.format_factual_view(
+            self.sync, scope="latest_available", now=NOW
+        )
+
+        self.assertNotIn("9999", result)
+        self.assertNotIn("100000000", result)
+        self.assertNotIn("PRIVATE SOURCE", result)
+        self.assertLess(len(result), 4096)
+
     def test_large_history_and_untrusted_names_stay_within_telegram_limit(self):
         many = {
             "payload": {

@@ -113,7 +113,7 @@
 
 - [x] Probar API vieja contra esquema nuevo: lecturas/escrituras existentes, pendientes, respuesta y relaciones intactos; confirmar que la API nueva tolera marcas `NULL`. Modelar versiones sin abrir mensajes reales a usuarios.
 - [x] Probar que el productor solo escribe después de tener columnas y lector; reversión deja los campos nuevos y datos intactos mientras el barrido/config se apagan.
-- [x] Ejecutar suite completa del bot con dump restaurado y PostgreSQL desechable, cero omisiones; suite completa del worker para asegurar que su contrato no cambia.
+- [x] Ejecutar suite completa del bot con dump restaurado y PostgreSQL desechable, cero omisiones (165 tests); suite completa del worker para asegurar que su contrato no cambia (292 tests).
 - [x] Ejecutar `git diff --check`; revisar migración estrictamente aditiva y que no se altera producción ni el job payload canónico.
 - [x] Crear el runbook de futura salida, incluyendo copia/restore aislado, migración, comprobación, despliegue apagado, medición real, recalibración, activación posterior autorizada y rollback que conserva columnas/datos. Este plan no aplica DDL ni despliega.
 - [x] Registrar en evidencia solo SHA del backup, identidades de contenedores/DB/schema sintético y recuentos; nunca contenido real de preguntas, respuestas ni métricas de entrenamiento. Añadir resultados de suites, criterios de latencia/fallos, matriz de versiones y configuración por defecto. El barrido **no se activa ni despliega en producción en esta tarea**.

@@ -83,6 +83,21 @@ class DelayNoticeStoreTests(unittest.TestCase):
                 (job_id,),
             ).fetchone()
 
+    def test_delay_notice_database_connection_sets_finite_query_deadlines(self):
+        with self.store._connect_delay_notice_postgres() as conn:
+            statement_timeout = conn.execute("show statement_timeout").fetchone()[0]
+            lock_timeout = conn.execute("show lock_timeout").fetchone()[0]
+
+        self.assertEqual(statement_timeout, "10s")
+        self.assertEqual(lock_timeout, "5s")
+
+    def test_load_sync_can_use_bounded_postgres_connection(self):
+        with self.psycopg.connect(self.database_url) as conn:
+            conn.execute("create table sync_state (key text primary key, document jsonb not null)")
+            conn.execute("insert into sync_state (key,document) values ('latest','{}')")
+        with patch.object(self.store, "DATABASE_URL", self.database_url):
+            self.assertEqual(self.store.load_sync(delay_notice_timeout=True), {})
+
     def test_claims_one_oldest_job_at_threshold_and_excludes_other_kinds(self):
         self.add_job("eligible-older", seconds_ago=121)
         self.add_job("eligible-boundary", seconds_ago=120)

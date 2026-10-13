@@ -464,6 +464,69 @@ class ConcurrentDelayNoticeSweepTests(unittest.TestCase):
             with self.psycopg.connect(self.base_url, autocommit=True) as conn:
                 conn.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))
 
+    def test_shutdown_finishes_when_claim_is_blocked_by_database_lock(self):
+        from pathlib import Path
+        from psycopg import sql
+
+        schema = "shutdown_notice_" + uuid.uuid4().hex
+        database_url = self.base_url + "?options=-csearch_path%3D" + schema
+        started = threading.Event()
+        finished = threading.Event()
+        stop_event = threading.Event()
+        outcomes = []
+        lock_conn = None
+        try:
+            with self.psycopg.connect(self.base_url, autocommit=True) as conn:
+                conn.execute(sql.SQL("create schema {}").format(sql.Identifier(schema)))
+                conn.execute(sql.SQL("set search_path to {}").format(sql.Identifier(schema)))
+                conn.execute(
+                    """create table coach_ai_jobs (
+                           id text primary key, status text not null, document jsonb not null,
+                           created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+                       )"""
+                )
+                migration = (
+                    Path(__file__).resolve().parents[1]
+                    / "migrations"
+                    / "20261012_add_delay_notice_columns.sql"
+                ).read_text(encoding="utf-8")
+                conn.execute(migration)
+
+            lock_conn = self.psycopg.connect(database_url)
+            lock_conn.execute("lock table coach_ai_jobs in access exclusive mode")
+            original_claim = store.claim_next_delay_notice_job
+
+            def tracked_claim(**kwargs):
+                started.set()
+                return original_claim(**kwargs)
+
+            def run_sweep():
+                with patch.object(delay_notices, "settings", SimpleNamespace(
+                    coach_delay_notice_seconds="120", telegram_bot_token="fake-token"
+                )), patch.object(store, "DATABASE_URL", database_url), patch.object(
+                    store, "claim_next_delay_notice_job", side_effect=tracked_claim
+                ):
+                    outcomes.append(delay_notices.run_delay_notice_sweep_once(stop_event))
+                finished.set()
+
+            thread = threading.Thread(target=run_sweep, daemon=True)
+            thread.start()
+            self.assertTrue(started.wait(2), "sweep did not start its blocked claim")
+            stop_event.set()
+            self.assertTrue(
+                finished.wait(7),
+                "sweep did not stop after PostgreSQL lock timeout",
+            )
+            thread.join(timeout=1)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(outcomes, [0])
+        finally:
+            if lock_conn is not None:
+                lock_conn.rollback()
+                lock_conn.close()
+            with self.psycopg.connect(self.base_url, autocommit=True) as conn:
+                conn.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))
+
 
 if __name__ == "__main__":
     unittest.main()

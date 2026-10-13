@@ -6,19 +6,20 @@
 
 - Migración aditiva e idempotente que agrega cuatro columnas anulables y una restricción no negativa a `coach_ai_jobs`; no reescribe los documentos JSONB ni elimina datos.
 - Reclamación PostgreSQL atómica de un trabajo cada vez, concesión de 120 segundos y máximo de tres intentos. Cada trabajo se prepara, envía y confirma antes de reclamar el siguiente. Un evento de parada se consulta antes de cada reclamación.
-- Resumen factual genérico de datos recientes y vigencia de sincronización. No usa texto libre del trabajo, no incluye identificadores internos ni produce recomendaciones.
-- El envío es opcional y está apagado por defecto. La configuración inválida se registra y deja el barrido apagado sin tumbar la API. La API sigue respondiendo mientras el barrido síncrono opera en un hilo, con un límite total de 15 segundos para Telegram.
+- Resumen factual genérico de actividades y mediciones recientes de bienestar (fecha, fuente y valores permitidos), además de la vigencia de sincronización. No usa texto libre del trabajo, no incluye identificadores internos ni produce recomendaciones.
+- El envío es opcional y está apagado por defecto. La configuración inválida se registra y deja el barrido apagado sin tumbar la API. La API sigue respondiendo mientras el barrido síncrono opera en un hilo, con un límite total de 15 segundos para Telegram y límites PostgreSQL de 5 segundos de conexión, 10 segundos por consulta y 5 segundos por espera de bloqueo. El cierre señala la parada y espera a que termine la operación en curso antes de cerrar.
 - El texto canónico `payload["answer"]` no recibe la nota de demora. La matriz complementaria modela API antigua/nueva y worker antiguo/nuevo; durante transiciones se acepta cero notas y la invariante principal evita dos.
 
 ## Evidencia de prueba
 
-La copia de seguridad de producción usada exclusivamente para la restauración aislada tuvo SHA-256 `ebb6fa4995f381e9c40255b68b89e9eb32fd5acf1b6be84194c5ef945b2ec61`. Se restauró en un contenedor PostgreSQL desechable propio, `codex-f4-2b-pg-20261013`, imagen PostgreSQL 17 (`sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3`), versión `170011`, base `garmin_coach_f4_2b_test`, puerto publicado solo en `127.0.0.1:55439`.
+La copia de seguridad de producción usada exclusivamente para la restauración aislada tuvo SHA-256 `ebb6fa4995f381e9c40255b68b89e9eb32fd5acf1b6be84194c5ef945b2ec61`. Se restauró en contenedores PostgreSQL desechables propios `codex-f4-2b-pg-20261013` y `codex-f4-merge-pg-20261013`, imagen PostgreSQL 17 (`sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3`), versión `170011`, con puertos publicados solo en loopback `127.0.0.1:55439`. La ejecución final usó la base `garmin_coach_f4_merge_test`.
 
 Antes de la migración, la copia restaurada tenía 53 trabajos, 0 cambios pendientes y 0 trabajos pendientes. Se añadió un único trabajo sintético pendiente con identidad `synthetic-f4-2b-pending` y MD5 de documento `4b85779f528a028395b3951cd640e36e`. La migración se ejecutó dos veces y las pruebas comprobaron columnas, tipos y restricción; preservó los recuentos, relaciones, documentos y estados existentes. El artefacto de evidencia no conserva contenido de consultas, respuestas ni métricas de entrenamiento.
 
-- Bot: 160 tests, todos OK, sin omisiones, contra el PostgreSQL restaurado.
+- Bot: 165 tests, todos OK, sin omisiones, contra el PostgreSQL restaurado.
 - Worker: 292 tests, todos OK.
-- Se verificaron lecturas y escrituras antiguas sobre el esquema migrado, columnas anulables, apagado por defecto, inicio con esquema ausente o base inaccesible, envío acotado, máximo de intentos, concurrencia, lote lento, respuesta webhook mientras el barrido está bloqueado y parada antes de nuevas reclamaciones.
+- Se verificaron lecturas y escrituras antiguas sobre el esquema migrado, columnas anulables, apagado por defecto, inicio con esquema ausente o base inaccesible, envío acotado, máximo de intentos, concurrencia, lote lento, respuesta webhook mientras el barrido está bloqueado y parada antes de nuevas reclamaciones. Una prueba adicional mantiene un bloqueo PostgreSQL durante una reclamación, señala la parada y verifica que la operación termina al aplicar el `lock_timeout`.
+- Se verificó que las mediciones de bienestar con datos disponibles se muestran con fecha y fuente aunque el estado actual del proveedor sea de error; valores fuera de rango y fuentes no permitidas se omiten.
 - La prueba de Telegram simula fases individuales por debajo de 15 segundos cuya suma excede el plazo total; la operación se cancela al alcanzar el plazo global.
 - `git diff --check`: OK.
 

@@ -1,6 +1,7 @@
 """Read-only Telegram navigation and operational presentation."""
 
 from datetime import date, datetime, timezone
+import math
 from zoneinfo import ZoneInfo
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -98,6 +99,118 @@ def _date(value, now, *, age=False):
 
 def _mapping(value):
     return value if isinstance(value, dict) else {}
+
+
+def _factual_date(value) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value[:10]).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def _factual_number(value, *, minimum: float = 0, maximum: float = 1_000_000) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    result = float(value)
+    if not math.isfinite(result) or not minimum <= result <= maximum:
+        return None
+    return result
+
+
+def _factual_activity_line(activity: dict) -> str:
+    sports = {
+        'running': 'carrera', 'run': 'carrera', 'trail_running': 'carrera',
+        'cycling': 'ciclismo', 'bike': 'ciclismo', 'swimming': 'natación',
+        'walking': 'caminata', 'strength': 'fuerza',
+    }
+    sources = {'garmin': 'Garmin', 'strava': 'Strava', 'zepp': 'Zepp'}
+    event_date = _factual_date(activity.get('date')) or 'fecha no disponible'
+    sport_key = activity.get('sport')
+    sport = sports.get(sport_key, 'actividad') if isinstance(sport_key, str) else 'actividad'
+    facts = [f'{event_date} — {sport}']
+
+    distance = _factual_number(activity.get('km'), maximum=1000)
+    if distance is not None:
+        facts.append(f'{distance:.2f} km')
+
+    duration = _factual_number(activity.get('duration_s'), maximum=604800)
+    if duration is not None and duration > 0:
+        total_seconds = int(duration)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            facts.append(f'{hours} h {minutes:02d} min {seconds:02d} s')
+        else:
+            facts.append(f'{minutes} min {seconds:02d} s')
+
+    average_hr = _factual_number(activity.get('avg_hr'), minimum=30, maximum=250)
+    if average_hr is not None:
+        facts.append(f'FC media: {average_hr:g} lpm')
+
+    source = activity.get('source')
+    facts.append(sources.get(source, 'fuente no disponible') if isinstance(source, str) else 'fuente no disponible')
+    return '; '.join(facts)
+
+
+def format_factual_view(sync: dict | None, *, scope: str, now: datetime) -> str:
+    """Render bounded, source-labelled facts without invoking coaching logic."""
+    if now.tzinfo is None:
+        raise ValueError('timezone-aware now required')
+    if scope != 'latest_available':
+        raise ValueError('unsupported factual-view scope')
+
+    sync = _mapping(sync)
+    payload = _mapping(sync.get('payload'))
+    generated = _stamp(payload.get('generated_at'), now)
+    received = _stamp(sync.get('received_at'), now)
+    stamp = generated or received
+
+    lines = ['Últimos datos disponibles']
+    if stamp is None:
+        lines.append('Sincronización: vigencia no confirmada')
+    else:
+        lines.append('Sincronización: ' + _date(stamp.isoformat(), now, age=True))
+
+    summary = _mapping(payload.get('summary'))
+    activities = summary.get('activities')
+    if isinstance(activities, list):
+        safe_activities = [item for item in activities if isinstance(item, dict)]
+        safe_activities.sort(key=lambda item: _factual_date(item.get('date')) or '', reverse=True)
+    else:
+        safe_activities = []
+    if safe_activities:
+        lines.append('Actividades recientes (hasta 5):')
+        lines.extend('• ' + _factual_activity_line(item) for item in safe_activities[:5])
+    else:
+        lines.append('No hay actividades disponibles en el resumen sincronizado.')
+
+    wellness_status = _mapping(_mapping(payload.get('wellness')).get('provider_status'))
+    wellness_sources = [
+        {'garmin': 'Garmin', 'zepp': 'Zepp'}[provider]
+        for provider in ('garmin', 'zepp')
+        if _mapping(wellness_status.get(provider)).get('status') == 'ok'
+    ]
+    if wellness_sources:
+        lines.append('Bienestar: estado de proveedor correcto en ' + ', '.join(wellness_sources) + '.')
+    else:
+        lines.append('Bienestar: estado factual no disponible.')
+
+    lines.append('Resumen factual; no incluye valoración ni recomendación.')
+    return '\n'.join(lines)
+
+
+def format_delay_notice(job: dict, sync: dict | None, *, now: datetime) -> str:
+    created_at = job.get('created_at') if isinstance(job, dict) else None
+    if isinstance(created_at, datetime) and created_at.tzinfo is not None:
+        created_at = created_at.isoformat()
+    age = _date(created_at, now, age=True) if _stamp(created_at, now) else 'fecha no disponible o no fiable'
+    return (
+        f'Tu consulta sigue en cola desde {age}. Te comparto los últimos datos disponibles; '
+        'pueden no responder a la pregunta.\n'
+        + format_factual_view(sync, scope='latest_available', now=now)
+    )
 
 
 def format_operational_status(sync: dict | None, sync_request: dict | None,

@@ -83,11 +83,11 @@
 
 **Interfaces:** `format_factual_view(sync: dict | None, *, scope: str, now: datetime) -> str` es puro; `format_delay_notice(job: DelayNoticeClaim, sync: dict | None, *, now: datetime) -> str` añade el acuse de demora. En 2b el barrido siempre llama con `scope="latest_available"`; no persiste ni infiere alias. La función acepta `scope` para que el entregable 3 aporte ámbitos explícitos después. La hora y antigüedad visibles se basan en `payload.generated_at`/fecha de última sincronización disponible; actividad y mediciones retienen fechas/fuentes. No se afirma que la sincronización responde a la pregunta.
 
-- [ ] Escribir fixtures para texto libre, `/coach`, voz, `/ajustar` y cualquier trabajo sin metadato de alias; todos presentan `scope="latest_available"`. No probar ámbitos fijos por alias ni añadir metadato persistido en 2b; estos pertenecen al contrato del entregable 3.
-- [ ] Cubrir sincronización válida/antigua/faltante, actividad ausente, varias fuentes, datos wellness ausentes y respuesta máxima menor de 4096 caracteres.
-- [ ] Afirmar que no se llama a `resolve_intent`, LLM, `format_feedback`, `format_fatigue`, `format_week` ni renderers que incluyan valoración/recomendación. No exponer ID/chat, pregunta/transcripción, secretos, ni datos de otros chats.
-- [ ] Ejecutar pruebas RED. Implementar un resumen factual breve con fechas absolutas y etiquetas de fuente; datos faltantes se expresan como ausencia/no disponible.
-- [ ] Ejecutar suite focalizada; inspeccionar muestras para confirmar que no incorporan opinión ni cambian la respuesta canónica del trabajo.
+- [x] Escribir fixtures para texto libre, `/coach`, voz, `/ajustar` y cualquier trabajo sin metadato de alias; todos presentan `scope="latest_available"`. No probar ámbitos fijos por alias ni añadir metadato persistido en 2b; estos pertenecen al contrato del entregable 3.
+- [x] Cubrir sincronización válida/antigua/faltante, actividad ausente, varias fuentes, datos wellness ausentes y respuesta máxima menor de 4096 caracteres.
+- [x] Afirmar que no se llama a `resolve_intent`, LLM, `format_feedback`, `format_fatigue`, `format_week` ni renderers que incluyan valoración/recomendación. No exponer ID/chat, pregunta/transcripción, secretos, ni datos de otros chats.
+- [x] Ejecutar pruebas RED. Implementar un resumen factual breve con fechas absolutas y etiquetas de fuente; datos faltantes se expresan como ausencia/no disponible.
+- [x] Ejecutar suite focalizada; inspeccionar muestras para confirmar que no incorporan opinión ni cambian la respuesta canónica del trabajo.
 - [ ] Commit local en `fase4-2b`: `feat: render factual delayed query context`; no hacer push.
 
 ### Tarea 4: configuración, emisor y ciclo de vida del barrido

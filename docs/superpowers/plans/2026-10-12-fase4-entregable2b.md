@@ -70,13 +70,12 @@
 - `prepare_delay_notice_send(job_id: str, claim_token: str) -> DelayNoticeClaim | None` confirma token propio, trabajo todavía `pending`/`running`, no notificado, con intento consumido y ≥15 s de concesión restante.
 - `mark_delay_notice_sent(job_id: str, claim_token: str) -> bool` escribe `delay_notified_at` y limpia la concesión solo si el propietario conserva el token y el trabajo sigue abierto.
 
-- [ ] Añadir pruebas RED de selección por umbral exacto, exclusión de `completed`/`failed`/`lab_test`, contador nulo como cero, y tope de tres reclamaciones aun después de caducar el lease.
-- [ ] Añadir prueba concurrente con varias conexiones/procesos: una fila no se reclama por dos emisores a la vez; usar `FOR UPDATE SKIP LOCKED` y un `UPDATE ... WHERE` condicional dentro de transacción, con `now()` de PostgreSQL.
-- [ ] Añadir pruebas del token: token antiguo no puede preparar ni confirmar; concesión con menos de 15 s se abandona; un trabajo completado después de reclamar no recibe confirmación.
-- [ ] Ejecutar RED en el PostgreSQL restaurado; implementar únicamente las tres operaciones y tipos mínimos necesarios.
-- [ ] Probar caída posterior a reclamar: intento permanece consumido, lease caduca, máximo tres; campo de notificado permanece nulo hasta confirmación HTTP exitosa. Probar además que una concesión expirada antes del envío consume el intento conforme a la regla de fallo explícita; el barrido jamás puede crear esta situación por haber reclamado un lote de leases.
-- [ ] Repetir suite focalizada y `test_pending_changes_postgres.py`, `test_experience_store.py`; verificar que los updates de trabajo no borran columnas nuevas.
-- [ ] Commit local en `fase4-2b`: `feat: claim delayed notice jobs atomically`; no hacer push.
+- [x] Añadir pruebas RED de selección por umbral exacto, exclusión de `completed`/`failed`/`lab_test`, contador nulo como cero, y tope de tres reclamaciones aun después de caducar el lease.
+- [x] Añadir prueba concurrente con varias conexiones/procesos: una fila no se reclama por dos emisores a la vez; usar `FOR UPDATE SKIP LOCKED` y un `UPDATE ... WHERE` condicional dentro de transacción, con `now()` de PostgreSQL.
+- [x] Añadir pruebas del token: token antiguo no puede preparar ni confirmar; concesión con menos de 15 s se abandona; un trabajo completado después de reclamar no recibe confirmación.
+- [x] Ejecutar RED en el PostgreSQL restaurado; implementar únicamente las tres operaciones y tipos mínimos necesarios.
+- [x] Probar caída posterior a reclamar: intento permanece consumido, lease caduca, máximo tres; campo de notificado permanece nulo hasta confirmación HTTP exitosa. Probar además que una concesión expirada antes del envío consume el intento conforme a la regla de fallo explícita; el barrido jamás puede crear esta situación por haber reclamado un lote de leases.
+- [x] Repetir suite focalizada y `test_pending_changes_postgres.py`, `test_experience_store.py`; verificar que los updates de trabajo no borran columnas nuevas.
 
 ### Tarea 3: vista factual para avisos
 

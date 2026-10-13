@@ -5,7 +5,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 from .file_state import atomic_json, serialized_file_state
 from .plan_intent import requests_plan_change
 from .pending_changes import create_pending_change, allowed_now
@@ -39,6 +39,15 @@ create table if not exists wellness_daily (
     primary key (owner_id, wellness_date, source)
 )
 """
+
+
+class DelayNoticeClaim(TypedDict):
+    job_id: str
+    chat_id: str
+    source_kind: str
+    created_at: datetime
+    claimed_at: datetime
+    claim_token: str
 
 
 def save_sync(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1218,6 +1227,131 @@ def claim_next_ai_job_postgres() -> dict[str, Any] | None:
                 ("running", Jsonb(job), row[0]),
             )
             return job
+
+
+def claim_next_delay_notice_job(*, threshold_seconds: int) -> DelayNoticeClaim | None:
+    """Atomically lease the oldest overdue, open PostgreSQL job for one notice attempt."""
+    if isinstance(threshold_seconds, bool) or not isinstance(threshold_seconds, int) or threshold_seconds <= 0:
+        raise ValueError("threshold_seconds must be a positive integer")
+    if not DATABASE_URL:
+        raise RuntimeError("delay notices require the PostgreSQL backend")
+
+    import psycopg
+
+    claim_token = uuid.uuid4().hex
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.transaction():
+            row = conn.execute(
+                """
+                with candidate as (
+                    select id
+                    from coach_ai_jobs
+                    where status in ('pending', 'running')
+                      and created_at <= now() - (%s * interval '1 second')
+                      and delay_notified_at is null
+                      and coalesce(delay_notice_attempts, 0) < 3
+                      and (
+                          delay_notice_claimed_at is null
+                          or delay_notice_claimed_at <= now() - interval '120 seconds'
+                      )
+                      and coalesce(document->>'source_kind', '') <> 'lab_test'
+                      and nullif(btrim(document->>'chat_id'), '') is not null
+                    order by created_at asc, id asc
+                    for update skip locked
+                    limit 1
+                )
+                update coach_ai_jobs as job
+                set delay_notice_claimed_at = now(),
+                    delay_notice_claim_token = %s,
+                    delay_notice_attempts = coalesce(job.delay_notice_attempts, 0) + 1
+                from candidate
+                where job.id = candidate.id
+                returning job.id,
+                          job.document->>'chat_id',
+                          coalesce(job.document->>'source_kind', 'text'),
+                          job.created_at,
+                          job.delay_notice_claimed_at,
+                          job.delay_notice_claim_token
+                """,
+                (threshold_seconds, claim_token),
+            ).fetchone()
+
+    if row is None:
+        return None
+    return {
+        "job_id": row[0],
+        "chat_id": row[1],
+        "source_kind": row[2],
+        "created_at": row[3],
+        "claimed_at": row[4],
+        "claim_token": row[5],
+    }
+
+
+def prepare_delay_notice_send(job_id: str, claim_token: str) -> DelayNoticeClaim | None:
+    """Recheck ownership and job state immediately before sending to Telegram."""
+    if not DATABASE_URL:
+        raise RuntimeError("delay notices require the PostgreSQL backend")
+
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        row = conn.execute(
+            """
+            select id,
+                   document->>'chat_id',
+                   coalesce(document->>'source_kind', 'text'),
+                   created_at,
+                   delay_notice_claimed_at,
+                   delay_notice_claim_token
+            from coach_ai_jobs
+            where id = %s
+              and delay_notice_claim_token = %s
+              and status in ('pending', 'running')
+              and delay_notified_at is null
+              and coalesce(delay_notice_attempts, 0) between 1 and 3
+              and delay_notice_claimed_at >= now() - interval '105 seconds'
+              and coalesce(document->>'source_kind', '') <> 'lab_test'
+              and nullif(btrim(document->>'chat_id'), '') is not null
+            """,
+            (job_id, claim_token),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return {
+        "job_id": row[0],
+        "chat_id": row[1],
+        "source_kind": row[2],
+        "created_at": row[3],
+        "claimed_at": row[4],
+        "claim_token": row[5],
+    }
+
+
+def mark_delay_notice_sent(job_id: str, claim_token: str) -> bool:
+    """Persist successful delivery only while this sender still owns an open job."""
+    if not DATABASE_URL:
+        raise RuntimeError("delay notices require the PostgreSQL backend")
+
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        row = conn.execute(
+            """
+            update coach_ai_jobs
+            set delay_notified_at = now(),
+                delay_notice_claimed_at = null,
+                delay_notice_claim_token = null
+            where id = %s
+              and delay_notice_claim_token = %s
+              and status in ('pending', 'running')
+              and delay_notified_at is null
+            returning id
+            """,
+            (job_id, claim_token),
+        ).fetchone()
+    return row is not None
 
 
 def complete_ai_job_postgres(

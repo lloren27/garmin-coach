@@ -14,6 +14,7 @@ SELECTOR = freeze(json.loads(Path(__file__).with_name('coach_selector_v1.json').
 FOLLOW_UPS = freeze({
     'CLARIFY_SYMPTOM_CONTEXT': '¿La molestia continúa y cuándo aparece?',
     'CONFIRM_PLAN_MATCH': '¿Puedes confirmar qué actividad corresponde a la sesión prevista?',
+    'PROVIDE_TRAINING_PLAN': '¿Puedes aportar el plan para comparar estas actividades?',
     'PROVIDE_MISSING_CONTEXT': '¿Puedes aportar los datos o el contexto que faltan para esta consulta?',
     'REVIEW_HISTORY_WINDOW': '¿Dispones de un histórico personal comparable de sueño y pulso?',
 })
@@ -76,17 +77,32 @@ def duration(seconds):
     return f'{hours}:{minutes:02}:{seconds:02}' if hours else f'{minutes}:{seconds:02}'
 
 
+def _activity_summary(facts):
+    grouped = {}
+    for fact in facts:
+        if fact.source == 'training_plan' or fact.metric not in {'duration_s', 'distance_km'}:
+            continue
+        key = (fact.date, fact.sport, fact.source, tuple(fact.source_refs))
+        grouped.setdefault(key, {})[fact.metric] = fact.value
+
+    summaries = []
+    for (day, sport, source, _refs), metrics in sorted(
+        grouped.items(), key=lambda item: (item[0][0], item[0][1] or '', item[0][2], item[0][3])
+    ):
+        values = []
+        if 'duration_s' in metrics:
+            values.append(duration(metrics['duration_s']))
+        if 'distance_km' in metrics:
+            values.append(number(metrics['distance_km']) + ' km')
+        summaries.append(f'{sport or "actividad"}: {", ".join(values)} ({source}, {day.isoformat()})')
+    return '; '.join(summaries)
+
+
 def build_catalog(snapshot, component_index, question):
     facts = build_analysis_facts(snapshot, component_index)
     findings, required = [], []
     by_id = {f.id: f for f in facts.facts}
     component = snapshot.intent.components[component_index]
-
-    def activity_detail(refs):
-        selected = [f for f in facts.facts if f.source != 'training_plan'
-                    and f.metric in {'duration_s', 'distance_km'} and set(f.source_refs) & set(refs)]
-        return '; '.join(f'{f.sport}: {duration(f.value) if f.metric == "duration_s" else number(f.value) + " km"}'
-                         f' ({f.source}, {f.date.isoformat()})' for f in selected), tuple(f.id for f in selected)
 
     def add(code, text, refs=(), day=None, sources=(), certainty='observed', dependencies=(), mandatory=False):
         identifier = f'c{component_index}:{code}:{len(findings)}'
@@ -105,10 +121,20 @@ def build_catalog(snapshot, component_index, question):
         elif state is MatchState.INSUFFICIENT_DATA:
             add('PLAN_MATCH_INSUFFICIENT_DATA', 'Faltan datos comparables para relacionar la actividad con el plan.', day=match.date, sources=match.activity_refs + match.session_refs)
         elif state is MatchState.NONE and not match.session_refs:
-            detail, refs = activity_detail(match.activity_refs)
-            add('NO_PLAN_FOR_SCOPE', 'No hay una sesión compatible disponible en este contexto para comparar.'
-                + (' Actividad registrada: ' + detail + '.' if detail else '')
-                + ' ¿Puedes aportar el plan para compararlo?', refs, day=match.date, sources=match.activity_refs)
+            refs = tuple(f.id for f in facts.facts if f.source != 'training_plan'
+                         and f.metric in {'duration_s', 'distance_km'}
+                         and set(f.source_refs) & set(match.activity_refs))
+            detail = ''
+            # For a single-sport answer, this finding is the place where the
+            # recorded activity is surfaced. Multisport answers already have
+            # one shared, grouped summary below.
+            if 'MULTISPORT_COMPONENTS_SEPARATE' not in facts.limitations:
+                detail = _activity_summary([by_id[ref] for ref in refs])
+            text = 'No hay sesiones del plan compatibles para comparar con estos datos.'
+            if detail:
+                text += ' Actividad registrada: ' + detail + '.'
+            add('NO_PLAN_FOR_SCOPE', text,
+                refs, day=match.date, sources=match.activity_refs)
         dependency = ()
         if state is MatchState.CANDIDATE:
             dependency = (add('PLAN_MATCH_UNCONFIRMED', 'La correspondencia con el plan todavía no está confirmada.', day=match.date, sources=match.activity_refs + match.session_refs, certainty='candidate'),)
@@ -157,7 +183,7 @@ def build_catalog(snapshot, component_index, question):
         add('WELLNESS_TREND_NOT_ASSESSABLE', 'Estas mediciones aisladas no permiten concluir una tendencia ni una mejor recuperación.', tuple(f.id for f in wellness), mandatory=baseline)
     if 'MULTISPORT_COMPONENTS_SEPARATE' in facts.limitations:
         activities = [f for f in facts.facts if f.metric in {'duration_s', 'distance_km'} and f.source != 'training_plan']
-        text = '; '.join(f'{f.sport}: {duration(f.value) if f.metric == "duration_s" else number(f.value) + " km"} ({f.source}, {f.date.isoformat()})' for f in activities)
+        text = _activity_summary(activities)
         add('MULTISPORT_COMPONENTS_SEPARATE', text + '. Las cargas de deportes y escalas distintas se mantienen separadas; no se suman TRIMP, TSS y carga muscular.', tuple(f.id for f in activities))
     if 'DATA_COVERAGE_INCOMPLETE' in facts.limitations:
         add('DATA_COVERAGE_INCOMPLETE', 'La cobertura de datos es incompleta; falta información para valorar la actividad. ¿Puedes sincronizar o aportar el registro de actividad?', mandatory=True)
@@ -198,7 +224,9 @@ def _follow_up(findings, question=''):
         return 'CLARIFY_SYMPTOM_CONTEXT'
     if codes & {'PLAN_MATCH_UNCONFIRMED', 'PLAN_MATCH_AMBIGUOUS', 'PLAN_ACTIVITY_MAGNITUDE_MISMATCH'}:
         return 'CONFIRM_PLAN_MATCH'
-    if not codes or codes & {'DATA_COVERAGE_INCOMPLETE', 'PLAN_MATCH_INSUFFICIENT_DATA', 'NO_PLAN_FOR_SCOPE'}:
+    if 'NO_PLAN_FOR_SCOPE' in codes:
+        return 'PROVIDE_TRAINING_PLAN'
+    if not codes or codes & {'DATA_COVERAGE_INCOMPLETE', 'PLAN_MATCH_INSUFFICIENT_DATA'}:
         return 'PROVIDE_MISSING_CONTEXT'
     if codes & {'WELLNESS_BASELINE_UNAVAILABLE', 'WELLNESS_TREND_NOT_ASSESSABLE'}:
         if any(t in tokens(question) for t in ('costumbre', 'recuperado', 'recuperacion', 'historial', 'habitual', 'tendencia')):
@@ -250,7 +278,15 @@ def validate_selection(catalog, selection):
 def render_selection(catalog, selection):
     validate_selection(catalog, selection)
     by_id = {f.id: f for f in catalog.findings}
-    lines = [by_id[i].text for i in selection.finding_ids]
+    lines = []
+    no_plan_dates = set()
+    for identifier in selection.finding_ids:
+        finding = by_id[identifier]
+        if finding.code == 'NO_PLAN_FOR_SCOPE':
+            if finding.date in no_plan_dates:
+                continue
+            no_plan_dates.add(finding.date)
+        lines.append(finding.text)
     if selection.follow_up:
         lines.append(FOLLOW_UPS[selection.follow_up])
     return '\n'.join(lines)

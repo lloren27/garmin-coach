@@ -101,6 +101,36 @@ class CoachAliasWorkerE14Tests(unittest.TestCase):
         self.assertTrue(all(item.action == "ask_user" for item in latest.decisions))
         self.assertIsNone(latest.change_proposal)
 
+    def test_multisport_day_groups_metrics_and_asks_for_plan_once(self):
+        project_root = Path(__file__).resolve().parents[3]
+        phase3 = json.loads(
+            (project_root / "docs/restructuring/fase3_evaluacion/v1/fixtures.json").read_text(encoding="utf-8")
+        )
+        context = copy.deepcopy(
+            phase3["base_fixtures"][CASES["coach_context_fixture"]]["estado_inicial"]
+        )
+        extra = context["extra_context"]
+        extra["training_plan"] = {"sessions": []}
+        extra["recent_activities"].append({
+            "id": "synthetic-strength",
+            "source": "garmin",
+            "date": "2026-10-03",
+            "started_at": "2026-10-03T19:00:00+02:00",
+            "sport": "strength",
+            "duration_s": 4172,
+        })
+
+        response = deterministic_response(
+            "Analiza mi entrenamiento de hoy.", context, now=self.now
+        )
+
+        self.assertIn("running: 1:45:04, 20,02 km (garmin, 2026-10-03)", response.answer)
+        self.assertIn("strength: 1:09:32 (garmin, 2026-10-03)", response.answer)
+        self.assertEqual(response.answer.count("¿Puedes aportar el plan para comparar estas actividades?"), 1)
+        self.assertEqual(response.answer.count("No hay sesiones del plan compatibles"), 1)
+        self.assertNotIn("running: 1:45:04 (garmin", response.answer)
+        self.assertNotIn("running: 20,02 km (garmin", response.answer)
+
 
 if __name__ == "__main__":
     unittest.main()

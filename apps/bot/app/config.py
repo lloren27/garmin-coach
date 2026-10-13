@@ -10,6 +10,7 @@ class Settings:
     telegram_allowed_user_id: str | None = os.getenv("TELEGRAM_ALLOWED_USER_ID")
     sync_secret: str | None = os.getenv("SYNC_SECRET")
     public_base_url: str | None = os.getenv("PUBLIC_BASE_URL")
+    coach_delay_notice_seconds: str | None = os.getenv("COACH_DELAY_NOTICE_SECONDS")
 
 
 settings = Settings()

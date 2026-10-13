@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import httpx
 import os
 import re
+import threading
+from contextlib import asynccontextmanager
 from .pending_changes import ProposalError, ProposalConflict
 from .store import VALID_SYNC_MODES, prepare_proposal_context
 from .ai_contracts import validate_deterministic_output
@@ -53,6 +57,13 @@ from .coach import (
     parse_profile,
 )
 from .experience import format_help as experience_help, format_registration_help, format_operational_status
+from .delay_notices import (
+    is_delay_notice_disabled,
+    is_postgres_backend,
+    missing_delay_notice_columns,
+    parse_delay_notice_seconds,
+    run_delay_notice_loop,
+)
 from .response_timing import format_late_delivery
 from .store import load_queue_snapshot, load_operational_documents
 from .queue_status import empty_snapshot
@@ -85,10 +96,57 @@ from .store import (
     mark_lab_test_applied,
     update_lab_test,
 )
+from . import store
 from .strength import handle_strength_command
 
 
-app = FastAPI(title="Garmin Coach")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stop_event = threading.Event()
+    wake_event = asyncio.Event()
+    sweep_task = None
+    raw_threshold = getattr(settings, "coach_delay_notice_seconds", None)
+
+    if is_delay_notice_disabled(raw_threshold):
+        pass
+    else:
+        threshold = parse_delay_notice_seconds(raw_threshold)
+        if threshold is None:
+            logger.error("Invalid COACH_DELAY_NOTICE_SECONDS; delayed-notice sweep disabled")
+        elif not getattr(settings, "telegram_bot_token", None):
+            logger.error("Delayed-notice sweep disabled because Telegram token is unavailable")
+        elif not is_postgres_backend(store.DATABASE_URL):
+            logger.info("Delayed-notice sweep requires PostgreSQL; sweep disabled")
+        else:
+            try:
+                missing = await asyncio.to_thread(missing_delay_notice_columns)
+            except Exception:
+                logger.exception("Could not verify delayed-notice schema; sweep disabled")
+            else:
+                if missing:
+                    logger.error(
+                        "Delayed-notice sweep disabled; missing PostgreSQL columns: %s",
+                        ", ".join(missing),
+                    )
+                else:
+                    sweep_task = asyncio.create_task(
+                        run_delay_notice_loop(stop_event, wake_event),
+                        name="delay-notice-sweep",
+                    )
+
+    try:
+        yield
+    finally:
+        stop_event.set()
+        wake_event.set()
+        if sweep_task is not None:
+            await sweep_task
+
+
+app = FastAPI(title="Garmin Coach", lifespan=lifespan)
 
 
 @app.get("/health")

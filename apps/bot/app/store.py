@@ -28,6 +28,9 @@ TRAINING_PLAN_STATE_FILE = DATA_DIR / "training_plan_state.json"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 VALID_SYNC_MODES = {"full", "zepp_activities", "strava_activities"}
+DELAY_NOTICE_LEASE_SECONDS = 120
+DELAY_NOTICE_MIN_SEND_REMAINING_SECONDS = 15
+DELAY_NOTICE_MAX_ATTEMPTS = 3
 STRENGTH_STATE_KEY = "strength_sessions"
 WELLNESS_DAILY_DDL = """
 create table if not exists wellness_daily (
@@ -1249,10 +1252,10 @@ def claim_next_delay_notice_job(*, threshold_seconds: int) -> DelayNoticeClaim |
                     where status in ('pending', 'running')
                       and created_at <= now() - (%s * interval '1 second')
                       and delay_notified_at is null
-                      and coalesce(delay_notice_attempts, 0) < 3
+                      and coalesce(delay_notice_attempts, 0) < %s
                       and (
                           delay_notice_claimed_at is null
-                          or delay_notice_claimed_at <= now() - interval '120 seconds'
+                          or delay_notice_claimed_at <= now() - (%s * interval '1 second')
                       )
                       and coalesce(document->>'source_kind', '') <> 'lab_test'
                       and nullif(btrim(document->>'chat_id'), '') is not null
@@ -1273,7 +1276,12 @@ def claim_next_delay_notice_job(*, threshold_seconds: int) -> DelayNoticeClaim |
                           job.delay_notice_claimed_at,
                           job.delay_notice_claim_token
                 """,
-                (threshold_seconds, claim_token),
+                (
+                    threshold_seconds,
+                    DELAY_NOTICE_MAX_ATTEMPTS,
+                    DELAY_NOTICE_LEASE_SECONDS,
+                    claim_token,
+                ),
             ).fetchone()
 
     if row is None:
@@ -1309,12 +1317,18 @@ def prepare_delay_notice_send(job_id: str, claim_token: str) -> DelayNoticeClaim
               and delay_notice_claim_token = %s
               and status in ('pending', 'running')
               and delay_notified_at is null
-              and coalesce(delay_notice_attempts, 0) between 1 and 3
-              and delay_notice_claimed_at >= now() - interval '105 seconds'
+              and coalesce(delay_notice_attempts, 0) between 1 and %s
+              and delay_notice_claimed_at >= now() - ((%s - %s) * interval '1 second')
               and coalesce(document->>'source_kind', '') <> 'lab_test'
               and nullif(btrim(document->>'chat_id'), '') is not null
             """,
-            (job_id, claim_token),
+            (
+                job_id,
+                claim_token,
+                DELAY_NOTICE_MAX_ATTEMPTS,
+                DELAY_NOTICE_LEASE_SECONDS,
+                DELAY_NOTICE_MIN_SEND_REMAINING_SECONDS,
+            ),
         ).fetchone()
 
     if row is None:

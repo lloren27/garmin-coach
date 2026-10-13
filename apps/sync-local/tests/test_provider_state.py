@@ -47,7 +47,7 @@ class StateRecordTests(unittest.TestCase):
         
         # Date parsing: last_success_at=2026-10-13T11:00:00+00:00 should be parsed correctly
         expected_last_success = datetime(2026, 10, 13, 11, 0, 0, tzinfo=timezone.utc)
-        self.assertEqual(result['last_success_at'], expected_last_success)
+        self.assertEqual(datetime.fromisoformat(result["last_success_at"]), expected_last_success)
         
         # Period fields should be parsed from input or defaulted to collected_at/None
         self.assertIsNone(result['period_start'])  # Not in input, defaults to None

@@ -11,6 +11,7 @@ class Settings:
     sync_secret: str | None = os.getenv("SYNC_SECRET")
     public_base_url: str | None = os.getenv("PUBLIC_BASE_URL")
     coach_delay_notice_seconds: str | None = os.getenv("COACH_DELAY_NOTICE_SECONDS")
+    coach_alias_routing_enabled: str | None = os.getenv("COACH_ALIAS_ROUTING_ENABLED")
 
 
 settings = Settings()

@@ -6,6 +6,13 @@ from app import main
 from app import experience
 
 class HelpTests(unittest.TestCase):
+    def test_alias_help_tracks_switch_mode(self):
+        off = experience.format_help(detailed=True)
+        on = experience.format_help(detailed=True, alias_routing_enabled=True)
+        self.assertIn('/hoy — Vista deportiva local del día', off)
+        self.assertIn('/hoy — Análisis del entrenamiento de hoy (coach V3)', on)
+        self.assertIn('/feedback — Análisis del último día de entrenamiento (coach V3)', on)
+
     def test_static_menus_do_not_read_or_write(self):
         with patch.object(main, 'load_sync', side_effect=AssertionError('read')), patch.object(main, 'load_profile', side_effect=AssertionError('read')), patch.object(main, 'create_ai_job', side_effect=AssertionError('queue')):
             for cmd in ('/help', '/start', '/HELP@Bot', '/help comandos', '/registro', '/registro fuerza', '/registro molestias', '/registro perfil', '/registro pruebas', '/registro desconocido'):

@@ -13,14 +13,22 @@ class StatusTests(unittest.TestCase):
         queue = empty_snapshot(True)
         queue['counts'].update(pending=2, running=1)
         queue.update(oldest_pending_at='2026-10-11T10:00:00+00:00', last_completed_at='2026-10-10T10:00:00+00:00', last_failed_at='2026-10-11T11:00:00+00:00')
+        queue['last_completed_output_source'] = 'deterministic'
         sync = {'received_at':'2026-10-11T12:00:00Z', 'payload': {'generated_at':'2026-10-10T10:00:00Z',
             'activity_provider_status': {'strava': {'status':'network_error', 'last_success_at':'2026-10-09T10:00:00Z', 'last_error':'SECRET'}},
             'wellness': {'provider_status':{'zepp':{'status':'ok','records_received':0}}}}}
         result = experience.format_operational_status(sync, {'status':'pending','last_error':'SECRET'}, queue, now=NOW)
-        for word in ('Pendientes: 2', 'En ejecución: 1', '120 min', 'Strava', 'error del proveedor', 'sin datos', '10/10/2026 12:00', '11/10/2026 14:00'):
+        for word in ('Pendientes: 2', 'En ejecución: 1', '120 min', 'Strava', 'error del proveedor', 'sin datos', '10/10/2026 12:00', '11/10/2026 14:00', 'V3 determinista'):
             self.assertIn(word, result)
         self.assertNotIn('SECRET',result)
         self.assertLess(len(result),4096)
+
+    def test_output_source_is_whitelisted_and_private(self):
+        q = empty_snapshot(True)
+        q['last_completed_output_source'] = 'PRIVATE SOURCE'
+        result = experience.format_operational_status(None, None, q, now=NOW)
+        self.assertIn('Origen de última respuesta: no disponible', result)
+        self.assertNotIn('PRIVATE SOURCE', result)
 
     def test_unavailable_is_not_empty_and_bad_dates_stay_unknown(self):
         result = experience.format_operational_status(None,None,empty_snapshot(),now=NOW)

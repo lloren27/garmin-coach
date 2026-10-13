@@ -68,6 +68,30 @@ class DelayNoticeViewTests(unittest.TestCase):
         self.assertNotIn("Recomendación", result)
         self.assertNotIn("Conclusión", result)
 
+    def test_delay_notice_uses_persisted_factual_scope_and_falls_back_safely(self):
+        for job, expected, absent in (
+            ({"created_at": "2026-10-11T11:00:00Z", "factual_scope": "today"}, "Datos factuales del día consultado", "40.05 km"),
+            ({"created_at": "2026-10-11T11:00:00Z", "factual_scope": "not-a-scope"}, "Últimos datos disponibles", None),
+        ):
+            with self.subTest(job=job):
+                result = experience.format_delay_notice(job, self.sync, now=NOW)
+                self.assertIn(expected, result)
+                if absent:
+                    self.assertNotIn(absent, result)
+
+    def test_scoped_views_select_dated_facts_without_opinion(self):
+        today = experience.format_factual_view(
+            self.sync, scope="today", now=NOW, reference_at="2026-10-11T11:00:00Z"
+        )
+        latest = experience.format_factual_view(self.sync, scope="latest_activity", now=NOW)
+        training_day = experience.format_factual_view(self.sync, scope="latest_training_day", now=NOW)
+        self.assertIn("12.01 km", today)
+        self.assertNotIn("40.05 km", today)
+        self.assertIn("12.01 km", latest)
+        self.assertEqual(latest.count("Actividades consultadas:"), 1)
+        self.assertNotIn("40.05 km", latest)
+        self.assertIn("Resumen factual; no incluye valoración ni recomendación.", training_day)
+
     def test_old_sync_keeps_absolute_freshness_and_missing_sync_does_not_invent_data(self):
         old = {
             "received_at": "2026-10-08T12:00:00+00:00",
@@ -185,7 +209,7 @@ class DelayNoticeViewTests(unittest.TestCase):
 
     def test_unsupported_scope_and_naive_now_are_rejected(self):
         with self.assertRaises(ValueError):
-            experience.format_factual_view(self.sync, scope="today", now=NOW)
+            experience.format_factual_view(self.sync, scope="coach_opinion", now=NOW)
         with self.assertRaises(ValueError):
             experience.format_factual_view(
                 self.sync, scope="latest_available", now=datetime(2026, 10, 11)

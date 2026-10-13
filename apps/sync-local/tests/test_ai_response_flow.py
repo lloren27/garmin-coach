@@ -55,6 +55,28 @@ class ResponseFlowTests(unittest.TestCase):
         stack.enter_context(redirect_stdout(io.StringIO()))
         self.post = stack.enter_context(patch.object(worker, "post_json"))
 
+    def test_v3_requirement_never_silently_uses_legacy_ollama_path(self):
+        job = {"id": "required-v3", "text": "Analiza mi entrenamiento de hoy.",
+               "required_engine": "v3", "created_at": JOB_CREATED_AT}
+        with patch.object(worker, "COACH_ANALYSIS_V3_ENABLED", False), \
+             patch.object(worker, "start_telegram_processing_indicator") as indicator, \
+             patch.object(worker, "call_ollama") as legacy, \
+             patch.object(worker, "call_coach") as coach:
+            worker.process_job(job, {})
+        payload = self.post.call_args.args[1]
+        self.assertEqual(payload, {"status": "failed", "error": "COACH_ENGINE_REQUIREMENT_UNAVAILABLE"})
+        indicator.assert_not_called()
+        legacy.assert_not_called()
+        coach.assert_not_called()
+
+    def test_unknown_engine_requirement_is_rejected_before_processing(self):
+        with patch.object(worker, "start_telegram_processing_indicator") as indicator, \
+             patch.object(worker, "call_ollama") as legacy:
+            worker.process_job({"id": "unknown", "required_engine": "v9"}, {})
+        self.assertEqual(self.post.call_args.args[1]["error"], "COACH_ENGINE_REQUIREMENT_UNSUPPORTED")
+        indicator.assert_not_called()
+        legacy.assert_not_called()
+
     def test_text_and_voice_use_model_and_same_answer_without_voice_truncation(self) -> None:
         answer = "Hoy te recomiendo un rodaje suave para facilitar la recuperación. " * 20
         captured = []

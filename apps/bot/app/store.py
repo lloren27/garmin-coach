@@ -54,6 +54,7 @@ class DelayNoticeClaim(TypedDict):
     created_at: datetime
     claimed_at: datetime
     claim_token: str
+    factual_scope: str | None
 
 
 def save_sync(payload: dict[str, Any]) -> dict[str, Any]:
@@ -419,7 +420,14 @@ def create_ai_job(
     document_size: int | None = None,
     source_kind: str = "text",
     response_mode: str = "text",
+    required_engine: str | None = None,
+    factual_scope: str | None = None,
 ) -> dict[str, Any]:
+    if required_engine not in (None, "v3"):
+        raise ValueError("unsupported required_engine")
+    supported_scopes = {None, "latest_available", "today", "latest_activity", "latest_training_day"}
+    if factual_scope not in supported_scopes:
+        raise ValueError("unsupported factual_scope")
     now = datetime.now(timezone.utc).isoformat()
     document = {
         "id": str(uuid.uuid4()),
@@ -446,6 +454,10 @@ def create_ai_job(
         "structured_output": None,
         "output_source": None,
     }
+    if required_engine is not None:
+        document["required_engine"] = required_engine
+    if factual_scope is not None:
+        document["factual_scope"] = factual_scope
     if DATABASE_URL:
         create_ai_job_postgres(document)
         return document
@@ -1292,7 +1304,8 @@ def claim_next_delay_notice_job(*, threshold_seconds: int) -> DelayNoticeClaim |
                           coalesce(job.document->>'source_kind', 'text'),
                           job.created_at,
                           job.delay_notice_claimed_at,
-                          job.delay_notice_claim_token
+                          job.delay_notice_claim_token,
+                          job.document->>'factual_scope'
                 """,
                 (
                     threshold_seconds,
@@ -1311,6 +1324,7 @@ def claim_next_delay_notice_job(*, threshold_seconds: int) -> DelayNoticeClaim |
         "created_at": row[3],
         "claimed_at": row[4],
         "claim_token": row[5],
+        "factual_scope": row[6],
     }
 
 
@@ -1327,7 +1341,8 @@ def prepare_delay_notice_send(job_id: str, claim_token: str) -> DelayNoticeClaim
                    coalesce(document->>'source_kind', 'text'),
                    created_at,
                    delay_notice_claimed_at,
-                   delay_notice_claim_token
+                   delay_notice_claim_token,
+                   document->>'factual_scope'
             from coach_ai_jobs
             where id = %s
               and delay_notice_claim_token = %s
@@ -1356,6 +1371,7 @@ def prepare_delay_notice_send(job_id: str, claim_token: str) -> DelayNoticeClaim
         "created_at": row[3],
         "claimed_at": row[4],
         "claim_token": row[5],
+        "factual_scope": row[6],
     }
 
 

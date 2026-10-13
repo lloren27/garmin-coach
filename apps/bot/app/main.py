@@ -56,7 +56,13 @@ from .coach import (
     parse_checkin,
     parse_profile,
 )
-from .experience import format_help as experience_help, format_registration_help, format_operational_status
+from .coach_alias_adapter import adapt_coach_alias, parse_alias_routing_enabled
+from .experience import (
+    format_help as experience_help,
+    format_registration_help,
+    format_operational_status,
+    format_factual_view,
+)
 from .delay_notices import (
     is_delay_notice_disabled,
     is_postgres_backend,
@@ -68,6 +74,7 @@ from .response_timing import format_late_delivery
 from .store import load_queue_snapshot, load_operational_documents
 from .queue_status import empty_snapshot
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from .config import settings
 from .store import (
     claim_next_ai_job,
@@ -109,6 +116,9 @@ async def lifespan(_app: FastAPI):
     wake_event = asyncio.Event()
     sweep_task = None
     raw_threshold = getattr(settings, "coach_delay_notice_seconds", None)
+    raw_alias_switch = getattr(settings, "coach_alias_routing_enabled", None)
+    if parse_alias_routing_enabled(raw_alias_switch) is None:
+        logger.error("Invalid COACH_ALIAS_ROUTING_ENABLED; alias routing disabled")
 
     if is_delay_notice_disabled(raw_threshold):
         pass
@@ -439,11 +449,29 @@ async def complete_ai_job_endpoint(
             )
 
         elif status == "failed":
-            await send_telegram_message(
-                chat_id,
-                "No he podido procesarlo con el coach local. "
-                "Revisa que el Mac y Ollama esten activos.",
-            )
+            if document.get("required_engine") == "v3" and error in {
+                "COACH_ENGINE_REQUIREMENT_UNAVAILABLE",
+                "COACH_ENGINE_REQUIREMENT_UNSUPPORTED",
+            }:
+                scope = document.get("factual_scope")
+                if scope not in {"latest_available", "today", "latest_activity", "latest_training_day"}:
+                    scope = "latest_available"
+                answer = (
+                    "No pude procesar esta consulta con el motor requerido. "
+                    "No se usó la ruta antigua; te dejo los datos disponibles, que pueden no responder a la pregunta.\n"
+                    + format_factual_view(
+                        load_sync(),
+                        scope=scope,
+                        now=datetime.now(timezone.utc),
+                        reference_at=document.get("created_at"),
+                    )
+                )
+            else:
+                answer = (
+                    "No he podido procesarlo con el coach local. "
+                    "Revisa que el Mac y Ollama esten activos."
+                )
+            await send_telegram_message(chat_id, answer)
 
     return {
         "ok": True,
@@ -513,10 +541,15 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
 def route_message(text: str, user_id: str | None = None, chat_id: str | None = None) -> str:
     command = text.split(maxsplit=1)[0].lower().split("@", 1)[0] if text else ""
     args = text.split(maxsplit=1)[1].strip() if text and len(text.split(maxsplit=1)) > 1 else ""
+    ai_chat_id = chat_id or user_id or "telegram"
+    owner_id = chat_id or user_id or "telegram"
+    alias_routing_enabled = parse_alias_routing_enabled(
+        getattr(settings, "coach_alias_routing_enabled", None)
+    ) is True
     if command == "/start":
-        return experience_help()
+        return experience_help(alias_routing_enabled=alias_routing_enabled)
     if command == "/help":
-        return experience_help(detailed=args.lower() == 'comandos') if args.lower() in ('', 'comandos') else "Uso: /help o /help comandos"
+        return experience_help(detailed=args.lower() == 'comandos', alias_routing_enabled=alias_routing_enabled) if args.lower() in ('', 'comandos') else "Uso: /help o /help comandos"
     if command == "/registro":
         return format_registration_help(args)
     if command == "/estado":
@@ -526,10 +559,19 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
         sync, request = load_operational_documents()
         return format_operational_status(
             sync, request, load_queue_snapshot(str(chat_id), now=now) if chat_id else empty_snapshot(), now=now)
+    if alias_routing_enabled:
+        adapted = adapt_coach_alias(text, now=datetime.now(ZoneInfo("Europe/Madrid")))
+        if adapted is not None:
+            document = create_ai_job(
+                chat_id=ai_chat_id,
+                user_id=user_id,
+                text=adapted["question"],
+                required_engine="v3",
+                factual_scope=adapted["scope"],
+            )
+            return format_ai_queued(document)
     sync = load_sync()
     profile = load_profile()
-    ai_chat_id = chat_id or user_id or "telegram"
-    owner_id = chat_id or user_id or "telegram"
     if command in {"/plan_semana", "/plan"}:
         if not args:
             plan = load_active_training_plan(owner_id)

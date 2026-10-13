@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "now": "2026-10-03T22:00:00+02:00",
+  "coach_context_fixture": "E01",
+  "canonical_aliases": [
+    {
+      "id": "hoy",
+      "input": "/hoy",
+      "question": "Analiza mi entrenamiento de hoy.",
+      "scope": "today",
+      "expected_intent": "analyze_day",
+      "expected_selector": "by_date",
+      "expected_observed_dates": ["2026-10-03"],
+      "activation_gate": true
+    },
+    {
+      "id": "ultima",
+      "input": "/ultima",
+      "question": "Analiza mi última actividad.",
+      "scope": "latest_activity",
+      "expected_intent": "analyze_activity",
+      "expected_selector": "latest_activity",
+      "expected_observed_dates": [],
+      "activation_gate": false,
+      "activation_note": "Retenido: E14 no obtiene hechos para seleccionar una actividad si hay varias el mismo día."
+    },
+    {
+      "id": "feedback",
+      "input": "/feedback",
+      "question": "Analiza mi último día de entrenamiento.",
+      "scope": "latest_training_day",
+      "expected_intent": "analyze_day",
+      "expected_selector": "latest_training_day",
+      "expected_observed_dates": [],
+      "activation_gate": true
+    }
+  ],
+  "argument_cases": [
+    {
+      "id": "hoy-ayer",
+      "input": "/hoy ayer",
+      "question": "/hoy ayer",
+      "scope": "latest_available",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "unsupported_paraphrase"
+    },
+    {
+      "id": "ultima-manana",
+      "input": "/ultima mañana",
+      "question": "/ultima mañana",
+      "scope": "latest_available",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "unsupported_paraphrase",
+      "alias_migrated": false
+    },
+    {
+      "id": "feedback-fecha",
+      "input": "/feedback 3 de octubre",
+      "question": "/feedback 3 de octubre",
+      "scope": "latest_available",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "unsupported_paraphrase"
+    }
+  ],
+  "paraphrases": [
+    {
+      "id": "entreno-hoy",
+      "question": "¿Cómo fue mi entreno de hoy?",
+      "expected_intent": "analyze_day",
+      "expected_selector": "by_date",
+      "expected_observed_dates": ["2026-10-03"],
+      "activation_gate": false
+    },
+    {
+      "id": "ultima-salida",
+      "question": "Dame tu opinión sobre la última salida",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "unsupported_paraphrase",
+      "activation_gate": false
+    },
+    {
+      "id": "ultimo-dia",
+      "question": "¿Qué tal el último día que entrené?",
+      "expected_intent": "analyze_day",
+      "expected_selector": "latest_training_day",
+      "expected_observed_dates": [],
+      "activation_gate": false
+    }
+  ]
+}

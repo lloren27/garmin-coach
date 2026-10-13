@@ -29,6 +29,30 @@ class AiJobCompletionTests(unittest.TestCase):
             asyncio.run(main.complete_ai_job_endpoint('job-1', self.deterministic_payload()))
             self.assertEqual(save.call_args.kwargs['output_source'], 'deterministic')
 
+    def test_engine_incompatibility_delivers_factual_view_in_the_job_scope(self):
+        document = {
+            'id': 'alias-job', 'chat_id': 'chat-1', 'created_at': '2026-10-11T11:00:00Z',
+            'status': 'failed', 'error': 'COACH_ENGINE_REQUIREMENT_UNAVAILABLE',
+            'required_engine': 'v3', 'factual_scope': 'today',
+        }
+        sync = {'payload': {'summary': {'activities': [
+            {'date': '2026-10-11', 'sport': 'running', 'km': 8.0, 'source': 'garmin'},
+            {'date': '2026-10-10', 'sport': 'cycling', 'km': 20.0, 'source': 'strava'},
+        ]}}}
+        with patch.object(main, 'require_sync_secret'), patch.object(
+            main, 'complete_ai_job', return_value=document
+        ), patch.object(main, 'load_sync', return_value=sync), patch.object(
+            main, 'send_telegram_message', new_callable=AsyncMock
+        ) as send:
+            asyncio.run(main.complete_ai_job_endpoint(
+                'alias-job', {'status': 'failed', 'error': 'COACH_ENGINE_REQUIREMENT_UNAVAILABLE'}
+            ))
+        delivered = send.await_args.args[1]
+        self.assertIn('No se usó la ruta antigua', delivered)
+        self.assertIn('Datos factuales del día consultado (2026-10-11)', delivered)
+        self.assertIn('8.00 km', delivered)
+        self.assertNotIn('20.00 km', delivered)
+
     def test_rejects_deterministic_prescription_before_saving(self):
         payload = self.deterministic_payload()
         payload['structured_output']['decisions'][0]['action'] = 'keep_plan'

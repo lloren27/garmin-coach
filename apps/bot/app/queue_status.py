@@ -20,11 +20,13 @@ class QueueSnapshot(TypedDict):
     oldest_running_claimed_at: str | None
     last_completed_at: str | None
     last_failed_at: str | None
+    last_completed_output_source: str | None
     invalid_date_counts: dict[str, int]
 
 def empty_snapshot(available=False) -> QueueSnapshot:
     return dict(available=available, counts=dict.fromkeys(STATES, 0),
-                invalid_date_counts=dict.fromkeys(DATES, 0), **dict.fromkeys(DATES))
+                invalid_date_counts=dict.fromkeys(DATES, 0), last_completed_output_source=None,
+                **dict.fromkeys(DATES))
 
 def parse_date(value, now):
     if not isinstance(value, str) or not re.fullmatch(ISO, value):
@@ -73,6 +75,7 @@ def read_snapshot(chat_id: str, *, now: datetime, database_url: str | None, path
     except (OSError, ValueError):
         return empty_snapshot()
     result = empty_snapshot(True)
+    last_completed_source_at = None
     for row in rows:
         if not isinstance(row, dict) or str(row.get('chat_id', '')) != chat_id:
             continue
@@ -90,6 +93,9 @@ def read_snapshot(chat_id: str, *, now: datetime, database_url: str | None, path
                 old = parse_date(result[key], now)
                 chosen = stamp if old is None else (min(old, stamp) if operation == 'min' else max(old, stamp))
                 result[key] = chosen.isoformat()
+                if key == 'last_completed_at' and (last_completed_source_at is None or stamp >= last_completed_source_at):
+                    last_completed_source_at = stamp
+                    result['last_completed_output_source'] = row.get('output_source')
     return result
 
 def _postgres_snapshot(url, chat_id, now):
@@ -101,9 +107,14 @@ def _postgres_snapshot(url, chat_id, now):
     query = f'''WITH dated AS (SELECT
       CASE WHEN status IN ('pending','running','completed','failed') THEN status ELSE 'unknown' END AS state,
       created_at, {_sql_date("document->>'claimed_at'")} AS claimed_at,
-      {_sql_date("document->>'completed_at'")} AS completed_at, %s::timestamptz AS clock
+      {_sql_date("document->>'completed_at'")} AS completed_at,
+      document->>'output_source' AS output_source, %s::timestamptz AS clock
       FROM coach_ai_jobs WHERE document->>'chat_id'=%s)
-      SELECT {', '.join(projections)} FROM dated'''
+      SELECT {', '.join(projections)},
+        (SELECT latest.output_source FROM dated AS latest
+         WHERE latest.state='completed' AND latest.completed_at<=latest.clock
+         ORDER BY latest.completed_at DESC NULLS LAST LIMIT 1)
+      FROM dated'''
     try:
         with psycopg.connect(url) as conn:
             conn.execute('SET TRANSACTION READ ONLY')
@@ -117,4 +128,5 @@ def _postgres_snapshot(url, chat_id, now):
         stamp, invalid = row[5+2*i:7+2*i]
         result[key] = stamp.astimezone(timezone.utc).isoformat() if stamp else None
         result['invalid_date_counts'][key] = invalid
+    result['last_completed_output_source'] = row[5 + 2 * len(DATES)]
     return result

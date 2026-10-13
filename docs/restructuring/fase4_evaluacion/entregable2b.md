@@ -1,6 +1,6 @@
 # Fase 4 — evidencia del entregable 2b
 
-**Estado:** implementado y verificado en local, en la rama `fase4-2b`. No desplegado ni activado en producción. `COACH_DELAY_NOTICE_SECONDS` no está configurado en Railway según la lectura de configuración disponible; el valor por defecto mantiene el barrido apagado.
+**Estado al cerrar 2b:** implementado y verificado en local, en la rama `fase4-2b`. **Actualización 2026-10-13:** el código está desplegado en el servicio Railway `garmin-coach` desde `main`, commit `d716acf57eb16f569425d8079b7e08ec0e1ff967`, deployment `6ddc5ccd-9e66-460b-bc4c-7d5a2d7e79d3` (`SUCCESS`, 2026-10-13 08:54 UTC). `COACH_DELAY_NOTICE_SECONDS` no está definida en producción, por lo que el valor por defecto mantiene el barrido apagado. La integración Railway consultada no permite ejecutar una consulta de solo lectura a PostgreSQL; no hay evidencia accesible aquí de que se aplicara la migración ni de que las cuatro columnas y la restricción se verificaran. **El estado del esquema de producción queda sin confirmar** y no se declara migrado ni listo para activar avisos o alias.
 
 ## Cambios incluidos
 
@@ -23,7 +23,7 @@ Antes de la migración, la copia restaurada tenía 53 trabajos, 0 cambios pendie
 - La prueba de Telegram simula fases individuales por debajo de 15 segundos cuya suma excede el plazo total; la operación se cancela al alcanzar el plazo global.
 - `git diff --check`: OK.
 
-La matriz antigua/nueva es una simulación de presentadores y flujos, no una ejecución simultánea de dos versiones desplegadas. No se generaron mensajes de Telegram en producción. No hubo DDL, cambios de configuración, push ni despliegue en producción.
+La matriz antigua/nueva es una simulación de presentadores y flujos, no una ejecución simultánea de dos versiones desplegadas. No se generaron mensajes de Telegram de prueba en producción. No hubo DDL ni cambio de configuración como parte del cierre local de 2b. El posterior merge/deploy de `main` desplegó el código apagado; no prueba que el DDL manual del runbook se haya aplicado.
 
 ## Runbook de futura publicación
 

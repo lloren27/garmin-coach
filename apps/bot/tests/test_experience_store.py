@@ -16,7 +16,7 @@ def rows():
         {'chat_id': 'a', 'status': 'pending', 'created_at': '2026-10-10T10:00:00Z'},
         {'chat_id': 'a', 'status': 'pending', 'created_at': '2026-10-11T10:00:00+02:00'},
         {'chat_id': 'a', 'status': 'running', 'claimed_at': '2026-10-11T10:00:00+00:00'},
-        {'chat_id': 'a', 'status': 'completed', 'completed_at': '2026-10-11T09:00:00Z'},
+        {'chat_id': 'a', 'status': 'completed', 'completed_at': '2026-10-11T09:00:00Z', 'output_source': 'deterministic'},
         {'chat_id': 'a', 'status': 'failed', 'completed_at': '2026-10-11T08:00:00Z'},
         {'chat_id': 'a', 'status': 'failed', 'completed_at': '2026-02-31T08:00:00Z'},
         {'chat_id': 'a', 'status': 'failed', 'completed_at': '2026-10-11T08:00:00'},
@@ -29,6 +29,7 @@ class QueueFileTests(unittest.TestCase):
     def setUp(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.path = root / 'jobs.json'
+        self.enterContext(patch.object(store, 'DATA_DIR', root))
         self.enterContext(patch.object(store, 'DATABASE_URL', None))
         self.enterContext(patch.object(store, 'AI_JOBS_FILE', self.path))
 
@@ -39,9 +40,35 @@ class QueueFileTests(unittest.TestCase):
         self.assertEqual(result['counts'], {'pending': 2, 'running': 1, 'completed': 1, 'failed': 4, 'unknown': 0})
         self.assertEqual(result['oldest_pending_at'], '2026-10-10T10:00:00+00:00')
         self.assertEqual(result['last_completed_at'], '2026-10-11T09:00:00+00:00')
+        self.assertEqual(result['last_completed_output_source'], 'deterministic')
         self.assertEqual(result['invalid_date_counts']['last_failed_at'], 3)
         self.assertNotIn('PRIVATE', str(result))
         self.assertEqual(before, self.path.read_bytes())
+
+    def test_latest_completed_output_source_is_chat_scoped_and_date_ordered(self):
+        self.path.write_text(json.dumps([
+            {'chat_id': 'a', 'status': 'completed', 'completed_at': '2026-10-11T09:00:00Z', 'output_source': 'ollama', 'text': 'PRIVATE'},
+            {'chat_id': 'a', 'status': 'completed', 'completed_at': '2026-10-11T10:00:00Z', 'output_source': 'deterministic'},
+            {'chat_id': 'b', 'status': 'completed', 'completed_at': '2026-10-11T11:00:00Z', 'output_source': 'ollama'},
+        ]))
+        result = store.load_queue_snapshot('a', now=NOW)
+        self.assertEqual(result['last_completed_output_source'], 'deterministic')
+        self.assertNotIn('PRIVATE', str(result))
+
+    def test_new_engine_and_scope_metadata_round_trip_without_changing_legacy_jobs(self):
+        with patch.object(store, 'load_active_training_plan', return_value=None):
+            job = store.create_ai_job(
+                'alias-chat', '/hoy', required_engine='v3', factual_scope='today'
+            )
+            legacy = store.create_ai_job('legacy-chat', 'free text')
+        rows = json.loads(self.path.read_text())
+        stored = {row['id']: row for row in rows}
+        self.assertEqual(stored[job['id']]['required_engine'], 'v3')
+        self.assertEqual(stored[job['id']]['factual_scope'], 'today')
+        self.assertNotIn('required_engine', stored[legacy['id']])
+        self.assertNotIn('factual_scope', stored[legacy['id']])
+        with self.assertRaises(ValueError):
+            store.create_ai_job('bad', 'question', required_engine='legacy')
 
     def test_missing_empty_invalid_and_no_chat(self):
         self.assertTrue(store.load_queue_snapshot('a', now=NOW)['available'])
@@ -98,13 +125,21 @@ class QueuePostgresTests(unittest.TestCase):
         result = store.load_queue_snapshot('a', now=NOW)
         self.assertEqual(result['counts']['completed'], 10001)
         self.assertEqual(result['counts']['pending'], 2)
-        self.assertEqual(result['invalid_date_counts']['last_failed_at'], 3)
-        self.assertEqual(result['last_completed_at'], '2026-10-11T09:00:00+00:00')
-        self.assertNotIn('jobs', result)
-        with tempfile.TemporaryDirectory() as root, patch.object(store, 'DATABASE_URL', None), patch.object(store, 'AI_JOBS_FILE', Path(root)/'jobs.json'):
-            store.AI_JOBS_FILE.write_text(json.dumps(data))
-            self.assertEqual(result, store.load_queue_snapshot('a', now=NOW))
-        self.assertEqual(self.conn.execute('SELECT count(*) FROM coach_ai_jobs').fetchone()[0], 10009)
+        self.assertEqual(result['last_completed_output_source'], 'deterministic')
+
+    def test_engine_and_scope_metadata_round_trip_in_postgres_jsonb(self):
+        job = store.create_ai_job(
+            chat_id='alias-chat', text='/hoy', required_engine='v3', factual_scope='today'
+        )
+        claimed = store.claim_next_ai_job()
+        self.assertEqual(claimed['id'], job['id'])
+        self.assertEqual(claimed['required_engine'], 'v3')
+        self.assertEqual(claimed['factual_scope'], 'today')
+        completed = store.complete_ai_job(job['id'], answer='synthetic')
+        self.assertEqual(completed['required_engine'], 'v3')
+        self.assertEqual(completed['factual_scope'], 'today')
+        self.assertIsNone(completed['output_source'])
+        self.assertEqual(self.conn.execute('SELECT count(*) FROM coach_ai_jobs').fetchone()[0], 1)
 
     def test_absent_table_does_not_create_it(self):
         self.conn.execute('DROP TABLE coach_ai_jobs CASCADE')

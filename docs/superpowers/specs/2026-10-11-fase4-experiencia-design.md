@@ -1,7 +1,7 @@
 # Fase 4: experiencia simple y entrenador único
 
-Fecha: 11 de octubre de 2026. Revisión 6, con separación 2a/2b y ajustes del primer plan.
-Estado: diseño revisado para revisión; sin implementación ni activación en producción.
+Fecha: 13 de octubre de 2026. Revisión 7, con precisiones de argumentos, señal V3 en `/estado` y alcance de paráfrasis.
+Estado: diseño actualizado; sin activación del adaptador en producción.
 
 ## Base y objetivo
 
@@ -27,7 +27,7 @@ El webhook ya envía una única respuesta con `format_ai_queued` o `format_voice
 
 El respaldo no importa ni copia `coach_intent` al bot. Para texto libre, `/coach`, voz/audio y `/ajustar` muestra siempre «Últimos datos disponibles»: último día con actividades y últimas mediciones disponibles, con fechas y fuentes, sin afirmar que contesta la pregunta. No intenta interpretar texto ni transcripción.
 
-Los alias migrados sin argumentos usan una selección factual fija: `/hoy`, datos del día de creación del trabajo en Europe/Madrid; `/ultima`, última actividad disponible al preparar el respaldo; `/feedback`, último día con entrenamiento disponible. Esa selección se etiqueta con sus fechas reales y no se presenta como resolución de intención. Si el alias lleva argumentos, se usa el resumen genérico para no ignorar ni interpretar una fecha explícita. La interpretación deportiva de todos los argumentos sigue exclusivamente en el worker. Si el ámbito fijo no tiene datos, se indica la ausencia; cualquier resumen adicional se identifica como últimos datos. Se muestra la sincronización de procedencia y su antigüedad, o que se desconocen.
+Los alias migrados sin argumentos usan una selección factual fija: `/hoy`, datos del día de creación del trabajo en Europe/Madrid; `/ultima`, última actividad disponible al preparar el respaldo; `/feedback`, último día con entrenamiento disponible. Esa selección se etiqueta con sus fechas reales y no se presenta como resolución de intención. Si el alias lleva argumentos, se usa el resumen genérico para no ignorar ni interpretar una fecha explícita. La vista de aviso y el fallback por incompatibilidad usan el mismo `factual_scope` persistido en el trabajo; si falta o no es válido, usan `latest_available`. La interpretación deportiva de todos los argumentos sigue exclusivamente en el worker. Si el ámbito fijo no tiene datos, se indica la ausencia; cualquier resumen adicional se identifica como últimos datos. Se muestra la sincronización de procedencia y su antigüedad, o que se desconocen.
 
 ### Respuestas tardías
 
@@ -98,7 +98,7 @@ Solo `/hoy`, `/ultima` y `/feedback` son candidatos iniciales, todavía sujetos 
 
 ## Traducción y contexto
 
-El adaptador normaliza mayúsculas y sufijos Telegram, conserva argumentos y no obtiene autorización de modificación del texto que él mismo genera. Una fecha explícita sustituye el ámbito predeterminado. Conflictos o ámbitos no soportados requieren aclaración, sin descartarlos silenciosamente.
+El adaptador normaliza mayúsculas y sufijos Telegram y no obtiene autorización de modificación del texto que él mismo genera. Sin argumentos, envía la pregunta canónica del alias. Con argumentos, envía el texto original completo del usuario tal cual (incluidos el alias y los argumentos), sin concatenar la frase canónica; el worker interpreta o pide aclaración. Una fecha explícita sustituye el ámbito predeterminado cuando el resolutor la reconoce. Conflictos o ámbitos no soportados requieren aclaración, sin descartarlos silenciosamente.
 
 Texto, `/coach`, voz transcrita y alias migrados usan el servicio común y la misma construcción de contexto. Las comparaciones de aceptación fijan reloj e instantánea. El respaldo factual no se incorpora como otra opinión al contexto del entrenador.
 
@@ -116,6 +116,7 @@ Texto, `/coach`, voz transcrita y alias migrados usan el servicio común y la mi
 - Hora de creación y antigüedad del pendiente más antiguo; si no hay pendientes, lo indica.
 - Última finalización correcta y último fallo del chat, diferenciados. Un fallo no se presenta como trabajo respondido correctamente.
 - Hora de recogida del trabajo en curso, cuando exista; indica demora observada sin afirmar que el Mac está dormido.
+- Origen (`output_source`) de la respuesta del último trabajo completado de ese chat, limitado a valores conocidos y sin incluir pregunta/respuesta. Un resultado `deterministic` es la señal observable del worker V3 antes de activar alias; otros orígenes se presentan sin afirmar que son V3.
 
 Se emplean `created_at`, `claimed_at`, `completed_at` y `status` tanto en almacenamiento de ficheros como PostgreSQL. No se expone texto de consultas ni actividad de otros chats. Si no hay historial se dice explícitamente. La fecha del último éxito es evidencia histórica, no prueba de disponibilidad actual.
 
@@ -152,9 +153,9 @@ La hoja de ruta incorpora una ampliación posterior y explícita para recuperar 
 Se conserva el criterio histórico del auditor. Conectar un alias y comparar con la misma frase generada es solo una prueba del adaptador. La aceptación exige por cada candidato:
 
 - Aserciones independientes de intención, selector, fechas concretas, hechos, limitaciones, decisiones y ausencia de permisos de escritura.
-- Paráfrasis humanas no generadas por el adaptador: «¿Cómo fue mi entreno de hoy?», «Dame tu opinión sobre la última salida» y «¿Qué tal el último día que entrené?». Son casos por verificar, no afirmaciones de soporte actual. Si fallan, el alias no se activa hasta resolver o declarar la limitación.
+- Las preguntas canónicas exactas de los alias deben superar las aserciones independientes. Las paráfrasis humanas no generadas por el adaptador («¿Cómo fue mi entreno de hoy?», «Dame tu opinión sobre la última salida» y «¿Qué tal el último día que entrené?») se prueban por texto libre, `/coach` y voz simulada para caracterizar el resolutor. Si fallan, se registran como limitación de texto libre y trabajo futuro; eso por sí solo no bloquea los alias canónicos ni justifica ampliar `coach_intent` en este entregable.
 - Fechas explícitas, cambio de día en Madrid, negaciones, preguntas ambiguas y argumentos que contradicen el ámbito predeterminado.
-- Misma pregunta humana por texto, `/coach` y voz con transcripción simulada; misma instantánea y reloj. Se comprueba la salida estructurada y su utilidad, no solo la creación del trabajo.
+- Las preguntas canónicas de los tres alias se comprueban de forma independiente como gate de activación. Las paráfrasis humanas se evalúan también por texto, `/coach` y voz con transcripción simulada, con la misma instantánea y reloj, para caracterizar el resolutor; una paráfrasis fallida se registra como limitación de texto libre, pero no bloquea por sí sola los alias canónicos.
 - Los alias retenidos como datos no se cuentan como equivalentes a análisis. El resultado de fase 4 se informa como E14 parcial, con equivalencia global histórica incumplida; no se cambia el auditor para obtener un aprobado.
 
 Se prueban ambas posiciones del interruptor, V3 apagado/incompatible, trabajos previos a reversión, ausencia de worker, aviso único durante operación normal y carreras con finalización. La integración de avisos verifica recuperación tras reinicio y reclamación concurrente. Se comprueba que las vistas no llaman al modelo ni producen recomendaciones.

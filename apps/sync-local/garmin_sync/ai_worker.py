@@ -25,6 +25,7 @@ from .wattwise_context import fetch_wattwise_context
 from .ai_contracts import CoachDecision, CoachStructuredResponse
 from .coach_validation import CoachValidationError
 from .coach_job_time import job_created_at
+from .coach_engine_contract import required_engine_error
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -1358,6 +1359,15 @@ def late_response_details(
 
 def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
     job_id = job["id"]
+    requirement_error = required_engine_error(
+        job, v3_enabled=COACH_ANALYSIS_V3_ENABLED
+    )
+    if requirement_error:
+        complete_coach_job(job_id, {
+            "status": "failed",
+            "error": requirement_error,
+        })
+        return
     transcript = None
     completing = False
     indicator = start_telegram_processing_indicator(str(job.get("chat_id") or "") or None)

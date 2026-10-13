@@ -151,6 +151,7 @@ class DelayNoticeSweepTests(unittest.TestCase):
             "created_at": datetime.now(timezone.utc),
             "claimed_at": datetime.now(timezone.utc),
             "claim_token": f"token-{job_id}",
+            "factual_scope": "today",
         }
 
     def test_stop_signal_is_checked_before_each_claim(self):
@@ -182,6 +183,20 @@ class DelayNoticeSweepTests(unittest.TestCase):
         self.assertEqual(claim_calls, [120])
         self.assertEqual(len(sent), 1)
         mark.assert_called_once()
+
+    def test_sweep_passes_persisted_scope_to_delay_notice_formatter(self):
+        claim = {**self.claim("scoped-job"), "factual_scope": "today"}
+        with patch.object(delay_notices, "settings", self.settings()), patch.object(
+            store, "DATABASE_URL", "postgresql://local/test"
+        ), patch.object(store, "claim_next_delay_notice_job", side_effect=[claim, None]), patch.object(
+            store, "prepare_delay_notice_send", return_value=claim
+        ), patch.object(store, "load_sync", return_value={}), patch.object(
+            delay_notices, "format_delay_notice", return_value="notice"
+        ) as format_notice, patch.object(
+            delay_notices, "send_delay_notice", return_value=True
+        ), patch.object(store, "mark_delay_notice_sent", return_value=True):
+            self.assertEqual(delay_notices.run_delay_notice_sweep_once(), 1)
+        self.assertEqual(format_notice.call_args.args[0]["factual_scope"], "today")
 
     def test_large_slow_batch_claims_and_finishes_one_job_at_a_time(self):
         events = []

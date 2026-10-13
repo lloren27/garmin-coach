@@ -50,9 +50,16 @@ HELP_COMMANDS = (
 )
 
 
-def format_help(*, detailed: bool = False) -> str:
+def format_help(*, detailed: bool = False, alias_routing_enabled: bool = False) -> str:
     if detailed:
-        return 'Comandos disponibles\n' + '\n'.join(f'{cmd} — {description}' for cmd, description in HELP_COMMANDS)
+        descriptions = {
+            '/hoy': 'Análisis del entrenamiento de hoy (coach V3)' if alias_routing_enabled else 'Vista deportiva local del día',
+            '/ultima': 'Análisis de la última actividad (coach V3)' if alias_routing_enabled else 'Última actividad, respuesta local',
+            '/feedback': 'Análisis del último día de entrenamiento (coach V3)' if alias_routing_enabled else 'Valoración local de las actividades del día',
+        }
+        return 'Comandos disponibles\n' + '\n'.join(
+            f'{cmd} — {descriptions.get(cmd, description)}' for cmd, description in HELP_COMMANDS
+        )
     return ('Garmin Coach\nEscribe tu pregunta o envía una nota de voz.\n'
             '/coach — Pregunta al entrenador\n/plan — Consulta tu plan\n'
             '/sync — Solicita actualización\n/estado — Datos y cola de consultas\n'
@@ -210,11 +217,14 @@ def _factual_wellness_lines(wellness: dict, *, limit: int = 5) -> list[str]:
     return lines
 
 
-def format_factual_view(sync: dict | None, *, scope: str, now: datetime) -> str:
+def format_factual_view(
+    sync: dict | None, *, scope: str, now: datetime, reference_at: str | datetime | None = None
+) -> str:
     """Render bounded, source-labelled facts without invoking coaching logic."""
     if now.tzinfo is None:
         raise ValueError('timezone-aware now required')
-    if scope != 'latest_available':
+    supported_scopes = {'latest_available', 'today', 'latest_activity', 'latest_training_day'}
+    if scope not in supported_scopes:
         raise ValueError('unsupported factual-view scope')
 
     sync = _mapping(sync)
@@ -223,7 +233,18 @@ def format_factual_view(sync: dict | None, *, scope: str, now: datetime) -> str:
     received = _stamp(sync.get('received_at'), now)
     stamp = generated or received
 
-    lines = ['Últimos datos disponibles']
+    reference_value = reference_at.isoformat() if isinstance(reference_at, datetime) and reference_at.tzinfo else reference_at
+    reference = _stamp(reference_value, now) if reference_value else None
+    if scope == 'today' and reference is None:
+        scope = 'latest_available'
+    reference_date = reference.astimezone(MADRID).date().isoformat() if reference else None
+    headings = {
+        'latest_available': 'Últimos datos disponibles',
+        'today': f'Datos factuales del día consultado ({reference_date})',
+        'latest_activity': 'Última actividad disponible',
+        'latest_training_day': 'Último día con entrenamiento disponible',
+    }
+    lines = [headings[scope]]
     if stamp is None:
         lines.append('Sincronización: vigencia no confirmada')
     else:
@@ -236,11 +257,25 @@ def format_factual_view(sync: dict | None, *, scope: str, now: datetime) -> str:
         safe_activities.sort(key=lambda item: _factual_date(item.get('date')) or '', reverse=True)
     else:
         safe_activities = []
+    if scope == 'today':
+        safe_activities = [item for item in safe_activities if _factual_date(item.get('date')) == reference_date]
+    elif scope == 'latest_activity':
+        safe_activities = safe_activities[:1]
+    elif scope == 'latest_training_day' and safe_activities:
+        latest_day = _factual_date(safe_activities[0].get('date'))
+        safe_activities = [item for item in safe_activities if _factual_date(item.get('date')) == latest_day]
     if safe_activities:
-        lines.append('Actividades recientes (hasta 5):')
+        lines.append('Actividades consultadas:')
         lines.extend('• ' + _factual_activity_line(item) for item in safe_activities[:5])
     else:
-        lines.append('No hay actividades disponibles en el resumen sincronizado.')
+        if scope == 'today':
+            lines.append(f'No hay actividad disponible para el {reference_date} en el resumen sincronizado.')
+        elif scope == 'latest_activity':
+            lines.append('No hay actividad disponible en el resumen sincronizado.')
+        elif scope == 'latest_training_day':
+            lines.append('No hay día de entrenamiento disponible en el resumen sincronizado.')
+        else:
+            lines.append('No hay actividades disponibles en el resumen sincronizado.')
 
     wellness = _mapping(payload.get('wellness'))
     wellness_lines = _factual_wellness_lines(wellness)
@@ -266,11 +301,23 @@ def format_delay_notice(job: dict, sync: dict | None, *, now: datetime) -> str:
     created_at = job.get('created_at') if isinstance(job, dict) else None
     if isinstance(created_at, datetime) and created_at.tzinfo is not None:
         created_at = created_at.isoformat()
-    age = _date(created_at, now, age=True) if _stamp(created_at, now) else 'fecha no disponible o no fiable'
+    created_stamp = _stamp(created_at, now)
+    age = _date(created_at, now, age=True) if created_stamp else 'fecha no disponible o no fiable'
+    scope = job.get('factual_scope') if isinstance(job, dict) else None
+    if scope not in {'latest_available', 'today', 'latest_activity', 'latest_training_day'}:
+        scope = 'latest_available'
+    if scope == 'today' and created_stamp is None:
+        scope = 'latest_available'
+    scope_intro = {
+        'latest_available': 'Te comparto los últimos datos disponibles',
+        'today': 'Te comparto los datos factuales del día de la consulta',
+        'latest_activity': 'Te comparto los datos de la última actividad',
+        'latest_training_day': 'Te comparto los datos del último día con entrenamiento',
+    }[scope]
     return (
-        f'Tu consulta sigue en cola desde {age}. Te comparto los últimos datos disponibles; '
+        f'Tu consulta sigue en cola desde {age}. {scope_intro}; '
         'pueden no responder a la pregunta.\n'
-        + format_factual_view(sync, scope='latest_available', now=now)
+        + format_factual_view(sync, scope=scope, now=now, reference_at=created_at)
     )
 
 
@@ -332,6 +379,13 @@ def format_operational_status(sync: dict | None, sync_request: dict | None,
             invalid = queue['invalid_date_counts'][key]
             suffix = f' — entre fechas disponibles; {invalid} fecha(s) no fiable(s)' if invalid else ''
             lines.append(label + ': ' + _date(queue.get(key),now,age=key=='oldest_pending_at') + suffix)
+        source_labels = {
+            'deterministic': 'V3 determinista',
+            'ollama': 'Ollama (ruta antigua)',
+            'deterministic_fallback': 'respaldo determinista (ruta antigua)',
+        }
+        source = queue.get('last_completed_output_source')
+        lines.append('Origen de última respuesta: ' + source_labels.get(source, 'no disponible'))
         if not counts['pending']:
             lines.append('No hay consultas pendientes.')
     lines.append('Estas señales son históricas; no confirman que el Mac esté disponible ahora.')

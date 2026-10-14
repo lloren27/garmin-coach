@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import unittest
@@ -100,6 +100,144 @@ class DeterministicTests(unittest.TestCase):
         self.assertIn('No puedo valorar si es seguro hacerla', wire.answer)
         self.assertEqual(wire.decisions[1].date.isoformat(), '2026-10-04')
         self.assertEqual(wire.decisions[1].action, 'ask_user')
+
+    def test_future_plan_query_renders_only_requested_sport(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'bike-plan', 'date': '2026-10-04', 'status': 'planned', 'sport': 'cycling',
+             'duration_min': 60, 'duration_max': 90},
+            {'id': 'run-plan', 'date': '2026-10-04', 'status': 'planned', 'sport': 'running',
+             'duration_min': 30, 'duration_max': 45},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('ciclismo (2026-10-04), 60–90 min', wire.answer)
+        self.assertNotIn('running', wire.answer)
+        self.assertNotIn('¿Puedes aportar los datos', wire.answer)
+
+    def test_plan_without_requested_sport_says_so(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'run-plan', 'date': '2026-10-04', 'status': 'planned', 'sport': 'running',
+             'duration_min': 30, 'duration_max': 45},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('El plan disponible no muestra una sesión de ciclismo para 2026-10-04.', wire.answer)
+
+    def test_plan_with_no_session_on_requested_day_says_so(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'bike-later', 'date': '2026-10-05', 'status': 'planned', 'sport': 'cycling',
+             'duration_min': 60, 'duration_max': 90},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('El plan disponible no muestra una sesión de ciclismo para 2026-10-04.', wire.answer)
+        self.assertNotIn('bike-later', wire.answer)
+
+    def test_plan_without_sport_metadata_asks_for_confirmation(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'unknown-plan', 'date': '2026-10-04', 'status': 'planned',
+             'duration_min': 60, 'duration_max': 90},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('El plan no indica el deporte', wire.answer)
+
+    def test_multiple_activities_on_one_day_are_listed_separately(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = [
+            {'id': 'ride-a', 'source': 'garmin', 'sport': 'cycling', 'date': '2026-10-03',
+             'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T07:00:00Z',
+             'time_context': 'Europe/Madrid', 'duration_s': 1800, 'km': 8},
+            {'id': 'ride-b', 'source': 'garmin', 'sport': 'cycling', 'date': '2026-10-03',
+             'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T10:00:00Z',
+             'time_context': 'Europe/Madrid', 'duration_s': 2400, 'km': 12},
+        ]
+        extra['training_plan']['sessions'] = []
+        wire = deterministic_response('analiza las actividades de bici de hoy', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('30:00, 8 km', wire.answer)
+        self.assertIn('40:00, 12 km', wire.answer)
+
+    def test_max_hr_finding_is_selected_rendered_and_references_source_facts(self):
+        row = fixture('E01')
+        question = '¿Cuál fue mi FC máxima en la carrera de hoy?'
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = [{
+            'id': 'run-dedup', 'source': 'garmin', 'sport': 'running', 'date': '2026-10-03',
+            'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T07:00:00Z',
+            'time_context': 'Europe/Madrid', 'duration_s': 1800, 'km': 5, 'avg_hr': 140,
+            'max_hr': 188,
+            'source_records': [
+                {'source': 'garmin', 'source_activity_id': 'g-run', 'metrics': {'max_hr': 188}},
+                {'source': 'strava', 'source_activity_id': 's-run', 'metrics': {'max_hr': 176}},
+            ],
+        }]
+        snap = snapshot(question=question, mutate=lambda x: x.update(extra),
+                        now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        catalog = build_catalog(snap, 0, question)
+        selection = select_findings(catalog, question)
+        finding = next(f for f in catalog.findings if f.code == 'ACTIVITY_METRIC_VALUE')
+        self.assertTrue(finding.fact_refs)
+        self.assertTrue(set(finding.fact_refs) <= {fact.id for fact in catalog.facts.facts})
+        self.assertEqual(set(finding.source_refs), {'activity:run-dedup'})
+        self.assertIn(finding.id, selection.finding_ids)
+        self.assertEqual(selection.schema_version, '2')
+        with self.assertRaises(ValueError):
+            validate_selection(catalog, replace(selection, schema_version='1'))
+        answer = render_selection(catalog, selection)
+        self.assertIn('188 lpm (Garmin)', answer)
+        self.assertIn('176 lpm (Strava)', answer)
+
+    def test_metric_selector_is_versioned_and_contains_the_new_code(self):
+        from garmin_sync.coach_findings import SELECTOR
+        self.assertEqual(SELECTOR['protocol_version'], 'fase4-v2')
+        metric_family = next(f for f in SELECTOR['families'] if f['id'] == 'activity_metrics')
+        self.assertIn('ACTIVITY_METRIC_VALUE', metric_family['codes'])
+
+    def test_average_hr_does_not_fall_back_to_max_hr(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = [{
+            'id': 'run-average-only', 'source': 'garmin', 'sport': 'running', 'date': '2026-10-03',
+            'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T07:00:00Z',
+            'time_context': 'Europe/Madrid', 'avg_hr': 141,
+        }]
+        question = '¿Cuál fue mi FC máxima en la carrera de hoy?'
+        wire = deterministic_response(question, row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('No hay un pulso máximo válido registrado', wire.answer)
+        self.assertNotIn('141', wire.answer)
+
+    def test_multiple_max_hr_activities_render_as_separate_findings(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = [
+            {'id': 'run-a', 'source': 'garmin', 'sport': 'running', 'date': '2026-10-03',
+             'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T07:00:00Z',
+             'time_context': 'Europe/Madrid', 'max_hr': 175},
+            {'id': 'run-b', 'source': 'strava', 'sport': 'running', 'date': '2026-10-03',
+             'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T10:00:00Z',
+             'time_context': 'Europe/Madrid', 'max_hr': 181},
+        ]
+        question = 'pulso máximo en mis actividades de carrera de hoy'
+        wire = deterministic_response(question, row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('175 lpm (Garmin)', wire.answer)
+        self.assertIn('181 lpm (Strava)', wire.answer)
+        self.assertEqual(wire.answer.count('Pulso máximo'), 2)
 
     def test_change_request_does_not_erase_safety(self):
         wire = self.response('E10', 'cambia la sesión de mañana')

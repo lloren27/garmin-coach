@@ -178,13 +178,15 @@ class _StravaError(Exception):
 def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[str, Any] | None:
     activity_id = _text(record.get("id"))
     started_at = _timestamp(record.get("start_date"), local_timezone)
+    local_started_at = _local_wall_time(record.get("start_date_local"), local_timezone)
+    display_started_at = local_started_at or started_at
     duration_s = _positive_number(record.get("elapsed_time")) or _positive_number(record.get("moving_time"))
     distance_m = _nonnegative_number(record.get("distance"))
     sport_type = _text(record.get("sport_type") or record.get("type"))
     normalized_sport = _sport(sport_type)
     if (
         not activity_id
-        or started_at is None
+        or display_started_at is None
         or duration_s is None
         or distance_m is None
         or (distance_m == 0 and normalized_sport != "strength")
@@ -192,12 +194,21 @@ def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[
         return None
 
     distance_km = round(distance_m / 1000, 2)
+    local_date = (_text(record.get('start_date_local')) or '')[:10]
+    try:
+        local_date = date.fromisoformat(local_date).isoformat()
+    except ValueError:
+        local_date = display_started_at.date().isoformat()
+    raw_utc = record.get('start_date')
+    utc_instant = _parse_aware_timestamp(raw_utc)
     activity: dict[str, Any] = {
         "id": f"strava:{activity_id}",
         "source": "strava",
         "source_activity_id": activity_id,
-        "date": started_at.date().isoformat(),
-        "started_at": started_at.isoformat(),
+        "date": local_date,
+        "started_at": display_started_at.isoformat(),
+        "local_date": local_date,
+        "time_context": getattr(local_timezone, 'key', str(local_timezone)),
         "name": _text(record.get("name")) or "Actividad Strava",
         "sport": normalized_sport,
         "type": sport_type or "Workout",
@@ -205,6 +216,8 @@ def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[
         "duration_s": round(duration_s),
         "hours": round(duration_s / 3600, 2),
     }
+    if utc_instant is not None:
+        activity['started_at_utc'] = utc_instant.isoformat()
     source_device = _text(record.get("device_name"))
     if source_device:
         activity["source_device"] = source_device
@@ -231,17 +244,49 @@ def _timestamp(value: Any, local_timezone: ZoneInfo) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        # Keep a local wall time for display only; it is not an absolute instant.
+        parsed = parsed.replace(tzinfo=local_timezone)
     return parsed.astimezone(local_timezone)
 
 
+def _parse_aware_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _local_wall_time(value: Any, local_timezone: ZoneInfo) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    # Strava's start_date_local is a wall-clock value, even when serialized
+    # with a Z suffix. Preserve its displayed fields for the local date/time.
+    return parsed.replace(tzinfo=local_timezone)
+
+
 def _sport(value: str) -> str:
-    lowered = value.lower()
-    if "run" in lowered:
+    normalized = value.strip().casefold()
+    running = {"run", "trailrun", "virtualrun"}
+    cycling = {"ride", "virtualride", "ebikeride", "mountainbikeride", "gravelride", "handcycle",
+               "velomobile", "roadbiking", "mountainbiking", "indoorcycling", "virtualcycling", "cycling"}
+    swimming = {"swim", "openwaterswim", "poolswim"}
+    strength = {"weighttraining", "crossfit"}
+    if normalized in running:
         return "running"
-    if any(token in lowered for token in ("ride", "cycling", "bike")):
+    if normalized in cycling:
         return "cycling"
-    if any(token in lowered for token in ("weight", "crossfit", "strength")):
+    if normalized in swimming:
+        return "swimming"
+    if normalized in strength:
         return "strength"
     return "other"
 

@@ -5,6 +5,7 @@ from garmin_sync.coach_generation_resolver import resolve_generation
 from garmin_sync.coach_generation_renderer import render_generation
 from garmin_sync.ai_contracts import CoachStructuredResponse
 from garmin_sync.coach_validation import CoachValidationError
+from garmin_sync.coach_findings import build_catalog, select_findings, render_selection
 
 
 class RendererTests(unittest.TestCase):
@@ -27,6 +28,28 @@ class RendererTests(unittest.TestCase):
         self.assertNotIn('no permite una conclusión adicional', wire.decisions[0].reason)
         self.assertIn('zonas', wire.answer)
         CoachStructuredResponse.model_validate(wire.model_dump(mode='json'))
+
+    def test_latest_activity_clarifications_are_rendered_as_fixed_text(self):
+        compact = compact_fixture()
+        compact['extra_context']['recent_activities'] = [
+            {'id': 'legacy-bike', 'date': '2026-09-25', 'sport': 'cycling', 'duration_s': 3600, 'km': 20}]
+        snapshot = build_snapshot('analiza mi última actividad de bici', compact, now=NOW)
+        catalog = build_catalog(snapshot, 0, 'analiza mi última actividad de bici')
+        answer = render_selection(catalog, select_findings(catalog, 'analiza mi última actividad de bici'))
+        self.assertIn('No puedo ordenar esas actividades con fiabilidad', answer)
+
+    def test_incomplete_latest_coverage_reports_real_provider_periods(self):
+        compact = compact_fixture()
+        compact['extra_context']['recent_activities'] = []
+        compact['extra_context']['activity_provider_status'] = {
+            'garmin': {'status': 'ok', 'records_received': 0, 'last_success_at': NOW.isoformat(),
+                       'period_start': '2026-09-01', 'period_end': '2026-10-03'},
+        }
+        question = 'analiza mi última actividad de bici'
+        snapshot = build_snapshot(question, compact, now=NOW)
+        catalog = build_catalog(snapshot, 0, question)
+        answer = render_selection(catalog, select_findings(catalog, question))
+        self.assertIn('garmin: 2026-09-01 — 2026-10-03', answer)
 
     def test_unknown_sport_or_zero_distance_never_invents_pace(self):
         for sport, distance in [('unknown', 12.01), ('running', 0)]:

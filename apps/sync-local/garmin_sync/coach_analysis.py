@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Context, Decimal, localcontext
 from enum import Enum
 from zoneinfo import ZoneInfo
 
 from .coach_generation_context import ContextSnapshot, freeze
-from .coach_intent import DateSelector
+from .coach_intent import ActivityMetric, CoachIntent, DateSelector
 
 
 class Unit(str, Enum):
@@ -136,6 +136,44 @@ def _covered_empty(snapshot: ContextSnapshot, day: date) -> bool:
         for s in statuses)
 
 
+def _covered_interval(snapshot: ContextSnapshot, start: date, end: date) -> bool:
+    providers = [s for s in snapshot.provider_status.values()
+                 if s.get('scope') == 'activities' and s.get('state') != 'not_configured']
+    return bool(providers) and all(
+        s.get('state') in {'available', 'no_activity'}
+        and (period_start := _day(s.get('period_start'))) is not None
+        and (period_end := _day(s.get('period_end'))) is not None
+        and period_start <= start and period_end >= end
+        and not any(start <= failed <= end for value in (s.get('failed_dates') or ())
+                    if (failed := _day(value)) is not None)
+        for s in providers)
+
+
+def _utc_instant(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _local_context_instant(value, context):
+    if not isinstance(value, str) or not isinstance(context, str) or not context:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        # `started_at` historically carried a synthesized offset for local
+        # wall-clock values. Reapply the declared zone to the wall fields;
+        # only `started_at_utc` is accepted as an absolute source timestamp.
+        return parsed.replace(tzinfo=None).replace(tzinfo=ZoneInfo(context)).astimezone(timezone.utc)
+    except (ValueError, KeyError):
+        return None
+
+
 def build_analysis_facts(snapshot: ContextSnapshot, component_index: int = 0) -> AnalysisFacts:
     """Build immutable facts for this component's observed dates only.
 
@@ -154,22 +192,78 @@ def _build(snapshot, index):
     component = snapshot.intent.components[index]
     today = snapshot.now.astimezone(ZoneInfo('Europe/Madrid')).date()
     limits, facts, matches = set(), [], []
-    dates = tuple(sorted(set(d for d in component.observed_dates if d <= today)))
-    if len(dates) != len(component.observed_dates):
+    observed_dates = tuple(sorted(set(d for d in component.observed_dates if d <= today)))
+    plan_dates = (component.advice_dates if component.intent is CoachIntent.CONSULT_PLAN else ())
+    dates = tuple(sorted(set((*observed_dates, *plan_dates))))
+    latest_refs = None
+    if len(observed_dates) != len(component.observed_dates):
         limits.add('FUTURE_OBSERVATIONS_EXCLUDED')
     if component.selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
+        window_start = today - timedelta(days=120)
         activities = [e for e in snapshot.evidence.values() if e.kind == 'activity'
-                      and (d := _day(e.date)) is not None and d <= today]
-        dates = (max(_day(e.date) for e in activities),) if activities else ()
-        if component.selector is DateSelector.LATEST_ACTIVITY and dates:
-            if sum(_day(e.date) == dates[0] for e in activities) > 1:
+                      and (d := _day(e.local_date or e.date)) is not None
+                      and window_start <= d <= today]
+        if component.selector is DateSelector.LATEST_TRAINING_DAY:
+            dates = (max(_day(e.local_date or e.date) for e in activities),) if activities else ()
+        else:
+            requested_sport = component.sport.value if component.sport else None
+            matching = [e for e in activities if requested_sport is None or e.sport == requested_sport]
+            multisport = [e for e in activities if requested_sport is not None and e.sport == 'multisport']
+            candidates = matching + multisport
+            contexts = {e.time_context for e in candidates if e.time_context}
+            has_local_only = any(_utc_instant(e.started_at_utc) is None for e in candidates)
+            can_compare_local = (not has_local_only or (len(contexts) == 1
+                                and all(e.time_context for e in candidates)))
+            def instant(e):
+                return _utc_instant(e.started_at_utc) or _local_context_instant(e.started_at_local, e.time_context)
+            if matching and (not can_compare_local or any(instant(e) is None for e in matching)):
+                limits.add('INCOMPARABLE_ACTIVITY_TIME')
                 dates = ()
-                limits.add('LATEST_ACTIVITY_AMBIGUOUS')
+            elif matching:
+                ordered = sorted(matching, key=instant, reverse=True)
+                latest = instant(ordered[0])
+                if len(ordered) > 1 and instant(ordered[1]) == latest:
+                    limits.add('INCOMPARABLE_ACTIVITY_TIME')
+                    dates = ()
+                elif any(instant(e) is not None and instant(e) > latest for e in multisport):
+                    limits.add('MULTISPORT_ACTIVITY_CONFIRMATION')
+                    dates = ()
+                else:
+                    selected = ordered[0]
+                    dates = (_day(selected.local_date or selected.date),)
+                    latest_refs = {selected.id}
+            elif multisport:
+                limits.add('MULTISPORT_ACTIVITY_CONFIRMATION')
+                dates = ()
+            elif _covered_interval(snapshot, window_start, today):
+                limits.add(f'{requested_sport.upper()}_NOT_RECORDED_IN_WINDOW' if requested_sport else 'ACTIVITY_NOT_RECORDED_IN_WINDOW')
+                dates = ()
+            else:
+                limits.add('DATA_COVERAGE_INCOMPLETE')
+                dates = ()
+    if component.selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
+        observed_dates = dates
     if not dates:
         limits.add('NO_OBSERVED_SCOPE')
-    evidence = [e for e in snapshot.evidence.values() if _day(e.date) in dates and e.kind != 'plan']
+    evidence = [e for e in snapshot.evidence.values() if _day(e.local_date or e.date) in observed_dates
+                and e.kind != 'plan' and (component.metric is None or e.kind == 'activity')
+                and (latest_refs is None or e.id in latest_refs)]
     evidence.sort(key=lambda e: e.id)
-    sessions = {k: s for k, s in snapshot.sessions.items() if _day(s.get('date')) in dates}
+    sessions = {k: s for k, s in snapshot.sessions.items() if component.metric is None
+                and _day(s.get('date')) in dates
+                and (component.intent is not CoachIntent.CONSULT_PLAN
+                     or s.get('status') in (None, 'planned') and not s.get('completed_activity_id'))}
+    if component.intent is CoachIntent.CONSULT_PLAN and component.sport:
+        requested_sport = component.sport.value
+        scoped_sessions = [s for s in sessions.values() if _day(s.get('date')) in dates]
+        unknown_sport = [s for s in scoped_sessions if not s.get('sport')]
+        sessions = {k: s for k, s in sessions.items()
+                    if s.get('sport') == requested_sport or not s.get('sport')}
+        if unknown_sport:
+            limits.add('PLAN_SESSION_SPORT_UNKNOWN')
+        elif 'sessions' in snapshot.plan and not any(
+                s.get('sport') == requested_sport for s in scoped_sessions):
+            limits.add('PLAN_SPORT_NOT_PLANNED')
     by_key = {}
 
     def add(ref, metric, value, unit, day, sport, source, freshness,
@@ -196,6 +290,8 @@ def _build(snapshot, index):
 
     def raw(ref, values, day, sport, source, freshness, records=()):
         for metric, unit in _UNITS.items():
+            if metric == 'max_hr':
+                continue
             value = values.get(metric)
             if value is None:
                 continue
@@ -213,6 +309,28 @@ def _build(snapshot, index):
 
     for e in evidence:
         raw(e.id, e.facts, _day(e.date), e.sport, e.source, e.freshness, e.source_records)
+        if component.metric is ActivityMetric.MAX_HR and e.kind == 'activity':
+            source_rows = list(e.source_records)
+            if not source_rows:
+                source_rows = [{'source': e.source, 'source_activity_id': e.id.removeprefix('activity:'),
+                                'metrics': {'max_hr': e.facts.get('max_hr')}}]
+            valid_values = 0
+            for source_row in source_rows:
+                source = source_row.get('source') or e.source
+                metrics = source_row.get('metrics') or {}
+                value = metrics.get('max_hr')
+                if value is None and source == e.source:
+                    value = e.facts.get('max_hr')
+                number = _number(value)
+                if number is None or not Decimal('30') <= number <= Decimal('250'):
+                    continue
+                source_id = str(source_row.get('source_activity_id') or e.id.removeprefix('activity:'))
+                identifier = f'c{index}:{e.id}:max_hr:{source}:{source_id}'
+                facts.append(AnalysisFact(identifier, 'max_hr', number, Unit.BPM, _day(e.date),
+                    e.sport, source, (e.id,), e.freshness, freeze((source_row,))))
+                valid_values += 1
+            if not valid_values:
+                limits.add('ACTIVITY_METRIC_UNAVAILABLE')
         duration = by_key.get(f'c{index}:{e.id}:duration_s')
         distance = by_key.get(f'c{index}:{e.id}:distance_km')
         if e.kind == 'activity' and e.sport in {'running', 'walking'} and duration and distance:
@@ -316,18 +434,21 @@ def _build(snapshot, index):
                           c.reference, c.outside_band, c.operand_refs, delta, percent))
         return tuple(result)
 
-    for day in dates:
-        activities = [e for e in evidence if e.kind == 'activity' and _day(e.date) == day]
-        keys = [k for k, s in sorted(sessions.items()) if _day(s.get('date')) == day]
-        sports = {e.sport for e in activities} | {sessions[k].get('sport') for k in keys}
-        if len({s for s in sports if s}) > 1:
-            limits.add('MULTISPORT_COMPONENTS_SEPARATE')
-        if not activities:
-            limits.add('ACTIVITY_NOT_RECORDED' if _covered_empty(snapshot, day) else 'DATA_COVERAGE_INCOMPLETE')
-        for sport in sorted(sports or {None}, key=lambda s: s or ''):
-            match(day, sport, [e for e in activities if e.sport == sport],
-                  [k for k in keys if sessions[k].get('sport') == sport])
-    if dates and any(s.get('state') in {'provider_error', 'partial', 'stale'}
+    if component.intent is not CoachIntent.CONSULT_PLAN:
+        for day in observed_dates:
+            activities = [e for e in evidence if e.kind == 'activity' and _day(e.date) == day]
+            keys = [k for k, s in sorted(sessions.items()) if _day(s.get('date')) == day]
+            sports = {e.sport for e in activities} | {sessions[k].get('sport') for k in keys}
+            if len({s for s in sports if s}) > 1:
+                limits.add('MULTISPORT_COMPONENTS_SEPARATE')
+            if not activities:
+                limits.add('ACTIVITY_NOT_RECORDED' if _covered_empty(snapshot, day) else 'DATA_COVERAGE_INCOMPLETE')
+            if component.metric is not None:
+                continue
+            for sport in sorted(sports or {None}, key=lambda s: s or ''):
+                match(day, sport, [e for e in activities if e.sport == sport],
+                      [k for k in keys if sessions[k].get('sport') == sport])
+    if observed_dates and any(s.get('state') in {'provider_error', 'partial', 'stale'}
                      for s in snapshot.provider_status.values()):
         limits.add('DATA_COVERAGE_INCOMPLETE')
     return AnalysisFacts(snapshot.id, index, dates, tuple(facts), tuple(matches),

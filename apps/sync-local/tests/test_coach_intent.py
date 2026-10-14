@@ -8,6 +8,8 @@ from garmin_sync.coach_intent import (
     DateSelector,
     IntentComponent,
     IntentResolution,
+    SportFilter,
+    ActivityMetric,
     DateResolutionScope,
     InvalidDateError,
     resolve_dates,
@@ -17,6 +19,78 @@ from garmin_sync.coach_intent import (
 
 
 class IntentContractTests(unittest.TestCase):
+    def test_sport_filter_is_limited_to_activity_day_or_plan(self):
+        for intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY, CoachIntent.CONSULT_PLAN):
+            IntentComponent(intent, sport=SportFilter.CYCLING)
+        for intent in (CoachIntent.RECOMMEND_NEXT, CoachIntent.REQUEST_CHANGE, CoachIntent.CLARIFY):
+            with self.subTest(intent=intent), self.assertRaises(ValueError):
+                IntentComponent(intent, sport=SportFilter.CYCLING,
+                                clarification_code=ClarificationCode.NO_SCOPE if intent is CoachIntent.CLARIFY else None)
+
+    def test_metric_requires_activity_scope_and_supported_values(self):
+        IntentComponent(CoachIntent.ANALYZE_ACTIVITY, DateSelector.BY_DATE,
+                        observed_dates=(date(2026, 10, 13),), metric=ActivityMetric.MAX_HR)
+        IntentComponent(CoachIntent.ANALYZE_ACTIVITY, DateSelector.LATEST_ACTIVITY,
+                        metric=ActivityMetric.MAX_HR)
+        for intent, selector in ((CoachIntent.CONSULT_PLAN, DateSelector.BY_DATE),
+                                 (CoachIntent.ANALYZE_DAY, DateSelector.BY_DATE),
+                                 (CoachIntent.ANALYZE_ACTIVITY, DateSelector.LATEST_TRAINING_DAY)):
+            with self.subTest(intent=intent, selector=selector), self.assertRaises(ValueError):
+                IntentComponent(intent, selector, metric=ActivityMetric.MAX_HR)
+        with self.assertRaises(ValueError):
+            IntentComponent(CoachIntent.ANALYZE_ACTIVITY, DateSelector.BY_DATE,
+                            metric=ActivityMetric.MAX_HR)
+        with self.assertRaises((TypeError, ValueError)):
+            IntentComponent(CoachIntent.ANALYZE_ACTIVITY, metric="avg_hr")
+
+    def test_new_clarification_codes_have_fixed_user_safe_templates(self):
+        codes = (ClarificationCode.UNSUPPORTED_METRIC, ClarificationCode.INCOMPARABLE_ACTIVITY_TIME,
+                 ClarificationCode.MULTISPORT_ACTIVITY_CONFIRMATION,
+                 ClarificationCode.PLAN_SESSION_SPORT_UNKNOWN, ClarificationCode.RACE_EVENT_AMBIGUOUS)
+        for code in codes:
+            prompt = clarification_prompt(code)
+            self.assertTrue(prompt)
+            self.assertNotIn("{", prompt)
+
+    def test_max_hr_phrases_are_typed_and_average_hr_is_clarified(self):
+        for phrase in ("¿Cuáles fueron mis pulsaciones máximas en la actividad de carrera de hoy?",
+                       "¿Cuál fue mi FC máxima en la carrera de hoy?"):
+            component = resolve_intent(phrase, now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
+            self.assertEqual(component.intent, CoachIntent.ANALYZE_ACTIVITY)
+            self.assertEqual(component.metric, ActivityMetric.MAX_HR)
+        unsupported = resolve_intent("¿Cuál fue mi pulso medio en la carrera de hoy?",
+                                     now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
+        self.assertEqual(unsupported.clarification_code, ClarificationCode.UNSUPPORTED_METRIC)
+        self.assertIn('pulso máximo registrado', clarification_prompt(unsupported.clarification_code))
+        self.assertEqual(resolve_intent("mi pulso medio", now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0].clarification_code,
+                         ClarificationCode.UNSUPPORTED_METRIC)
+        theoretical = resolve_intent("mi pulso máximo teórico", now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
+        self.assertIsNone(theoretical.metric)
+
+    def test_text_sport_synonyms_are_attached_only_to_supported_intents(self):
+        now = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
+        cases = {
+            "Analiza mi salida en bici de hoy": SportFilter.CYCLING,
+            "Analiza la ruta en bicicleta de hoy": SportFilter.CYCLING,
+            "¿Qué tal mi rodaje de hoy?": SportFilter.RUNNING,
+            "¿Qué tal running hoy?": SportFilter.RUNNING,
+            "¿Qué tal mi natación de hoy?": SportFilter.SWIMMING,
+            "Analiza la actividad de carrera de hoy": SportFilter.RUNNING,
+            "Analiza mi sesión de fuerza de hoy": SportFilter.STRENGTH,
+            "¿Cuál fue mi FC máxima en la carrera de hoy?": SportFilter.RUNNING,
+        }
+        for question, expected in cases.items():
+            with self.subTest(question=question):
+                component = resolve_intent(question, now=now).components[0]
+                self.assertEqual(component.sport, expected)
+        event = resolve_intent("la carrera de Málaga", now=now).components[0]
+        self.assertIsNone(event.sport)
+        self.assertEqual(event.clarification_code, ClarificationCode.RACE_EVENT_AMBIGUOUS)
+        event_metric = resolve_intent("FC máxima en la carrera de Málaga", now=now).components[0]
+        self.assertEqual(event_metric.clarification_code, ClarificationCode.RACE_EVENT_AMBIGUOUS)
+        recommendation = resolve_intent("¿Qué bici me recomiendas para mañana?", now=now).components[0]
+        self.assertIsNone(recommendation.sport)
+
     def test_dates_are_date_objects_and_resolution_aggregates_them(self):
         observed = date(2026, 10, 4)
         advice = date(2026, 10, 5)
@@ -205,6 +279,48 @@ class IntentClassificationTests(unittest.TestCase):
         self.assertEqual(activity.selector, DateSelector.LATEST_ACTIVITY)
         self.assertEqual(training_day.selector, DateSelector.LATEST_TRAINING_DAY)
 
+    def test_performed_latest_session_and_future_planned_session_are_distinct(self):
+        performed = self.resolve("mi última sesión de bici")
+        planned = self.resolve("qué sesión de bici tengo mañana")
+        self.assertEqual(performed.primary_intent, CoachIntent.ANALYZE_ACTIVITY)
+        self.assertEqual(performed.selector, DateSelector.LATEST_ACTIVITY)
+        self.assertEqual(performed.components[0].sport, SportFilter.CYCLING)
+        self.assertEqual(planned.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(planned.advice_dates, (date(2026, 10, 5),))
+        self.assertEqual(planned.components[0].sport, SportFilter.CYCLING)
+        generic_plan = self.resolve("qué sesión tengo mañana")
+        self.assertEqual(generic_plan.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(generic_plan.advice_dates, (date(2026, 10, 5),))
+
+    def test_past_performed_session_and_future_planned_session_are_distinct(self):
+        performed = self.resolve("la sesión que hice ayer")
+        planned = self.resolve("la sesión planificada para mañana")
+        self.assertEqual(performed.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(performed.observed_dates, (date(2026, 10, 3),))
+        self.assertEqual(planned.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(planned.advice_dates, (date(2026, 10, 5),))
+
+    def test_nominal_dated_activity_is_observation_not_plan(self):
+        result = self.resolve("la actividad de ciclismo del día 2 de octubre")
+        self.assertEqual(result.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(result.observed_dates, (date(2026, 10, 2),))
+        self.assertEqual(result.components[0].sport, SportFilter.CYCLING)
+
+    def test_bare_day_is_past_only_for_analysis_and_next_occurrence_for_plan(self):
+        analysis_future = self.resolve("analiza la actividad de bici del día 14")
+        analysis_past = self.resolve("analiza la actividad de bici del día 2")
+        plan = self.resolve("qué sesión tengo el día 14")
+        self.assertEqual(analysis_future.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(analysis_future.components[0].clarification_code, ClarificationCode.NO_SCOPE)
+        self.assertEqual(analysis_past.observed_dates, (date(2026, 10, 2),))
+        self.assertEqual(plan.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(plan.advice_dates, (date(2026, 10, 14),))
+
+    def test_relative_and_conflicting_explicit_dates_are_clarified(self):
+        result = self.resolve("qué sesión tengo mañana, el 10 de octubre")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(result.components[0].clarification_code, ClarificationCode.CONFLICTING_SCOPE)
+
     def test_plan_weekday_and_past_month_dates_follow_intent(self):
         future_plan = self.resolve("qué toca el domingo")
         past_plan = self.resolve("qué tocaba el 3 de octubre")
@@ -365,7 +481,14 @@ class ClarificationTests(unittest.TestCase):
             ClarificationCode.PAST_CHANGE_DATE: "cambia la sesión de ayer",
             ClarificationCode.CONFLICTING_SCOPE: "analiza mi última actividad de ayer",
         }
-        self.assertEqual(set(questions), set(ClarificationCode) - {ClarificationCode.CHANGE_NOT_AUTHORIZED})
+        self.assertEqual(set(questions), set(ClarificationCode) - {
+            ClarificationCode.CHANGE_NOT_AUTHORIZED,
+            ClarificationCode.UNSUPPORTED_METRIC,
+            ClarificationCode.INCOMPARABLE_ACTIVITY_TIME,
+            ClarificationCode.MULTISPORT_ACTIVITY_CONFIRMATION,
+            ClarificationCode.PLAN_SESSION_SPORT_UNKNOWN,
+            ClarificationCode.RACE_EVENT_AMBIGUOUS,
+        })
 
         for code, question in questions.items():
             with self.subTest(code=code):

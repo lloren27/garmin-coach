@@ -4,7 +4,7 @@ from datetime import date
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from garmin_sync.zepp_activity_provider import ZeppActivityProvider
+from garmin_sync.zepp_activity_provider import ZeppActivityProvider, _sport
 
 
 RAW_RUN = {
@@ -47,6 +47,24 @@ def response(payload: dict, status_code: int = 200) -> Mock:
 
 
 class ZeppActivityProviderTests(TestCase):
+    def test_structured_codes_precede_whole_word_title_fallback(self) -> None:
+        self.assertEqual(_sport("bridge", sport_mode=7), "running")
+        self.assertEqual(_sport("prune", type_code=52), "strength")
+        self.assertEqual(_sport("bridge"), "other")
+        self.assertEqual(_sport("prune"), "other")
+        self.assertEqual(_sport("bridge ride"), "cycling")
+        self.assertEqual(_sport("bridge"), "other")
+
+    def test_zepp_title_fallback_matches_complete_words_and_supported_sports(self) -> None:
+        cases = {
+            "Morning Run": "running", "Correr": "running", "Rodaje": "running",
+            "Bici de interior": "cycling", "Rodillo": "cycling", "Virtual Ride": "cycling",
+            "Natación en piscina": "swimming", "Open Water Swim": "swimming",
+            "Sesión de fuerza": "strength",
+        }
+        for title, normalized in cases.items():
+            with self.subTest(title=title):
+                self.assertEqual(_sport(title), normalized)
     @patch("garmin_sync.zepp_activity_provider.requests.get")
     def test_normalizes_zero_distance_strength_session_without_pace(self, get: Mock) -> None:
         get.return_value = response({"code": 1, "data": {"summary": [RAW_STRENGTH]}})
@@ -72,6 +90,9 @@ class ZeppActivityProviderTests(TestCase):
         self.assertEqual(activities[0]["source"], "zepp")
         self.assertEqual(activities[0]["source_activity_id"], "track-42")
         self.assertEqual(activities[0]["sport"], "running")
+        self.assertEqual(activities[0]['time_context'], 'Europe/Madrid')
+        self.assertIsNotNone(activities[0]['started_at_utc'])
+        self.assertEqual(activities[0]['local_date'], activities[0]['date'])
         self.assertEqual(activities[0]["km"], 8.02)
         self.assertEqual(activities[0]["duration_s"], 2518)
         self.assertEqual(activities[0]["provider_exercise_load"], {"value": 92, "source": "zepp"})
@@ -131,6 +152,17 @@ class ZeppActivityProviderTests(TestCase):
 
         self.assertEqual(len(activities), 3)
         self.assertTrue(all(item["date"] == "2026-09-24" for item in activities))
+
+    @patch("garmin_sync.zepp_activity_provider.requests.get")
+    def test_naive_iso_end_keeps_local_context_without_utc(self, get: Mock) -> None:
+        naive = {**RAW_RUN, 'trackid': 'naive-iso', 'end_time': '2026-09-24T08:06:00'}
+        get.return_value = response({'code': 1, 'data': {'summary': [naive]}})
+        activities, _status = ZeppActivityProvider('secret', '42', timezone_name='Europe/Madrid').fetch_activities(
+            date(2026, 9, 24), date(2026, 9, 24))
+        self.assertEqual(len(activities), 1)
+        self.assertNotIn('started_at_utc', activities[0])
+        self.assertEqual(activities[0]['time_context'], 'Europe/Madrid')
+        self.assertEqual(activities[0]['local_date'], activities[0]['date'])
 
 
 if __name__ == "__main__":

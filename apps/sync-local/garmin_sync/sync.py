@@ -67,22 +67,34 @@ def activity_type(activity: dict[str, Any]) -> str:
 
 
 def is_run(activity: dict[str, Any]) -> bool:
-    kind = activity_type(activity)
-    name = str(activity.get("activityName") or "").lower()
-    return "running" in kind or "run" in name or "correr" in name or "carrera" in name
+    return sport(activity) == "running"
 
 
 def sport(activity: dict[str, Any]) -> str:
-    kind = activity_type(activity)
-    name = str(activity.get("activityName") or "").lower()
-    if is_run(activity):
-        return "running"
-    if any(token in kind for token in ("cycling", "biking", "indoor_cycling")) or any(
-        token in name for token in ("cycling", "ciclismo", "bici", "bike")
-    ):
-        return "cycling"
-    if "strength" in kind or "strength" in name or "fuerza" in name:
-        return "strength"
+    activity_type_value = activity.get("activityType")
+    kinds = []
+    if isinstance(activity_type_value, dict):
+        kinds = [str(activity_type_value.get(key) or "").strip().lower()
+                 for key in ("typeKey", "parentTypeKey")]
+    else:
+        kinds = [str(activity_type_value or "").strip().lower()]
+    multisport = {"multisport", "multi_sport", "triathlon", "duathlon", "brick"}
+    running = {"running", "trail_running", "track_running", "treadmill_running", "run"}
+    cycling = {"cycling", "road_biking", "mountain_biking", "gravel_cycling", "indoor_cycling",
+               "virtual_ride", "bike", "cycling_virtual"}
+    swimming = {"lap_swimming", "open_water_swimming", "swimming", "pool_swimming"}
+    strength = {"strength_training", "strength"}
+    for kind in kinds:
+        if kind in multisport:
+            return "multisport"
+        if kind in running:
+            return "running"
+        if kind in cycling:
+            return "cycling"
+        if kind in swimming:
+            return "swimming"
+        if kind in strength:
+            return "strength"
     return "other"
 
 
@@ -129,15 +141,17 @@ def get_activities(client: Garmin) -> list[dict[str, Any]]:
 def normalize_activities(activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized = []
     for activity in activities:
-        run_date = parse_date(activity.get("startTimeLocal") or activity.get("startTimeGMT"))
+        local_date = _activity_local_date(activity)
+        run_date = (date.fromisoformat(local_date) if local_date else
+                    parse_date(activity.get('startTimeLocal') or activity.get('startTimeGMT')))
         distance_m = number(activity.get("distance"), activity.get("sumDistance"))
         duration_s = number(activity.get("duration"), activity.get("movingDuration"))
         if not run_date or not duration_s or duration_s < 300:
             continue
         distance_km = round((distance_m or 0) / 1000, 2)
-        normalized.append(
-            compact_activity(activity, run_date, distance_km, duration_s, activity_started_at(activity))
-        )
+        normalized.append(compact_activity(activity, run_date, distance_km, duration_s,
+            activity_started_at(activity), started_at_utc=_activity_started_at_utc(activity),
+            local_date=local_date, time_context=MADRID_TZ.key if local_date else None))
     return sorted(normalized, key=lambda item: (item.get("started_at", item["date"]), item["id"]))
 
 
@@ -156,12 +170,46 @@ def activity_started_at(activity: dict[str, Any]) -> str:
     return started.astimezone(MADRID_TZ).isoformat()
 
 
+def _activity_local_date(activity: dict[str, Any]) -> str | None:
+    local = activity.get('startTimeLocal')
+    if isinstance(local, str) and local:
+        try:
+            return date.fromisoformat(local[:10]).isoformat()
+        except ValueError:
+            return None
+    gmt = activity.get('startTimeGMT')
+    if not isinstance(gmt, str) or not gmt:
+        return None
+    try:
+        parsed = datetime.fromisoformat(gmt.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(MADRID_TZ).date().isoformat()
+
+
+def _activity_started_at_utc(activity: dict[str, Any]) -> str | None:
+    raw = activity.get('startTimeGMT')
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
 def compact_activity(
     activity: dict[str, Any],
     activity_date: date,
     distance_km: float,
     duration_s: float,
     started_at: str = "",
+    *, started_at_utc: str | None = None, local_date: str | None = None,
+    time_context: str | None = None,
 ) -> dict[str, Any]:
     item = {
         "id": str(activity.get("activityId") or ""),
@@ -184,6 +232,12 @@ def compact_activity(
         "avg_power": activity.get("averagePower") or activity.get("avgPower"),
         "normalized_power": activity.get("normPower") or activity.get("normalizedPower"),
     }
+    if started_at_utc:
+        item['started_at_utc'] = started_at_utc
+    if local_date:
+        item['local_date'] = local_date
+    if time_context:
+        item['time_context'] = time_context
     if distance_km > 0:
         item["pace"] = pace(distance_km, duration_s)
         item["avg_speed_kmh"] = round(distance_km / (duration_s / 3600), 1)
@@ -226,7 +280,10 @@ def summarize_normalized(activities: list[dict[str, Any]], profile: dict[str, An
             }
             for week, items in sorted(by_week.items())
         ],
-        "activities": normalized[-25:],
+        # Keep the whole 120-day normalized window so sport-specific "latest"
+        # queries (for example a bike ride not present among the last 25 items)
+        # can be resolved without silently narrowing coverage.
+        "activities": normalized,
         "today": summarize_today(normalized),
         "week": summarize_current_week(normalized),
         "sports": {

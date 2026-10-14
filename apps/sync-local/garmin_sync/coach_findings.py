@@ -9,8 +9,9 @@ import unicodedata
 
 from .coach_analysis import AnalysisFacts, MatchState, build_analysis_facts
 from .coach_generation_context import freeze
+from .coach_intent import ActivityMetric, ClarificationCode, CoachIntent, clarification_prompt
 
-SELECTOR = freeze(json.loads(Path(__file__).with_name('coach_selector_v1.json').read_text()))
+SELECTOR = freeze(json.loads(Path(__file__).with_name('coach_selector_v2.json').read_text()))
 FOLLOW_UPS = freeze({
     'CLARIFY_SYMPTOM_CONTEXT': '¿La molestia continúa y cuándo aparece?',
     'CONFIRM_PLAN_MATCH': '¿Puedes confirmar qué actividad corresponde a la sesión prevista?',
@@ -167,6 +168,61 @@ def build_catalog(snapshot, component_index, question):
                     comp.operand_refs + (tuple(f.id for f in duration_facts) if comp.metric == 'distance' else ()), match.date,
                     certainty='candidate' if dependency else 'confirmed', dependencies=dependency)
 
+    if component.intent is CoachIntent.CONSULT_PLAN:
+        if 'PLAN_SESSION_SPORT_UNKNOWN' in facts.limitations:
+            add('PLAN_SESSION_SPORT_UNKNOWN',
+                clarification_prompt(ClarificationCode.PLAN_SESSION_SPORT_UNKNOWN), mandatory=True)
+        elif 'PLAN_SPORT_NOT_PLANNED' in facts.limitations:
+            sport = component.sport.value if component.sport else 'requested'
+            labels = {'cycling': 'ciclismo', 'running': 'carrera', 'swimming': 'natación', 'strength': 'fuerza'}
+            label = labels.get(sport, sport)
+            days = ', '.join(d.isoformat() for d in component.advice_dates or component.observed_dates)
+            add('PLAN_SPORT_NOT_PLANNED',
+                f'El plan disponible no muestra una sesión de {label} para {days}.', mandatory=True)
+        else:
+            plan_facts = [f for f in facts.facts if f.source == 'training_plan']
+            sessions_by_id = {f'session:{key}': session for key, session in snapshot.sessions.items()}
+            details = []
+            sport_labels = {'cycling': 'ciclismo', 'running': 'carrera', 'swimming': 'natación',
+                            'strength': 'fuerza', 'walking': 'caminata', 'multisport': 'multideporte'}
+            for ref in sorted({ref for fact in plan_facts for ref in fact.source_refs}):
+                session = sessions_by_id.get(ref)
+                if not session:
+                    continue
+                sport = sport_labels.get(session.get('sport'), session.get('sport')) or 'actividad sin deporte indicado'
+                parts = [f'{sport} ({session.get("date")})']
+                low, high = session.get('duration_min'), session.get('duration_max')
+                if low is not None and high is not None:
+                    parts.append(f'{number(low)}–{number(high)} min')
+                elif session.get('duration_min') is not None:
+                    parts.append(f'{number(session["duration_min"])} min')
+                if session.get('distance_km') is not None:
+                    parts.append(f'{number(session["distance_km"])} km')
+                if session.get('session_type'):
+                    parts.append(str(session['session_type']).replace('_', ' '))
+                details.append(', '.join(parts))
+            if details:
+                add('PLAN_SESSION_AVAILABLE', 'Sesión' + ('es' if len(details) > 1 else '') +
+                    ' del plan: ' + '; '.join(details) + '.',
+                    sources=tuple(sorted({ref for fact in plan_facts for ref in fact.source_refs})), mandatory=True)
+
+    if component.metric is ActivityMetric.MAX_HR:
+        metric_facts = [fact for fact in facts.facts if fact.metric == 'max_hr']
+        grouped = {}
+        for fact in metric_facts:
+            grouped.setdefault(fact.source_refs[0], []).append(fact)
+        provider_names = {'garmin': 'Garmin', 'strava': 'Strava', 'zepp': 'Zepp'}
+        for activity_ref, values in sorted(grouped.items()):
+            rendered = '; '.join(
+                f'{number(fact.value, 0)} lpm ({provider_names.get(fact.source, fact.source)})'
+                for fact in sorted(values, key=lambda item: (item.source, str(item.value)))
+            )
+            add('ACTIVITY_METRIC_VALUE', 'Pulso máximo registrado: ' + rendered + '.',
+                tuple(fact.id for fact in values), values[0].date, (activity_ref,), mandatory=True)
+        if not metric_facts and 'ACTIVITY_METRIC_UNAVAILABLE' in facts.limitations:
+            add('ACTIVITY_METRIC_UNAVAILABLE',
+                'No hay un pulso máximo válido registrado para esta actividad.', mandatory=True)
+
     for fact in facts.facts:
         if fact.metric == 'pace_s_per_km':
             add('PACE_BLOCKS_NOT_COMPARABLE', f'Ritmo medio: {duration(fact.value)} min/km ({fact.source}, {fact.date.isoformat()}). '
@@ -186,9 +242,35 @@ def build_catalog(snapshot, component_index, question):
         text = _activity_summary(activities)
         add('MULTISPORT_COMPONENTS_SEPARATE', text + '. Las cargas de deportes y escalas distintas se mantienen separadas; no se suman TRIMP, TSS y carga muscular.', tuple(f.id for f in activities))
     if 'DATA_COVERAGE_INCOMPLETE' in facts.limitations:
-        add('DATA_COVERAGE_INCOMPLETE', 'La cobertura de datos es incompleta; falta información para valorar la actividad. ¿Puedes sincronizar o aportar el registro de actividad?', mandatory=True)
+        periods = []
+        if component.selector.value == 'latest_activity':
+            for key, status in sorted(facts.provider_status.items()):
+                if status.get('scope') != 'activities' or status.get('state') == 'not_configured':
+                    continue
+                start, end = status.get('period_start'), status.get('period_end')
+                if start or end:
+                    periods.append(f'{key.split(".", 1)[0]}: {start or "fecha no disponible"} — {end or "fecha no disponible"}')
+        text = 'La cobertura de datos es incompleta; falta información para valorar la actividad.'
+        if periods:
+            text += ' Periodos disponibles: ' + '; '.join(periods) + '.'
+        text += ' ¿Puedes sincronizar o aportar el registro de actividad?'
+        add('DATA_COVERAGE_INCOMPLETE', text, mandatory=True)
     if 'ACTIVITY_NOT_RECORDED' in facts.limitations:
         add('ACTIVITY_NOT_RECORDED', 'No consta actividad en el ámbito con cobertura comprobada.', mandatory=True)
+    if 'INCOMPARABLE_ACTIVITY_TIME' in facts.limitations:
+        add('INCOMPARABLE_ACTIVITY_TIME', clarification_prompt(ClarificationCode.INCOMPARABLE_ACTIVITY_TIME),
+            mandatory=True)
+    if 'MULTISPORT_ACTIVITY_CONFIRMATION' in facts.limitations:
+        add('MULTISPORT_ACTIVITY_CONFIRMATION',
+            clarification_prompt(ClarificationCode.MULTISPORT_ACTIVITY_CONFIRMATION), mandatory=True)
+    for code in facts.limitations:
+        if code.endswith('_NOT_RECORDED_IN_WINDOW'):
+            sport = code.removesuffix('_NOT_RECORDED_IN_WINDOW').lower()
+            labels = {'cycling': 'ciclismo', 'running': 'carrera', 'swimming': 'natación',
+                      'strength': 'fuerza', 'activity': 'actividad'}
+            label = labels.get(sport, 'actividad')
+            add(code, f'No hay {label} registrada en los últimos 120 días; no puedo confirmar una sesión más reciente.',
+                mandatory=True)
     # Context for advice keeps its original evidence date; it never becomes an
     # observation on tomorrow's date. Only explicit recorded symptoms qualify.
     symptoms = [e for e in snapshot.evidence.values() if e.kind == 'checkin'
@@ -220,6 +302,9 @@ def build_catalog(snapshot, component_index, question):
 
 def _follow_up(findings, question=''):
     codes = {f.code for f in findings}
+    if codes & {'PLAN_SESSION_AVAILABLE', 'PLAN_SPORT_NOT_PLANNED', 'PLAN_SESSION_SPORT_UNKNOWN',
+                'ACTIVITY_METRIC_VALUE', 'ACTIVITY_METRIC_UNAVAILABLE'}:
+        return None
     if codes & {'SYMPTOM_REPORTED', 'SESSION_SAFETY_NOT_ASSESSABLE'}:
         return 'CLARIFY_SYMPTOM_CONTEXT'
     if codes & {'PLAN_MATCH_UNCONFIRMED', 'PLAN_MATCH_AMBIGUOUS', 'PLAN_ACTIVITY_MAGNITUDE_MISMATCH'}:
@@ -248,7 +333,7 @@ def select_findings(catalog, question):
         selected.extend(d for d in by_id[identifier].dependencies if d not in selected)
     selected.extend(i for i in catalog.required_ids if i not in selected)
     chosen = [by_id[i] for i in selected]
-    result = AnalysisSelection('1', catalog.facts.snapshot_id, catalog.facts.component_index,
+    result = AnalysisSelection('2', catalog.facts.snapshot_id, catalog.facts.component_index,
                                tuple(selected), _follow_up(chosen, question))
     validate_selection(catalog, result)
     return result
@@ -256,7 +341,7 @@ def select_findings(catalog, question):
 
 def validate_selection(catalog, selection):
     by_id = {f.id: f for f in catalog.findings}
-    if (selection.schema_version != '1' or selection.snapshot_id != catalog.facts.snapshot_id
+    if (selection.schema_version != '2' or selection.snapshot_id != catalog.facts.snapshot_id
             or selection.component_index != catalog.facts.component_index):
         raise ValueError('SELECTION_SCOPE_INVALID')
     ids = selection.finding_ids

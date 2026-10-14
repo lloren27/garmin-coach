@@ -27,6 +27,17 @@ class DateSelector(str, Enum):
     LATEST_TRAINING_DAY = "latest_training_day"
 
 
+class SportFilter(str, Enum):
+    RUNNING = "running"
+    CYCLING = "cycling"
+    SWIMMING = "swimming"
+    STRENGTH = "strength"
+
+
+class ActivityMetric(str, Enum):
+    MAX_HR = "max_hr"
+
+
 class ClarificationCode(str, Enum):
     NO_SCOPE = "no_scope"
     CONTRADICTORY_OPERATION = "contradictory_operation"
@@ -36,6 +47,11 @@ class ClarificationCode(str, Enum):
     PAST_CHANGE_DATE = "past_change_date"
     CONFLICTING_SCOPE = "conflicting_scope"
     CHANGE_NOT_AUTHORIZED = "change_not_authorized"
+    UNSUPPORTED_METRIC = "unsupported_metric"
+    INCOMPARABLE_ACTIVITY_TIME = "incomparable_activity_time"
+    MULTISPORT_ACTIVITY_CONFIRMATION = "multisport_activity_confirmation"
+    PLAN_SESSION_SPORT_UNKNOWN = "plan_session_sport_unknown"
+    RACE_EVENT_AMBIGUOUS = "race_event_ambiguous"
 
 
 CLARIFICATION_TEMPLATES = MappingProxyType({
@@ -47,6 +63,11 @@ CLARIFICATION_TEMPLATES = MappingProxyType({
     ClarificationCode.PAST_CHANGE_DATE: "Esa sesión ya pasó. ¿Quieres consultar esa fecha o pedir un cambio futuro?",
     ClarificationCode.CONFLICTING_SCOPE: "¿Quieres consultar la última actividad o las actividades de una fecha concreta?",
     ClarificationCode.CHANGE_NOT_AUTHORIZED: "Para cambiar el plan hace falta autorización. No se ha aplicado ningún cambio.",
+    ClarificationCode.UNSUPPORTED_METRIC: "Solo puedo consultar el pulso máximo registrado de una actividad. ¿Quieres esa métrica?",
+    ClarificationCode.INCOMPARABLE_ACTIVITY_TIME: "No puedo ordenar esas actividades con fiabilidad. ¿Cuál quieres que analice?",
+    ClarificationCode.MULTISPORT_ACTIVITY_CONFIRMATION: "La actividad más reciente es multideporte y podría incluir esa disciplina. ¿Quieres que analice ese registro?",
+    ClarificationCode.PLAN_SESSION_SPORT_UNKNOWN: "El plan no indica el deporte de esa sesión. ¿Confirmas que te refieres a ella?",
+    ClarificationCode.RACE_EVENT_AMBIGUOUS: "¿Te refieres a la competición o a una actividad de carrera?",
 })
 
 
@@ -155,7 +176,7 @@ def resolve_dates(
 
     consume(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{4}\b", explicit_numeric)
 
-    month_pattern = r"\b(?:el\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?\b"
+    month_pattern = r"\b(?:(?:el\s+)?dia\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?\b"
 
     def named_month(match):
         day = int(match.group(1))
@@ -164,6 +185,27 @@ def resolve_dates(
         return [_checked_date(year, month, day)] if year else [_month_occurrence(day, month, today, scope)]
 
     consume(month_pattern, named_month)
+
+    def bare_day(match):
+        day = int(match.group(1))
+        year, month = today.year, today.month
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            return []
+        if scope is DateResolutionScope.OBSERVED:
+            return [candidate] if candidate <= today else []
+        if candidate <= today:
+            month += 1
+            if month == 13:
+                year, month = year + 1, 1
+            try:
+                candidate = date(year, month, day)
+            except ValueError:
+                return []
+        return [candidate]
+
+    consume(r"\b(?:el\s+)?dia\s+(\d{1,2})\b", bare_day)
 
     def next_seven_days(_match):
         return [today + timedelta(days=offset) for offset in range(7)]
@@ -249,7 +291,8 @@ _ANALYSIS_VERB = re.compile(r"\b(?:analiza|analizar|revisa|revisar|repasa|repasa
 _RETROSPECTIVE_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[2][1])
 _PLAN_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[3][1])
 _RECOMMENDATION = re.compile(_INTENT_SIGNAL_PATTERNS[4][1])
-_LATEST_ACTIVITY = re.compile(r"\b(?:ultima\s+actividad|actividad\s+mas\s+reciente)\b")
+_LATEST_ACTIVITY = re.compile(r"\b(?:ultima\s+(?:actividad|sesion)|actividad\s+mas\s+reciente)\b")
+_PLAN_LOOKUP = re.compile(r"\b(?:que|cual)\s+(?:sesion|entrenamiento|entreno)\b.*\b(?:tengo|hay|esta|prevista|planificada)\b")
 _LATEST_TRAINING_DAY = re.compile(r"\b(?:ultimo\s+dia\s+de\s+entrenamiento|ultimo\s+dia\s+que\s+entrene)\b")
 _CHANGE_START = re.compile(r"^(?:no\s+)?(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b")
 _FOCUSED_ANALYSIS = re.compile(
@@ -259,7 +302,14 @@ _FOCUSED_ANALYSIS = re.compile(
 _SESSION_ADVICE_QUESTION = re.compile(
     r"^(?:dime\s*:\s*)?¿\s*(?:hago|(?:debo|deberia|puedo)\s+hacer)\s+la\s+sesion\b"
 )
+_ACTIVITY_METRIC_QUERY = re.compile(r"\b(?:pulso|pulsaciones?|fc)\s+(?:maxim[oa]s?|medi[oa])\b")
+_MAX_HR_QUERY = re.compile(r"\b(?:pulso|pulsaciones?|fc)\s+maxim[oa]s?\b")
+_AVG_HR_QUERY = re.compile(r"\b(?:pulso|pulsaciones?|fc)\s+medi[oa]\b")
+_ACTIVITY_SCOPE_WORDS = re.compile(r"\b(?:actividad|sesion|entrenamiento|entreno|salida|carrera)\b")
+_THEORETICAL_METRIC = re.compile(r"\b(?:teoric[oa]|estimad[oa]|predich[oa])\b")
+_RACE_EVENT = re.compile(r"\b(?:la|una)\s+carrera\s+de\s+[a-z]+\b")
 _RECOGNIZED_CLAUSE_STARTS = (
+    re.compile(r"^(?:¿\s*)?(?:cu[aá]l(?:es)?|dime)\s+(?:fue|fueron|es|son)?\s*(?:mi|mis)?\s*(?:pulso|pulsaciones?|fc)\b"),
     re.compile(r"^(?:no\s+)?(?:analiza|analizar|analices|revisa|revisar|repasa|repasar|valora|valorar)\b"),
     re.compile(r"^(?:no\s+)?(?:dime|consulta|revisa)\b"),
     re.compile(r"^(?:no\s+)?que\s+(?:me\s+)?(?:toca|tocaba|tocara|debo|deberia|puedo)\b"),
@@ -316,8 +366,15 @@ def _clarify(code: ClarificationCode) -> IntentComponent:
 
 
 def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: DateSelector = DateSelector.BY_DATE) -> IntentComponent:
+    metric = _metric_for_clause(clause)
+    sport = _sport_filter_for_clause(clause) if intent in (
+        CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY, CoachIntent.CONSULT_PLAN
+    ) else None
+    if metric is _UNSUPPORTED_METRIC and _ACTIVITY_SCOPE_WORDS.search(clause):
+        return _clarify(ClarificationCode.UNSUPPORTED_METRIC)
     if selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
-        return IntentComponent(intent, selector)
+        return IntentComponent(intent, selector, sport=sport,
+                               metric=metric if isinstance(metric, ActivityMetric) else None)
 
     normalized = _normalize(clause)
     has_past_cue = bool(re.search(r"\b(?:ayer|pasado|pasada|semana pasada|tocaba)\b", normalized))
@@ -336,11 +393,28 @@ def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: D
         dates = resolve_dates(clause, now=now, scope=scope)
     except InvalidDateError:
         return _clarify(ClarificationCode.INVALID_DATE)
+    relative = re.search(r"\b(?:hoy|ayer|manana)\b", normalized)
+    explicit = re.search(
+        r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{4}\b|"
+        r"\b(?:dia\s+)?\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|"
+        r"agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+\d{4})?\b",
+        normalized,
+    )
+    if intent is CoachIntent.CONSULT_PLAN and relative and explicit:
+        try:
+            relative_date = resolve_dates(relative.group(), now=now, scope=scope)
+            explicit_date = resolve_dates(explicit.group(), now=now, scope=scope)
+        except InvalidDateError:
+            return _clarify(ClarificationCode.INVALID_DATE)
+        if relative_date and explicit_date and relative_date != explicit_date:
+            return _clarify(ClarificationCode.CONFLICTING_SCOPE)
 
     if intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY):
         if not dates:
             return _clarify(ClarificationCode.NO_SCOPE)
-        return IntentComponent(intent, selector, observed_dates=dates)
+        return IntentComponent(intent, selector, observed_dates=dates,
+                               sport=sport,
+                               metric=metric if isinstance(metric, ActivityMetric) else None)
 
     if intent is CoachIntent.RECOMMEND_NEXT and not dates:
         return _clarify(ClarificationCode.MISSING_ADVICE_DATE)
@@ -352,7 +426,35 @@ def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: D
     today = now.astimezone(_MADRID).date()
     observed = tuple(day for day in dates if day < today)
     advice = tuple(day for day in dates if day >= today)
-    return IntentComponent(intent, selector, observed_dates=observed, advice_dates=advice)
+    return IntentComponent(intent, selector, observed_dates=observed, advice_dates=advice,
+                           sport=sport,
+                           metric=metric if isinstance(metric, ActivityMetric) else None)
+
+
+_UNSUPPORTED_METRIC = object()
+
+
+def _metric_for_clause(clause: str):
+    if not _ACTIVITY_METRIC_QUERY.search(clause) or _THEORETICAL_METRIC.search(clause):
+        return None
+    if _AVG_HR_QUERY.search(clause):
+        return _UNSUPPORTED_METRIC
+    if _MAX_HR_QUERY.search(clause):
+        return ActivityMetric.MAX_HR
+    return None
+
+
+def _sport_filter_for_clause(clause: str) -> SportFilter | None:
+    if re.search(r"\b(?:bici|bicicleta|ciclismo|rodillo)\b", clause):
+        return SportFilter.CYCLING
+    if (re.search(r"\b(?:running|correr|rodaje|carrera\s+a\s+pie|actividad\s+de\s+carrera)\b", clause)
+            or (_ACTIVITY_METRIC_QUERY.search(clause) and re.search(r"\bcarrera\b", clause))):
+        return SportFilter.RUNNING
+    if re.search(r"\b(?:nadar|natacion|swim)\b", clause):
+        return SportFilter.SWIMMING
+    if re.search(r"\b(?:fuerza|strength)\b", clause):
+        return SportFilter.STRENGTH
+    return None
 
 
 def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
@@ -360,6 +462,16 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
     negative_change = bool(_NEGATED_CHANGE.search(normalized))
     positive_change = bool(_POSITIVE_CHANGE.search(normalized))
     has_plan_object = bool(_PLAN_OBJECT.search(normalized))
+
+    if _AVG_HR_QUERY.search(normalized) and not _THEORETICAL_METRIC.search(normalized):
+        return _clarify(ClarificationCode.UNSUPPORTED_METRIC)
+    try:
+        race_has_date = bool(resolve_dates(normalized, now=now, scope=DateResolutionScope.OBSERVED))
+    except InvalidDateError:
+        race_has_date = False
+    if (_RACE_EVENT.search(normalized) and not race_has_date
+            and not re.search(r"\b(?:actividad|sesion|correr|running|carrera\s+a\s+pie)\b", normalized)):
+        return _clarify(ClarificationCode.RACE_EVENT_AMBIGUOUS)
 
     if negative_change and positive_change and has_plan_object:
         return _clarify(ClarificationCode.CONTRADICTORY_OPERATION)
@@ -389,6 +501,8 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
             if selector is DateSelector.LATEST_ACTIVITY
             else CoachIntent.ANALYZE_DAY
         )
+        if _MAX_HR_QUERY.search(normalized) and latest_intent is not CoachIntent.ANALYZE_ACTIVITY:
+            return _clarify(ClarificationCode.NO_SCOPE)
         return _make_component(latest_intent, clause, now, selector)
 
     if positive_change and has_plan_object and not _ADVICE_MODAL.search(normalized):
@@ -404,6 +518,12 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
         if any(day > today for day in dates_for_hint):
             return _clarify(ClarificationCode.CONFLICTING_SCOPE)
         return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
+    if (_ACTIVITY_METRIC_QUERY.search(normalized) and _ACTIVITY_SCOPE_WORDS.search(normalized)
+            and not _THEORETICAL_METRIC.search(normalized)):
+        if _AVG_HR_QUERY.search(normalized):
+            return _clarify(ClarificationCode.UNSUPPORTED_METRIC)
+        if _MAX_HR_QUERY.search(normalized):
+            return _make_component(CoachIntent.ANALYZE_ACTIVITY, clause, now)
     if _SESSION_ADVICE_QUESTION.search(normalized.strip()):
         return _make_component(CoachIntent.RECOMMEND_NEXT, clause, now)
     analysis_signal = _ANALYSIS_VERB.search(normalized) or (_RETROSPECTIVE_QUESTION.search(normalized) and retrospective_dates)
@@ -411,8 +531,12 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
         if has_plan_object and any(day > today for day in dates_for_hint):
             return _make_component(CoachIntent.CONSULT_PLAN, clause, now)
         return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
-    if _PLAN_QUESTION.search(normalized) or re.search(r"\b(?:plan|sesion\s+prevista)\b", normalized):
+    if (_PLAN_QUESTION.search(normalized) or _PLAN_LOOKUP.search(normalized)
+            or re.search(r"\b(?:plan|sesion\s+(?:prevista|planificada))\b", normalized)):
         return _make_component(CoachIntent.CONSULT_PLAN, clause, now)
+    if (dates_for_hint and _sport_filter_for_clause(normalized) is not None
+            and re.search(r"\b(?:actividad|sesion|salida)\b", normalized)):
+        return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
     if _RECOMMENDATION.search(normalized) or (_ADVICE_MODAL.search(normalized) and positive_change):
         return _make_component(CoachIntent.RECOMMEND_NEXT, clause, now)
 
@@ -445,6 +569,8 @@ class IntentComponent:
     observed_dates: tuple[date, ...] = ()
     advice_dates: tuple[date, ...] = ()
     clarification_code: ClarificationCode | None = None
+    sport: SportFilter | None = None
+    metric: ActivityMetric | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.intent, CoachIntent) or self.intent is CoachIntent.MIXED:
@@ -453,8 +579,19 @@ class IntentComponent:
             raise TypeError("selector must be a DateSelector")
         if self.clarification_code is not None and not isinstance(self.clarification_code, ClarificationCode):
             raise TypeError("clarification_code must be a ClarificationCode")
+        if self.sport is not None and not isinstance(self.sport, SportFilter):
+            raise TypeError("sport must be a SportFilter")
+        if self.metric is not None and not isinstance(self.metric, ActivityMetric):
+            raise TypeError("metric must be an ActivityMetric")
         if (self.intent is CoachIntent.CLARIFY) != (self.clarification_code is not None):
             raise ValueError("CLARIFY components require exactly one clarification code")
+        if self.sport is not None and self.intent not in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY, CoachIntent.CONSULT_PLAN):
+            raise ValueError("sport filters require an activity, day, or plan intent")
+        if self.metric is not None and (self.intent is not CoachIntent.ANALYZE_ACTIVITY
+                                        or self.selector not in (DateSelector.BY_DATE, DateSelector.LATEST_ACTIVITY)):
+            raise ValueError("activity metrics require a dated or latest-activity analysis")
+        if self.metric is not None and self.selector is DateSelector.BY_DATE and not self.observed_dates:
+            raise ValueError("dated activity metrics require at least one observed date")
         if self.selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
             if self.observed_dates or self.advice_dates:
                 raise ValueError("latest selectors cannot carry explicit dates")

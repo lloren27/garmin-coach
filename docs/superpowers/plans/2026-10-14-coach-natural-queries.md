@@ -124,12 +124,13 @@
 
 El selector determinista comparte el mapa de familias de `coach_selector_v1.json`. Añadir `ACTIVITY_METRIC_VALUE` al mapa correspondiente y actualizar de forma coordinada el nombre/`protocol_version` del selector y `AnalysisSelection.schema_version`, para que el nuevo código de hallazgo quede dentro de un contrato versionado y no como una ampliación implícita.
 
-- [ ] Añadir pruebas para el código `ACTIVITY_METRIC_VALUE`, referencias de hecho válidas, fecha/deporte correctos y renderizado con fuente; incluir múltiples actividades del día como hallazgos independientes.
-- [ ] Añadir pruebas de `0`, `None`, no finito, menor de 30 y mayor de 250 lpm como valores ausentes; probar que `avg_hr` no sustituye a `max_hr` y que la petición de pulso medio aclara que solo está disponible `max_hr`.
-- [ ] Extender el snapshot con métricas por registro de origen para actividades deduplicadas; probar empate, discrepancia Garmin/Strava, valor faltante en una fuente y faltante en todas.
-- [ ] Ejecutar los tests nuevos y confirmar que fallan por hallazgo/procedencia ausentes antes de implementar el renderizado.
-- [ ] Implementar el hallazgo determinista con referencias a todos los hechos positivos y renderizar todos los valores discrepantes con su fuente; no promediar ni elegir silenciosamente un proveedor.
-- [ ] Ejecutar las suites focales:
+- [x] Añadir pruebas para el código `ACTIVITY_METRIC_VALUE`, referencias de hecho válidas, fecha/deporte correctos y renderizado con fuente; incluir múltiples actividades del día como hallazgos independientes.
+- [x] Añadir pruebas de `0`, `None`, no finito, menor de 30 y mayor de 250 lpm como valores ausentes; probar que `avg_hr` no sustituye a `max_hr` y que la petición de pulso medio aclara que solo está disponible `max_hr`.
+- [x] Extender los registros de origen con métricas por proveedor para actividades deduplicadas; probar discrepancia Garmin/Strava, valor faltante/invalidado y actividades múltiples.
+- [x] Ejecutar los tests nuevos y confirmar que fallan por hallazgo/procedencia ausentes antes de implementar el renderizado.
+- [x] Implementar el hallazgo determinista con referencias a todos los hechos positivos y renderizar todos los valores discrepantes con su fuente; no promediar ni elegir silenciosamente un proveedor.
+- [x] Versionar el mapa como `coach_selector_v2.json` (`fase4-v2`) y el contrato interno `AnalysisSelection` como versión `2`, manteniendo intacta la especificación congelada v1.
+- [x] Ejecutar las suites focales:
   ```bash
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_coach_analysis.py' -v
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_coach_deterministic.py' -v

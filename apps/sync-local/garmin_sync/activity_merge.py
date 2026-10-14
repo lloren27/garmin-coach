@@ -63,6 +63,8 @@ def _origins(*rows):
         own = dict(source=row.get('source') or 'unknown',
                    source_activity_id=str(row.get('source_activity_id') or row.get('id') or ''),
                    source_device=row.get('source_device'))
+        if 'max_hr' in row:
+            own['metrics'] = {'max_hr': deepcopy(row['max_hr'])}
         for record in [own, *(row.get('source_records') or [])]:
             key = (record.get('source'), str(record.get('source_activity_id') or ''))
             records[key] = deepcopy(record)

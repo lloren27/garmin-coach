@@ -9,9 +9,9 @@ import unicodedata
 
 from .coach_analysis import AnalysisFacts, MatchState, build_analysis_facts
 from .coach_generation_context import freeze
-from .coach_intent import ClarificationCode, CoachIntent, clarification_prompt
+from .coach_intent import ActivityMetric, ClarificationCode, CoachIntent, clarification_prompt
 
-SELECTOR = freeze(json.loads(Path(__file__).with_name('coach_selector_v1.json').read_text()))
+SELECTOR = freeze(json.loads(Path(__file__).with_name('coach_selector_v2.json').read_text()))
 FOLLOW_UPS = freeze({
     'CLARIFY_SYMPTOM_CONTEXT': '¿La molestia continúa y cuándo aparece?',
     'CONFIRM_PLAN_MATCH': '¿Puedes confirmar qué actividad corresponde a la sesión prevista?',
@@ -206,6 +206,23 @@ def build_catalog(snapshot, component_index, question):
                     ' del plan: ' + '; '.join(details) + '.',
                     sources=tuple(sorted({ref for fact in plan_facts for ref in fact.source_refs})), mandatory=True)
 
+    if component.metric is ActivityMetric.MAX_HR:
+        metric_facts = [fact for fact in facts.facts if fact.metric == 'max_hr']
+        grouped = {}
+        for fact in metric_facts:
+            grouped.setdefault(fact.source_refs[0], []).append(fact)
+        provider_names = {'garmin': 'Garmin', 'strava': 'Strava', 'zepp': 'Zepp'}
+        for activity_ref, values in sorted(grouped.items()):
+            rendered = '; '.join(
+                f'{number(fact.value, 0)} lpm ({provider_names.get(fact.source, fact.source)})'
+                for fact in sorted(values, key=lambda item: (item.source, str(item.value)))
+            )
+            add('ACTIVITY_METRIC_VALUE', 'Pulso máximo registrado: ' + rendered + '.',
+                tuple(fact.id for fact in values), values[0].date, (activity_ref,), mandatory=True)
+        if not metric_facts and 'ACTIVITY_METRIC_UNAVAILABLE' in facts.limitations:
+            add('ACTIVITY_METRIC_UNAVAILABLE',
+                'No hay un pulso máximo válido registrado para esta actividad.', mandatory=True)
+
     for fact in facts.facts:
         if fact.metric == 'pace_s_per_km':
             add('PACE_BLOCKS_NOT_COMPARABLE', f'Ritmo medio: {duration(fact.value)} min/km ({fact.source}, {fact.date.isoformat()}). '
@@ -285,7 +302,8 @@ def build_catalog(snapshot, component_index, question):
 
 def _follow_up(findings, question=''):
     codes = {f.code for f in findings}
-    if codes & {'PLAN_SESSION_AVAILABLE', 'PLAN_SPORT_NOT_PLANNED', 'PLAN_SESSION_SPORT_UNKNOWN'}:
+    if codes & {'PLAN_SESSION_AVAILABLE', 'PLAN_SPORT_NOT_PLANNED', 'PLAN_SESSION_SPORT_UNKNOWN',
+                'ACTIVITY_METRIC_VALUE', 'ACTIVITY_METRIC_UNAVAILABLE'}:
         return None
     if codes & {'SYMPTOM_REPORTED', 'SESSION_SAFETY_NOT_ASSESSABLE'}:
         return 'CLARIFY_SYMPTOM_CONTEXT'
@@ -315,7 +333,7 @@ def select_findings(catalog, question):
         selected.extend(d for d in by_id[identifier].dependencies if d not in selected)
     selected.extend(i for i in catalog.required_ids if i not in selected)
     chosen = [by_id[i] for i in selected]
-    result = AnalysisSelection('1', catalog.facts.snapshot_id, catalog.facts.component_index,
+    result = AnalysisSelection('2', catalog.facts.snapshot_id, catalog.facts.component_index,
                                tuple(selected), _follow_up(chosen, question))
     validate_selection(catalog, result)
     return result
@@ -323,7 +341,7 @@ def select_findings(catalog, question):
 
 def validate_selection(catalog, selection):
     by_id = {f.id: f for f in catalog.findings}
-    if (selection.schema_version != '1' or selection.snapshot_id != catalog.facts.snapshot_id
+    if (selection.schema_version != '2' or selection.snapshot_id != catalog.facts.snapshot_id
             or selection.component_index != catalog.facts.component_index):
         raise ValueError('SELECTION_SCOPE_INVALID')
     ids = selection.finding_ids

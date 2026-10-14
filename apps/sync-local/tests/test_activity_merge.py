@@ -32,6 +32,17 @@ def activity(
 
 
 class ActivityMergeTests(unittest.TestCase):
+    def test_deduplication_preserves_each_source_max_hr_value(self):
+        garmin = activity("edge", "garmin", "2026-10-05T17:46:29+02:00", 40.66, 6156, 112)
+        strava = activity("strava:edge", "strava", "2026-10-05T15:46:29Z", 40.66, 6156, 112)
+        garmin.update(sport='cycling', max_hr=188)
+        strava.update(sport='cycling', max_hr=176)
+        merged = merge_activities([garmin], [], [strava])
+        self.assertEqual(len(merged), 1)
+        values = {record['source']: record['metrics']['max_hr']
+                  for record in merged[0]['source_records']}
+        self.assertEqual(values, {'garmin': 188, 'strava': 176})
+
     def test_garmin_sport_uses_structured_type_not_editable_event_name(self):
         cases = {
             "running": "running", "trail_running": "running", "track_running": "running",

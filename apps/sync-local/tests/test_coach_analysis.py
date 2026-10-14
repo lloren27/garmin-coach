@@ -358,6 +358,59 @@ class AnalysisTests(unittest.TestCase):
                           for ref in f.source_refs},
                          {'activity:ride-a', 'activity:ride-b'})
 
+    def test_max_hr_facts_preserve_all_valid_source_values_and_scope(self):
+        def mutate(x):
+            x['recent_activities'] = [{
+                'id': 'run-dedup', 'source': 'garmin', 'sport': 'running',
+                'date': '2026-10-03', 'local_date': '2026-10-03',
+                'started_at_utc': '2026-10-03T07:00:00Z', 'time_context': 'Europe/Madrid',
+                'duration_s': 1800, 'km': 5, 'avg_hr': 140, 'max_hr': 188,
+                'source_records': [
+                    {'source': 'garmin', 'source_activity_id': 'g-run', 'metrics': {'max_hr': 188}},
+                    {'source': 'strava', 'source_activity_id': 's-run', 'metrics': {'max_hr': 176}},
+                ],
+            }]
+        result = build_analysis_facts(snapshot(question='¿Cuál fue mi FC máxima en la carrera de hoy?',
+            mutate=mutate, now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc)))
+        heart_rates = [fact for fact in result.facts if fact.metric == 'max_hr']
+        self.assertEqual({(fact.value, fact.source, fact.date, fact.sport, fact.source_refs[0])
+                          for fact in heart_rates}, {
+            (188, 'garmin', date(2026, 10, 3), 'running', 'activity:run-dedup'),
+            (176, 'strava', date(2026, 10, 3), 'running', 'activity:run-dedup'),
+        })
+
+    def test_invalid_or_missing_max_hr_is_not_replaced_by_average_hr(self):
+        for invalid in (0, None, float('nan'), 29, 251):
+            with self.subTest(invalid=invalid):
+                def mutate(x):
+                    row = {'id': 'run', 'source': 'garmin', 'sport': 'running',
+                           'date': '2026-10-03', 'local_date': '2026-10-03',
+                           'started_at_utc': '2026-10-03T07:00:00Z',
+                           'time_context': 'Europe/Madrid', 'avg_hr': 141}
+                    if invalid is not None:
+                        row['max_hr'] = invalid
+                    x['recent_activities'] = [row]
+                result = build_analysis_facts(snapshot(question='FC máxima de mi carrera de hoy',
+                    mutate=mutate, now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc)))
+                self.assertFalse(any(fact.metric == 'max_hr' for fact in result.facts))
+                self.assertIn('ACTIVITY_METRIC_UNAVAILABLE', result.limitations)
+
+    def test_max_hr_facts_for_multiple_same_day_activities_keep_separate_refs(self):
+        def mutate(x):
+            x['recent_activities'] = [
+                {'id': 'run-a', 'source': 'garmin', 'sport': 'running', 'date': '2026-10-03',
+                 'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T07:00:00Z',
+                 'time_context': 'Europe/Madrid', 'max_hr': 175},
+                {'id': 'run-b', 'source': 'strava', 'sport': 'running', 'date': '2026-10-03',
+                 'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T10:00:00Z',
+                 'time_context': 'Europe/Madrid', 'max_hr': 181},
+            ]
+        result = build_analysis_facts(snapshot(question='pulso máximo en mis actividades de carrera de hoy',
+            mutate=mutate, now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc)))
+        facts = [fact for fact in result.facts if fact.metric == 'max_hr']
+        self.assertEqual({ref for fact in facts for ref in fact.source_refs},
+                         {'activity:run-a', 'activity:run-b'})
+
     def test_deep_immutability_determinism_and_operand_references(self):
         snap = snapshot('MATCH-confirmed')
         before = snap.public_context()

@@ -13,7 +13,7 @@ from enum import Enum
 from zoneinfo import ZoneInfo
 
 from .coach_generation_context import ContextSnapshot, freeze
-from .coach_intent import CoachIntent, DateSelector
+from .coach_intent import ActivityMetric, CoachIntent, DateSelector
 
 
 class Unit(str, Enum):
@@ -246,9 +246,11 @@ def _build(snapshot, index):
     if not dates:
         limits.add('NO_OBSERVED_SCOPE')
     evidence = [e for e in snapshot.evidence.values() if _day(e.local_date or e.date) in observed_dates
-                and e.kind != 'plan' and (latest_refs is None or e.id in latest_refs)]
+                and e.kind != 'plan' and (component.metric is None or e.kind == 'activity')
+                and (latest_refs is None or e.id in latest_refs)]
     evidence.sort(key=lambda e: e.id)
-    sessions = {k: s for k, s in snapshot.sessions.items() if _day(s.get('date')) in dates
+    sessions = {k: s for k, s in snapshot.sessions.items() if component.metric is None
+                and _day(s.get('date')) in dates
                 and (component.intent is not CoachIntent.CONSULT_PLAN
                      or s.get('status') in (None, 'planned') and not s.get('completed_activity_id'))}
     if component.intent is CoachIntent.CONSULT_PLAN and component.sport:
@@ -288,6 +290,8 @@ def _build(snapshot, index):
 
     def raw(ref, values, day, sport, source, freshness, records=()):
         for metric, unit in _UNITS.items():
+            if metric == 'max_hr':
+                continue
             value = values.get(metric)
             if value is None:
                 continue
@@ -305,6 +309,28 @@ def _build(snapshot, index):
 
     for e in evidence:
         raw(e.id, e.facts, _day(e.date), e.sport, e.source, e.freshness, e.source_records)
+        if component.metric is ActivityMetric.MAX_HR and e.kind == 'activity':
+            source_rows = list(e.source_records)
+            if not source_rows:
+                source_rows = [{'source': e.source, 'source_activity_id': e.id.removeprefix('activity:'),
+                                'metrics': {'max_hr': e.facts.get('max_hr')}}]
+            valid_values = 0
+            for source_row in source_rows:
+                source = source_row.get('source') or e.source
+                metrics = source_row.get('metrics') or {}
+                value = metrics.get('max_hr')
+                if value is None and source == e.source:
+                    value = e.facts.get('max_hr')
+                number = _number(value)
+                if number is None or not Decimal('30') <= number <= Decimal('250'):
+                    continue
+                source_id = str(source_row.get('source_activity_id') or e.id.removeprefix('activity:'))
+                identifier = f'c{index}:{e.id}:max_hr:{source}:{source_id}'
+                facts.append(AnalysisFact(identifier, 'max_hr', number, Unit.BPM, _day(e.date),
+                    e.sport, source, (e.id,), e.freshness, freeze((source_row,))))
+                valid_values += 1
+            if not valid_values:
+                limits.add('ACTIVITY_METRIC_UNAVAILABLE')
         duration = by_key.get(f'c{index}:{e.id}:duration_s')
         distance = by_key.get(f'c{index}:{e.id}:distance_km')
         if e.kind == 'activity' and e.sport in {'running', 'walking'} and duration and distance:
@@ -417,6 +443,8 @@ def _build(snapshot, index):
                 limits.add('MULTISPORT_COMPONENTS_SEPARATE')
             if not activities:
                 limits.add('ACTIVITY_NOT_RECORDED' if _covered_empty(snapshot, day) else 'DATA_COVERAGE_INCOMPLETE')
+            if component.metric is not None:
+                continue
             for sport in sorted(sports or {None}, key=lambda s: s or ''):
                 match(day, sport, [e for e in activities if e.sport == sport],
                       [k for k in keys if sessions[k].get('sport') == sport])

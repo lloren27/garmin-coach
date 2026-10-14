@@ -61,6 +61,7 @@ class IntentContractTests(unittest.TestCase):
         unsupported = resolve_intent("¿Cuál fue mi pulso medio en la carrera de hoy?",
                                      now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
         self.assertEqual(unsupported.clarification_code, ClarificationCode.UNSUPPORTED_METRIC)
+        self.assertIn('pulso máximo registrado', clarification_prompt(unsupported.clarification_code))
         self.assertEqual(resolve_intent("mi pulso medio", now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0].clarification_code,
                          ClarificationCode.UNSUPPORTED_METRIC)
         theoretical = resolve_intent("mi pulso máximo teórico", now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]

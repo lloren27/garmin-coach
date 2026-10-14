@@ -88,20 +88,20 @@
 
 **Interfaces:** Los adaptadores y snapshot conservan `started_at_utc: str | None`, `local_date: str | None` y `time_context: str | None`. Garmin usa `startTimeGMT`/`startTimeLocal`; Strava `start_date`/`start_date_local`; Zepp epoch/zona configurada. El snapshot mantiene compatibility `date` solo si equivale exactamente a `local_date`.
 
-- [ ] Añadir pruebas de orden UTC con offsets distintos y cruce de día local; probar horas ingenuas del mismo contexto, contextos distintos/desconocidos, timestamp ausente y empate.
-- [ ] Añadir casos de selección por deporte dentro de la ventana desde `hoy - 120 días` hasta hoy; cubrir cobertura completa vacía, cobertura parcial y actividad fuera de la ventana.
-- [ ] Añadir una fixture antigua sin `started_at_utc`, `local_date` ni `time_context`; demostrar que «última» se aclara sin excepción ni desempate por orden de entrada. Verificar que la siguiente sincronización completa reescribe el registro normalizado con los nuevos campos. Estos campos son adiciones al contenido sincronizado; API y bot deben ignorarlos sin error y seguir leyendo documentos antiguos. Si la sincronización no reescribe esos registros, definir un backfill antes de habilitar consultas «última».
-- [ ] Añadir un caso donde un `multisport` más reciente que la bici conocida genera la aclaración acordada y no una respuesta afirmando que la bici anterior fue la última.
-- [ ] Ejecutar los tests nuevos y confirmar que fallan por falta de campos/selector o política de cobertura, no por fixtures inválidos.
-- [ ] Implementar los campos en los normalizadores, `activity_merge.py` y `EvidenceRecord`; Garmin toma UTC de `startTimeGMT` (nunca de `startTimeLocal`), Strava preserva `start_date` y `start_date_local`, y Zepp toma UTC de epoch/ISO con zona. Una marca Zepp ingenua solo conserva día/contexto local, no se convierte a UTC.
-- [ ] Implementar selección por deporte y `started_at_utc` en `coach_analysis.py`. Responder ausencia en 120 días solo cuando la cobertura del intervalo esté confirmada; de lo contrario, comunicar el periodo real disponible.
-- [ ] Ejecutar las suites focales:
+- [x] Añadir pruebas de orden UTC con offsets distintos y cruce de día local; probar horas ingenuas del mismo contexto, contextos distintos/desconocidos, timestamp ausente y empate.
+- [x] Añadir casos de selección por deporte dentro de la ventana desde `hoy - 120 días` hasta hoy; cubrir cobertura completa vacía, cobertura parcial y actividad fuera de la ventana.
+- [x] Añadir una fixture antigua sin `started_at_utc`, `local_date` ni `time_context`; demostrar que «última» se aclara sin excepción ni desempate por orden de entrada. Comprobar que la siguiente sincronización completa reescribe el registro normalizado con los nuevos campos. Estos campos se añaden al contenido sincronizado; API y bot siguen aceptando documentos sin ellos. La sincronización ya conserva el conjunto normalizado completo de 120 días (antes se limitaba a 25 actividades), por lo que no hace falta backfill.
+- [x] Añadir un caso donde un `multisport` más reciente que la bici conocida genera la aclaración acordada y no una respuesta afirmando que la bici anterior fue la última.
+- [x] Ejecutar los tests nuevos y confirmar que fallan por falta de campos/selector o política de cobertura, no por fixtures inválidos.
+- [x] Implementar los campos en los normalizadores, `activity_merge.py` y `EvidenceRecord`; Garmin toma UTC de `startTimeGMT` (nunca de `startTimeLocal`), Strava preserva `start_date` y `start_date_local`, y Zepp toma UTC de epoch/ISO con zona. Una marca Zepp ingenua solo conserva día/contexto local, no se convierte a UTC.
+- [x] Implementar selección por deporte y `started_at_utc` en `coach_analysis.py`. Informar ausencia en 120 días solo con cobertura integral confirmada; si falta cobertura, mostrar los periodos observados por proveedor.
+- [x] Ejecutar las suites focales:
   ```bash
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_coach_analysis.py' -v
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_coach_generation_context.py' -v
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_activity_merge.py' -v
   ```
-- [ ] Commit local: `feat: order recent activities by reliable timestamps`.
+- [x] Commit local: `feat: order recent activities by reliable timestamps`.
 
 ### Tarea 4: intención actividad/plan y filtro de sesiones planificadas
 

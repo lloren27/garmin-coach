@@ -97,6 +97,9 @@ class StravaActivityProviderTests(TestCase):
                 "source_device": "CMF Watch 3 Pro",
                 "date": "2026-08-24",
                 "started_at": "2026-08-24T07:25:00+02:00",
+                "started_at_utc": "2026-08-24T05:25:00+00:00",
+                "local_date": "2026-08-24",
+                "time_context": "Europe/Madrid",
                 "name": "Morning Run",
                 "sport": "running",
                 "type": "Run",
@@ -115,6 +118,14 @@ class StravaActivityProviderTests(TestCase):
         saved = json.loads(self.token_file.read_text(encoding="utf-8"))
         self.assertEqual(saved["refresh_token"], "new-refresh")
         self.assertEqual(self.token_file.stat().st_mode & 0o777, 0o600)
+
+    def test_naive_strava_start_is_local_context_not_fabricated_utc(self):
+        record = dict(RAW_RUN, start_date='2026-08-24T05:25:00',
+                      start_date_local='2026-08-24T07:25:00')
+        normalized = _normalize_record(record, ZoneInfo('Europe/Madrid'))
+        self.assertEqual(normalized['local_date'], '2026-08-24')
+        self.assertIsNone(normalized.get('started_at_utc'))
+        self.assertEqual(normalized['time_context'], 'Europe/Madrid')
 
     @patch("garmin_sync.strava_activity_provider.requests.get")
     @patch("garmin_sync.strava_activity_provider.requests.post")

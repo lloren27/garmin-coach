@@ -66,8 +66,11 @@ def render_selected_response(snapshot, catalogs, selections, *, max_chars=3200):
         dates = component.observed_dates or component.advice_dates or catalog.facts.observed_dates
         label = ', '.join(d.isoformat() for d in dates)
         parts.append((label + ':\n' if label else '') + text)
-        reason = FOLLOW_UPS[follow_up] if follow_up else 'Valoración informativa basada en los hechos disponibles.'
-        decisions.append(CoachDecision(action='ask_user' if follow_up else 'information_only',
+        needs_clarification = bool(codes & {'INCOMPARABLE_ACTIVITY_TIME',
+            'MULTISPORT_ACTIVITY_CONFIRMATION'})
+        reason = (FOLLOW_UPS[follow_up] if follow_up else text if needs_clarification
+                  else 'Valoración informativa basada en los hechos disponibles.')
+        decisions.append(CoachDecision(action='ask_user' if follow_up or needs_clarification else 'information_only',
             source='deterministic', component_index=index, date=dates[0] if len(dates) == 1 else None,
             reason=reason))
     answer = '\n\n'.join(parts)

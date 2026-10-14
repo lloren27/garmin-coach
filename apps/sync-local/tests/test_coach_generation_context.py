@@ -289,6 +289,36 @@ class ContextTests(unittest.TestCase):
         metric = next(e for e in snapshot.evidence.values() if e.kind == 'wellness')
         self.assertEqual(dict(metric.facts), {'resting_hr': 52})
 
+    def test_activity_snapshot_preserves_absolute_and_local_time_context(self):
+        compact = compact_fixture()
+        compact['extra_context']['recent_activities'] = [{
+            'id': 'bike-utc', 'source': 'garmin', 'sport': 'cycling',
+            'date': '2026-10-14', 'local_date': '2026-10-14',
+            'started_at_utc': '2026-10-13T22:30:00Z',
+            'time_context': 'Europe/Madrid', 'duration_s': 3600,
+        }]
+        snapshot = build_snapshot('analiza hoy', compact, now=NOW)
+        activity = snapshot.evidence['activity:bike-utc']
+        self.assertEqual(activity.date, '2026-10-14')
+        self.assertEqual(activity.local_date, '2026-10-14')
+        self.assertEqual(activity.started_at_utc, '2026-10-13T22:30:00Z')
+        self.assertEqual(activity.time_context, 'Europe/Madrid')
+        row = snapshot.public_context()['available_evidence'][0]
+        self.assertEqual(row['started_at_utc'], '2026-10-13T22:30:00Z')
+
+    def test_legacy_activity_keeps_date_but_has_no_invented_instant(self):
+        compact = compact_fixture()
+        compact['extra_context']['recent_activities'] = [{
+            'id': 'old-bike', 'source': 'garmin', 'sport': 'cycling',
+            'date': '2026-10-13', 'started_at': '2026-10-13T22:30:00',
+            'duration_s': 3600,
+        }]
+        snapshot = build_snapshot('analiza hoy', compact, now=NOW)
+        activity = snapshot.evidence['activity:old-bike']
+        self.assertEqual(activity.date, '2026-10-13')
+        self.assertIsNone(activity.started_at_utc)
+        self.assertIsNone(activity.local_date)
+
     def test_next_seven_days_crosses_week_boundary(self):
         snapshot = build_snapshot('Plan para los próximos siete días', self.compact, now=NOW)
         expected = tuple(date(2026, 9, day) for day in range(25, 31)) + (date(2026, 10, 1),)

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta
 
 from garmin_sync.activity_merge import merge_activities
+from garmin_sync import sync
 from garmin_sync.sync import normalize_activities, summarize_normalized, sport
 
 
@@ -84,6 +86,52 @@ class ActivityMergeTests(unittest.TestCase):
         self.assertEqual(normalized[0]["source"], "garmin")
         self.assertEqual(normalized[0]["started_at"], "2026-09-24T07:25:00+02:00")
 
+    def test_garmin_normalization_writes_utc_and_local_activity_dates(self):
+        normalized = normalize_activities([{
+            'activityId': 'travel-ride', 'activityType': {'typeKey': 'road_biking'},
+            'startTimeGMT': '2026-10-13T22:55:00Z',
+            'startTimeLocal': '2026-10-14T00:55:00', 'distance': 12000,
+            'duration': 3600,
+        }])[0]
+        self.assertEqual(normalized['started_at_utc'], '2026-10-13T22:55:00+00:00')
+        self.assertEqual(normalized['local_date'], '2026-10-14')
+        self.assertEqual(normalized['time_context'], 'Europe/Madrid')
+
+    def test_garmin_gmt_only_derives_local_date_from_absolute_instant(self):
+        normalized = normalize_activities([{
+            'activityId': 'near-midnight', 'activityType': {'typeKey': 'road_biking'},
+            'startTimeGMT': '2026-10-13T22:55:00Z', 'distance': 12000, 'duration': 3600,
+        }])[0]
+        self.assertEqual(normalized['date'], '2026-10-14')
+        self.assertEqual(normalized['local_date'], '2026-10-14')
+        self.assertEqual(normalized['started_at_utc'], '2026-10-13T22:55:00+00:00')
+
+    def test_garmin_naive_gmt_is_not_promoted_to_utc(self):
+        normalized = normalize_activities([{
+            'activityId': 'naive-gmt', 'activityType': {'typeKey': 'road_biking'},
+            'startTimeGMT': '2026-10-13T22:55:00', 'distance': 12000,
+            'duration': 3600,
+        }])[0]
+        self.assertNotIn('started_at_utc', normalized)
+        self.assertNotIn('local_date', normalized)
+        self.assertEqual(normalized['date'], '2026-10-13')
+
+    def test_next_full_sync_keeps_normalized_fields_for_entire_120_day_window(self):
+        now = datetime(2026, 10, 14, 12, tzinfo=sync.MADRID_TZ)
+        token = sync._SYNC_NOW.set(now)
+        self.addCleanup(sync._SYNC_NOW.reset, token)
+        raw = []
+        for offset in range(32):
+            day = (now.date() - timedelta(days=offset)).isoformat()
+            raw.append({'activityId': f'ride-{offset}', 'activityType': {'typeKey': 'road_biking'},
+                'startTimeGMT': f'{day}T06:00:00Z', 'startTimeLocal': f'{day}T08:00:00',
+                'distance': 10000, 'duration': 3600})
+        normalized = normalize_activities(raw)
+        payload_activities = summarize_normalized(normalized)['activities']
+        self.assertEqual(len(payload_activities), 32)
+        self.assertTrue(all(row.get('started_at_utc') and row.get('local_date')
+                            and row.get('time_context') for row in payload_activities))
+
     def test_matching_garmin_and_zepp_run_keeps_garmin_only(self) -> None:
         merged = merge_activities(
             [activity("garmin-1", "garmin", "2026-09-24T07:25:00+02:00", 8.02, 2518)],
@@ -91,6 +139,16 @@ class ActivityMergeTests(unittest.TestCase):
         )
 
         self.assertEqual([item["id"] for item in merged], ["garmin-1"])
+
+    def test_dedup_merge_fills_missing_temporal_metadata_from_secondary_source(self):
+        garmin = activity('garmin-id', 'garmin', '2026-09-24T07:25:00+02:00', 8.02, 2518)
+        zepp = activity('zepp-id', 'zepp', '2026-09-24T07:25:00+02:00', 8.02, 2518)
+        zepp.update(started_at_utc='2026-09-24T05:25:00+00:00', local_date='2026-09-24',
+                    time_context='Europe/Madrid')
+        merged = merge_activities([garmin], [zepp])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]['started_at_utc'], '2026-09-24T05:25:00+00:00')
+        self.assertEqual(merged[0]['local_date'], '2026-09-24')
 
     def test_eleven_minutes_apart_runs_are_independent(self) -> None:
         merged = merge_activities(

@@ -93,6 +93,7 @@ def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[
 
     started_at = ended_at.timestamp() - duration_s
     start = datetime.fromtimestamp(started_at, tz=local_timezone)
+    has_absolute_time = _has_absolute_timestamp(record.get('end_time'))
     distance_km = round(distance_m / 1000, 2)
 
     title = _text(record.get("sport_title")) or ("Entrenamiento de fuerza" if is_strength else "Actividad Zepp")
@@ -101,7 +102,9 @@ def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[
         "source": "zepp",
         "source_activity_id": track_id,
         "date": start.date().isoformat(),
+        "local_date": start.date().isoformat(),
         "started_at": start.isoformat(),
+        "time_context": getattr(local_timezone, 'key', str(local_timezone)),
         "name": title,
         "sport": _sport(title, sport_mode=record.get("sport_mode"), type_code=record.get("type")),
         "type": _text(record.get("sport_mode")) or "other",
@@ -109,6 +112,8 @@ def _normalize_record(record: dict[str, Any], local_timezone: ZoneInfo) -> dict[
         "duration_s": round(duration_s),
         "hours": round(duration_s / 3600, 2),
     }
+    if has_absolute_time:
+        activity['started_at_utc'] = datetime.fromtimestamp(started_at, tz=timezone.utc).isoformat()
     if distance_km > 0:
         activity["pace"] = _pace(distance_km, duration_s)
         activity["avg_speed_kmh"] = round(distance_km / (duration_s / 3600), 1)
@@ -145,6 +150,23 @@ def _timestamp(value: Any, local_timezone: ZoneInfo) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=local_timezone)
     return parsed.astimezone(local_timezone)
+
+
+def _has_absolute_timestamp(value: Any) -> bool:
+    if isinstance(value, (int, float)):
+        return True
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        numeric = float(value)
+        return numeric > 100_000_000
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+    except ValueError:
+        return False
 
 
 def _sport(title: str, *, sport_mode: Any = None, type_code: Any = None) -> str:

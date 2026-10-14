@@ -39,6 +39,10 @@ class EvidenceRecord:
     freshness: str = 'unknown'
     duplicate_candidates: tuple = ()
     symptom_details: tuple[str, ...] = ()
+    started_at_utc: str | None = None
+    local_date: str | None = None
+    time_context: str | None = None
+    started_at_local: str | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,8 @@ class ContextSnapshot:
                     if s.get('status') in (None, 'planned') and s.get('date') in scoped_dates],
                 'available_evidence': [{'id': e.id, 'kind': e.kind, 'source': e.source,
                     'date': e.date, 'sport': e.sport, 'facts': thaw(e.facts),
+                    'started_at_utc': e.started_at_utc, 'local_date': e.local_date,
+                    'time_context': e.time_context, 'started_at_local': e.started_at_local,
                     'source_device': e.source_device, 'source_records': thaw(e.source_records),
                     'duplicate_candidates': thaw(e.duplicate_candidates),
                     'collected_at': e.collected_at, 'freshness': e.freshness} for e in self.evidence.values()],
@@ -112,6 +118,16 @@ def _date(value):
                 return instant.astimezone(ZoneInfo('Europe/Madrid')).date().isoformat()
         return date.fromisoformat(text[:10]).isoformat()
     except ValueError: return None
+
+
+def _aware_iso(value):
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+    except ValueError:
+        return False
 
 
 def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSnapshot:
@@ -155,16 +171,22 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         if key in evidence or len(key) > 160:
             raise CoachValidationError([ValidationIssue(Code.INVALID_CONTEXT, Phase.REFERENCE, 'evidence', Severity.FATAL)])
         sport = row.get('sport')
-        if sport not in ('running', 'cycling', 'strength', 'mobility', 'swimming', 'walking'):
+        if sport not in ('running', 'cycling', 'strength', 'mobility', 'swimming', 'walking', 'multisport'):
             sport = None
-        observed = _date(row.get('date') or row.get('started_at') or row.get('end') or row.get('start') or row.get('created_at') or row.get('observed_at') or row.get('reference_date') or row.get('effective_date') or stamp)
+        local_date = _date(row.get('local_date'))
+        # Explicit local civil date is authoritative. Legacy `date` remains
+        # readable for day-scoped requests but is never treated as an instant.
+        observed = local_date or _date(row.get('date') or row.get('started_at') or row.get('end') or row.get('start') or row.get('created_at') or row.get('observed_at') or row.get('reference_date') or row.get('effective_date') or stamp)
         freshness = ('current' if observed == now.date().isoformat() else 'stale') if observed else 'unknown'
         origins = row.get('source_records') or ([dict(source=origin,
             source_activity_id=str(row.get('source_activity_id') or row.get('id') or index),
             source_device=row.get('source_device'))] if kind == 'activity' else [])
         evidence[key] = EvidenceRecord(key, kind, origin, observed, freeze(facts), sport,
             row.get('source_device'), freeze(origins), row.get('collected_at') or extra.get('generated_at'), freshness,
-            freeze(row.get('duplicate_candidates') or []), symptom_details)
+            freeze(row.get('duplicate_candidates') or []), symptom_details,
+            row.get('started_at_utc') if _aware_iso(row.get('started_at_utc')) else None,
+            local_date, row.get('time_context') if isinstance(row.get('time_context'), str) else None,
+            row.get('started_at') if isinstance(row.get('started_at'), str) else None)
     for i, row in enumerate(extra.get('recent_activities') or []): add('activity', row, i, 'unknown')
     wellness = extra.get('wellness') or {}
     effective = wellness.get('effective', wellness)

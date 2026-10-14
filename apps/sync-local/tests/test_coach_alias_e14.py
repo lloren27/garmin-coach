@@ -13,6 +13,23 @@ with CASES_PATH.open(encoding="utf-8") as handle:
     CASES = json.load(handle)
 
 
+def normalized_time_context(context):
+    """Model records rewritten by the next full worker synchronization."""
+    from zoneinfo import ZoneInfo
+    for row in context.get('extra_context', {}).get('recent_activities', []):
+        row.setdefault('local_date', row.get('date'))
+        row.setdefault('time_context', 'Europe/Madrid')
+        value = row.get('started_at')
+        if isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except ValueError:
+                continue
+            if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+                row.setdefault('started_at_utc', parsed.astimezone(ZoneInfo('UTC')).isoformat())
+    return context
+
+
 class CoachAliasWorkerE14Tests(unittest.TestCase):
     now = datetime.fromisoformat(CASES["now"])
 
@@ -51,7 +68,7 @@ class CoachAliasWorkerE14Tests(unittest.TestCase):
         for case in CASES["canonical_aliases"]:
             with self.subTest(alias=case["id"]):
                 response = deterministic_response(
-                    case["question"], copy.deepcopy(context), now=self.now
+                    case["question"], normalized_time_context(copy.deepcopy(context)), now=self.now
                 )
                 self.assertIn("2026-10-03", response.answer)
                 self.assertIn("1:45:04 registrados", response.answer)
@@ -95,7 +112,7 @@ class CoachAliasWorkerE14Tests(unittest.TestCase):
         )
         self.assertEqual(
             latest.answer,
-            "¿Puedes aportar los datos o el contexto que faltan para esta consulta?",
+            "No puedo ordenar esas actividades con fiabilidad. ¿Cuál quieres que analice?",
         )
         self.assertEqual(latest.evidence, [])
         self.assertTrue(all(item.action == "ask_user" for item in latest.decisions))

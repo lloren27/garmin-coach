@@ -34,6 +34,14 @@ def merge_activities(
             candidates = candidate_map[id(original)]
             if len(candidates) == 1 and counts[candidates[0]] == 1:
                 row = merged[candidates[0]]
+                # Preserve reliable temporal fields from a secondary provider
+                # when the primary record lacks them; never replace a primary
+                # provider's explicit instant or local context.
+                for field in ('started_at_utc', 'local_date', 'time_context'):
+                    if not row.get(field) and item.get(field):
+                        row[field] = item[field]
+                if not row.get('started_at') and item.get('started_at'):
+                    row['started_at'] = item['started_at']
                 row['source_records'] = _origins(row, item)
             else:
                 if candidates:

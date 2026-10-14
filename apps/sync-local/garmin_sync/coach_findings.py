@@ -9,6 +9,7 @@ import unicodedata
 
 from .coach_analysis import AnalysisFacts, MatchState, build_analysis_facts
 from .coach_generation_context import freeze
+from .coach_intent import ClarificationCode, clarification_prompt
 
 SELECTOR = freeze(json.loads(Path(__file__).with_name('coach_selector_v1.json').read_text()))
 FOLLOW_UPS = freeze({
@@ -186,9 +187,35 @@ def build_catalog(snapshot, component_index, question):
         text = _activity_summary(activities)
         add('MULTISPORT_COMPONENTS_SEPARATE', text + '. Las cargas de deportes y escalas distintas se mantienen separadas; no se suman TRIMP, TSS y carga muscular.', tuple(f.id for f in activities))
     if 'DATA_COVERAGE_INCOMPLETE' in facts.limitations:
-        add('DATA_COVERAGE_INCOMPLETE', 'La cobertura de datos es incompleta; falta información para valorar la actividad. ¿Puedes sincronizar o aportar el registro de actividad?', mandatory=True)
+        periods = []
+        if component.selector.value == 'latest_activity':
+            for key, status in sorted(facts.provider_status.items()):
+                if status.get('scope') != 'activities' or status.get('state') == 'not_configured':
+                    continue
+                start, end = status.get('period_start'), status.get('period_end')
+                if start or end:
+                    periods.append(f'{key.split(".", 1)[0]}: {start or "fecha no disponible"} — {end or "fecha no disponible"}')
+        text = 'La cobertura de datos es incompleta; falta información para valorar la actividad.'
+        if periods:
+            text += ' Periodos disponibles: ' + '; '.join(periods) + '.'
+        text += ' ¿Puedes sincronizar o aportar el registro de actividad?'
+        add('DATA_COVERAGE_INCOMPLETE', text, mandatory=True)
     if 'ACTIVITY_NOT_RECORDED' in facts.limitations:
         add('ACTIVITY_NOT_RECORDED', 'No consta actividad en el ámbito con cobertura comprobada.', mandatory=True)
+    if 'INCOMPARABLE_ACTIVITY_TIME' in facts.limitations:
+        add('INCOMPARABLE_ACTIVITY_TIME', clarification_prompt(ClarificationCode.INCOMPARABLE_ACTIVITY_TIME),
+            mandatory=True)
+    if 'MULTISPORT_ACTIVITY_CONFIRMATION' in facts.limitations:
+        add('MULTISPORT_ACTIVITY_CONFIRMATION',
+            clarification_prompt(ClarificationCode.MULTISPORT_ACTIVITY_CONFIRMATION), mandatory=True)
+    for code in facts.limitations:
+        if code.endswith('_NOT_RECORDED_IN_WINDOW'):
+            sport = code.removesuffix('_NOT_RECORDED_IN_WINDOW').lower()
+            labels = {'cycling': 'ciclismo', 'running': 'carrera', 'swimming': 'natación',
+                      'strength': 'fuerza', 'activity': 'actividad'}
+            label = labels.get(sport, 'actividad')
+            add(code, f'No hay {label} registrada en los últimos 120 días; no puedo confirmar una sesión más reciente.',
+                mandatory=True)
     # Context for advice keeps its original evidence date; it never becomes an
     # observation on tomorrow's date. Only explicit recorded symptoms qualify.
     symptoms = [e for e in snapshot.evidence.values() if e.kind == 'checkin'

@@ -14,8 +14,10 @@ from unittest.mock import Mock, patch
 
 import httpx
 from garmin_sync import ai_worker as worker
+from garmin_sync.coach_intent import resolve_intent
 
 JOB_CREATED_AT = '2026-10-03T21:50:00+00:00'
+E14_CASES = json.loads((Path(__file__).resolve().parents[3] / 'tests/fixtures/coach_alias_e14_cases.json').read_text(encoding='utf-8'))
 
 
 def structured_response(
@@ -119,7 +121,17 @@ class ResponseFlowTests(unittest.TestCase):
             self.assertIn("Hoy mantén la carga suave.", payload["answer"])
 
     def test_v3_text_voice_share_canonical_response_without_model(self):
-        question = 'analiza hoy y dime qué hacer mañana'
+        case = E14_CASES["voice_parity"][0]
+        question = case["transcript"]
+        typed_intent = resolve_intent(case["typed_question"], now=datetime.fromisoformat(E14_CASES["now"]))
+        transcript_intent = resolve_intent(case["transcript"], now=datetime.fromisoformat(E14_CASES["now"]))
+        self.assertEqual(typed_intent, transcript_intent)
+        component = typed_intent.components[0]
+        self.assertEqual(typed_intent.primary_intent.value, case["expected_intent"])
+        self.assertEqual(typed_intent.selector.value, case["expected_selector"])
+        self.assertEqual([value.isoformat() for value in typed_intent.observed_dates], case["expected_observed_dates"])
+        self.assertEqual(component.sport.value, case["expected_sport"])
+        self.assertEqual(component.metric.value, case["expected_metric"])
         compact = {'extra_context': {'checkins': [{'date': '2026-10-03', 'pain': True}]}}
         with patch.object(worker, 'COACH_ANALYSIS_V3_ENABLED', True), patch.object(worker, 'compact_context', return_value=compact), patch.object(worker, 'call_ollama') as model, patch.object(worker, 'download_telegram_audio', return_value=Path('audio.ogg')), patch.object(worker, 'transcribe_audio', return_value=question), patch.object(worker, 'synthesize_voice', return_value=Path('voice.ogg')) as synth, patch.object(worker, 'send_telegram_voice'):
             outputs = []

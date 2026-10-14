@@ -141,13 +141,13 @@ El selector determinista comparte el mapa de familias de `coach_selector_v1.json
 
 ### Tarea 6: corpus E14 y regresión integral
 
-- [ ] Mantener sin cambios los casos canónicos `/hoy`, `/ultima` y `/feedback` de `tests/fixtures/coach_alias_e14_cases.json`; añadir las expectativas E14 de entreno de hoy, última salida y último día entrenado.
-- [ ] Añadir al fixture los negativos de carrera-evento, recomendación de bici, pulso teórico, fechas discordantes, contexto horario incomparable, datos insuficientes y sesiones de plan sin deporte. Usar ruta relativa a cada archivo de test en ambas suites.
-- [ ] Actualizar `apps/sync-local/tests/test_coach_alias_e14.py` y `apps/bot/tests/test_coach_alias_e14.py` para cargar el mismo JSON y verificar intent/selector/fechas/alcance, sin cambiar qué alias están activados.
-- [ ] Comprobar que una transcripción de voz conocida y el mismo texto escrito llegan al mismo resolver y producen intención, filtros y fechas idénticos; no probar ni cambiar el servicio de reconocimiento de voz.
-- [ ] Ejecutar `PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -v` y `cd apps/bot && .venv/bin/python -m unittest discover -s tests -v`.
-- [ ] Revisar `git diff --check`, confirmar que no cambiaron variables/interruptores ni se tocó producción, y resumir cualquier paráfrasis E14 que siga sin resolver como limitación observada.
-- [ ] Commit local: `test: cover natural coach queries and E14 regressions`.
+- [x] Mantener sin cambios los casos canónicos `/hoy`, `/ultima` y `/feedback` de `tests/fixtures/coach_alias_e14_cases.json`; añadir las expectativas E14 de entreno de hoy, última salida y último día entrenado.
+- [x] Añadir al fixture los negativos de carrera-evento, recomendación de bici, pulso teórico, fechas discordantes, contexto horario incomparable, datos insuficientes y sesiones de plan sin deporte. Usar ruta relativa a cada archivo de test en ambas suites.
+- [x] Actualizar `apps/sync-local/tests/test_coach_alias_e14.py` y `apps/bot/tests/test_coach_alias_e14.py` para cargar el mismo JSON y verificar intent/selector/fechas/alcance, sin cambiar qué alias están activados.
+- [x] Comprobar que una transcripción de voz conocida y el mismo texto escrito llegan al mismo resolver y producen intención, filtros y fechas idénticos; no probar ni cambiar el servicio de reconocimiento de voz.
+- [x] Ejecutar las suites completas del worker y del bot. Para aislar el `data/` relativo del bot dentro del worktree restringido, ejecutar la suite del bot desde `/private/tmp` con el test y el paquete apuntando al worktree.
+- [x] Revisar `git diff --check`, confirmar que no cambiaron variables/interruptores ni se tocó producción, y resumir cualquier paráfrasis E14 que siga sin resolver como limitación observada.
+- [x] Commit local: `test: cover natural coach queries and E14 regressions`.
 
 ## Criterio final
 

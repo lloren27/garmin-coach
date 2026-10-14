@@ -72,6 +72,8 @@
       "expected_intent": "analyze_day",
       "expected_selector": "by_date",
       "expected_observed_dates": ["2026-10-03"],
+      "expected_e14_answer_contains": ["2026-10-03:", "1:45:04 registrados"],
+      "expected_e14_has_evidence": true,
       "activation_gate": false
     },
     {
@@ -80,6 +82,8 @@
       "expected_intent": "clarify",
       "expected_selector": "by_date",
       "expected_clarification": "unsupported_paraphrase",
+      "expected_e14_answer_contains": ["No he identificado qué quieres consultar"],
+      "expected_e14_has_evidence": false,
       "activation_gate": false
     },
     {
@@ -88,7 +92,118 @@
       "expected_intent": "analyze_day",
       "expected_selector": "latest_training_day",
       "expected_observed_dates": [],
+      "expected_e14_answer_contains": ["2026-10-03:", "1:45:04 registrados"],
+      "expected_e14_has_evidence": true,
       "activation_gate": false
+    },
+    {
+      "id": "ultima-sesion-bici",
+      "question": "¿Cuál fue mi última sesión de bici?",
+      "expected_intent": "analyze_activity",
+      "expected_selector": "latest_activity",
+      "expected_sport": "cycling",
+      "activation_gate": false
+    },
+    {
+      "id": "actividad-ciclismo-fecha",
+      "question": "La actividad de ciclismo del día 2 de octubre",
+      "expected_intent": "analyze_day",
+      "expected_selector": "by_date",
+      "expected_observed_dates": ["2026-10-02"],
+      "expected_sport": "cycling",
+      "activation_gate": false
+    },
+    {
+      "id": "metric-max-hr",
+      "question": "¿Cuál fue mi FC máxima en la actividad de carrera de hoy?",
+      "expected_intent": "analyze_activity",
+      "expected_selector": "by_date",
+      "expected_observed_dates": ["2026-10-03"],
+      "expected_sport": "running",
+      "expected_metric": "max_hr",
+      "activation_gate": false
+    },
+    {
+      "id": "negative-carrera-evento",
+      "question": "La carrera de Málaga",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "race_event_ambiguous",
+      "activation_gate": false
+    },
+    {
+      "id": "negative-recomendacion-bici",
+      "question": "¿Qué bici me recomiendas para mañana?",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "unsupported_paraphrase",
+      "activation_gate": false
+    },
+    {
+      "id": "negative-pulso-teorico",
+      "question": "Mi pulso máximo teórico",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "unsupported_paraphrase",
+      "activation_gate": false
+    },
+    {
+      "id": "negative-fechas-discordantes",
+      "question": "¿Qué sesión tengo mañana, el 10 de octubre?",
+      "expected_intent": "clarify",
+      "expected_selector": "by_date",
+      "expected_clarification": "conflicting_scope",
+      "activation_gate": false
+    },
+    {
+      "id": "plan-bici-manana",
+      "question": "¿Qué sesión de bici tengo mañana?",
+      "expected_intent": "consult_plan",
+      "expected_selector": "by_date",
+      "expected_advice_dates": ["2026-10-04"],
+      "expected_sport": "cycling",
+      "activation_gate": false
+    }
+  ],
+  "analysis_regressions": [
+    {
+      "id": "incomparable-activity-times",
+      "question": "Analiza mi última sesión de bici",
+      "expected_intent": "analyze_activity",
+      "expected_selector": "latest_activity",
+      "expected_sport": "cycling",
+      "expected_limitation": "INCOMPARABLE_ACTIVITY_TIME"
+    },
+    {
+      "id": "insufficient-metric-data",
+      "question": "¿Cuál fue mi FC máxima en la actividad de carrera de hoy?",
+      "expected_intent": "analyze_activity",
+      "expected_selector": "by_date",
+      "expected_observed_dates": ["2026-10-03"],
+      "expected_sport": "running",
+      "expected_metric": "max_hr",
+      "expected_limitation": "ACTIVITY_METRIC_UNAVAILABLE"
+    },
+    {
+      "id": "plan-session-without-sport",
+      "question": "¿Qué sesión de bici tengo mañana?",
+      "expected_intent": "consult_plan",
+      "expected_selector": "by_date",
+      "expected_sport": "cycling",
+      "expected_advice_dates": ["2026-10-04"],
+      "expected_limitation": "PLAN_SESSION_SPORT_UNKNOWN"
+    }
+  ],
+  "voice_parity": [
+    {
+      "id": "voice-max-hr-question",
+      "typed_question": "¿Cuál fue mi FC máxima en la actividad de carrera de hoy?",
+      "transcript": "¿Cuál fue mi FC máxima en la actividad de carrera de hoy?",
+      "expected_intent": "analyze_activity",
+      "expected_selector": "by_date",
+      "expected_observed_dates": ["2026-10-03"],
+      "expected_sport": "running",
+      "expected_metric": "max_hr"
     }
   ]
 }

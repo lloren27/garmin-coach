@@ -31,6 +31,28 @@ class CoachAliasAdapterE14Tests(unittest.TestCase):
                 self.assertEqual(result["question"], case["question"])
                 self.assertEqual(result["scope"], case["scope"])
 
+    def test_shared_regression_corpus_keeps_alias_gates_and_resolver_expectations_explicit(self):
+        # The API owns alias adaptation; the worker owns natural-language resolution.
+        # This suite checks the shared contract is present without copying the resolver.
+        self.assertEqual(CASES["version"], 1)
+        for case in CASES["paraphrases"] + CASES["analysis_regressions"]:
+            with self.subTest(case=case["id"]):
+                self.assertIn(case["expected_intent"], {
+                    "analyze_activity", "analyze_day", "consult_plan", "recommend_next", "clarify"
+                })
+                self.assertIn(case["expected_selector"], {"by_date", "latest_activity", "latest_training_day"})
+                if "expected_observed_dates" in case:
+                    self.assertIsInstance(case["expected_observed_dates"], list)
+                if "expected_advice_dates" in case:
+                    self.assertIsInstance(case["expected_advice_dates"], list)
+                self.assertFalse(case.get("activation_gate", False))
+        for case in CASES["voice_parity"]:
+            with self.subTest(voice_case=case["id"]):
+                self.assertTrue(case["transcript"].strip())
+                self.assertEqual(case["expected_intent"], "analyze_activity")
+                self.assertEqual(case["expected_sport"], "running")
+                self.assertEqual(case["expected_metric"], "max_hr")
+
     def test_argument_aliases_send_original_text_without_canonical_suffix(self):
         self.assertIsNotNone(self.adapter, "app.coach_alias_adapter is not implemented")
         now = datetime.fromisoformat(CASES["now"])

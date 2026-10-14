@@ -8,6 +8,8 @@ from garmin_sync.coach_intent import (
     DateSelector,
     IntentComponent,
     IntentResolution,
+    SportFilter,
+    ActivityMetric,
     DateResolutionScope,
     InvalidDateError,
     resolve_dates,
@@ -17,6 +19,53 @@ from garmin_sync.coach_intent import (
 
 
 class IntentContractTests(unittest.TestCase):
+    def test_sport_filter_is_limited_to_activity_day_or_plan(self):
+        for intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY, CoachIntent.CONSULT_PLAN):
+            IntentComponent(intent, sport=SportFilter.CYCLING)
+        for intent in (CoachIntent.RECOMMEND_NEXT, CoachIntent.REQUEST_CHANGE, CoachIntent.CLARIFY):
+            with self.subTest(intent=intent), self.assertRaises(ValueError):
+                IntentComponent(intent, sport=SportFilter.CYCLING,
+                                clarification_code=ClarificationCode.NO_SCOPE if intent is CoachIntent.CLARIFY else None)
+
+    def test_metric_requires_activity_scope_and_supported_values(self):
+        IntentComponent(CoachIntent.ANALYZE_ACTIVITY, DateSelector.BY_DATE,
+                        observed_dates=(date(2026, 10, 13),), metric=ActivityMetric.MAX_HR)
+        IntentComponent(CoachIntent.ANALYZE_ACTIVITY, DateSelector.LATEST_ACTIVITY,
+                        metric=ActivityMetric.MAX_HR)
+        for intent, selector in ((CoachIntent.CONSULT_PLAN, DateSelector.BY_DATE),
+                                 (CoachIntent.ANALYZE_DAY, DateSelector.BY_DATE),
+                                 (CoachIntent.ANALYZE_ACTIVITY, DateSelector.LATEST_TRAINING_DAY)):
+            with self.subTest(intent=intent, selector=selector), self.assertRaises(ValueError):
+                IntentComponent(intent, selector, metric=ActivityMetric.MAX_HR)
+        with self.assertRaises(ValueError):
+            IntentComponent(CoachIntent.ANALYZE_ACTIVITY, DateSelector.BY_DATE,
+                            metric=ActivityMetric.MAX_HR)
+        with self.assertRaises((TypeError, ValueError)):
+            IntentComponent(CoachIntent.ANALYZE_ACTIVITY, metric="avg_hr")
+
+    def test_new_clarification_codes_have_fixed_user_safe_templates(self):
+        codes = (ClarificationCode.UNSUPPORTED_METRIC, ClarificationCode.INCOMPARABLE_ACTIVITY_TIME,
+                 ClarificationCode.MULTISPORT_ACTIVITY_CONFIRMATION,
+                 ClarificationCode.PLAN_SESSION_SPORT_UNKNOWN, ClarificationCode.RACE_EVENT_AMBIGUOUS)
+        for code in codes:
+            prompt = clarification_prompt(code)
+            self.assertTrue(prompt)
+            self.assertNotIn("{", prompt)
+
+    def test_max_hr_phrases_are_typed_and_average_hr_is_clarified(self):
+        for phrase in ("¿Cuáles fueron mis pulsaciones máximas en la actividad de carrera de hoy?",
+                       "¿Cuál fue mi FC máxima en la carrera de hoy?"):
+            component = resolve_intent(phrase, now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
+            self.assertEqual(component.intent, CoachIntent.ANALYZE_ACTIVITY)
+            self.assertEqual(component.metric, ActivityMetric.MAX_HR)
+        unsupported = resolve_intent("¿Cuál fue mi pulso medio en la carrera de hoy?",
+                                     now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
+        self.assertEqual(unsupported.clarification_code, ClarificationCode.UNSUPPORTED_METRIC)
+        self.assertEqual(resolve_intent("mi pulso medio", now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0].clarification_code,
+                         ClarificationCode.UNSUPPORTED_METRIC)
+        theoretical = resolve_intent("mi pulso máximo teórico", now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
+        self.assertIsNone(theoretical.metric)
+
     def test_dates_are_date_objects_and_resolution_aggregates_them(self):
         observed = date(2026, 10, 4)
         advice = date(2026, 10, 5)
@@ -365,7 +414,14 @@ class ClarificationTests(unittest.TestCase):
             ClarificationCode.PAST_CHANGE_DATE: "cambia la sesión de ayer",
             ClarificationCode.CONFLICTING_SCOPE: "analiza mi última actividad de ayer",
         }
-        self.assertEqual(set(questions), set(ClarificationCode) - {ClarificationCode.CHANGE_NOT_AUTHORIZED})
+        self.assertEqual(set(questions), set(ClarificationCode) - {
+            ClarificationCode.CHANGE_NOT_AUTHORIZED,
+            ClarificationCode.UNSUPPORTED_METRIC,
+            ClarificationCode.INCOMPARABLE_ACTIVITY_TIME,
+            ClarificationCode.MULTISPORT_ACTIVITY_CONFIRMATION,
+            ClarificationCode.PLAN_SESSION_SPORT_UNKNOWN,
+            ClarificationCode.RACE_EVENT_AMBIGUOUS,
+        })
 
         for code, question in questions.items():
             with self.subTest(code=code):

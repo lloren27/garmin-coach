@@ -6,7 +6,7 @@ from garmin_sync.coach_generation_context import build_snapshot, generation_sche
 from garmin_sync.coach_generation_resolver import resolve_generation
 from garmin_sync.coach_generation_contracts import CoachGenerationResponse
 from garmin_sync.coach_validation import CoachValidationError
-from garmin_sync.coach_intent import CoachIntent
+from garmin_sync.coach_intent import CoachIntent, ActivityMetric, SportFilter
 
 NOW = datetime(2026, 9, 25, 23, 59, tzinfo=ZoneInfo('Europe/Madrid'))
 
@@ -58,6 +58,18 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(public['intent']['primary_intent'], 'mixed')
         self.assertEqual(public['intent']['components'][0]['observed_dates'], ['2026-09-25'])
         self.assertEqual(public['intent']['components'][1]['advice_dates'], ['2026-09-26'])
+
+    def test_public_context_serializes_typed_sport_and_metric(self):
+        from dataclasses import replace
+        from garmin_sync.coach_intent import IntentComponent, DateSelector
+        snapshot = build_snapshot('analiza hoy', self.compact, now=NOW)
+        component = IntentComponent(CoachIntent.ANALYZE_ACTIVITY, DateSelector.BY_DATE,
+                                    observed_dates=(date(2026, 9, 25),),
+                                    sport=SportFilter.CYCLING, metric=ActivityMetric.MAX_HR)
+        snapshot = replace(snapshot, intent=replace(snapshot.intent, components=(component,)))
+        public_component = snapshot.public_context()['intent']['components'][0]
+        self.assertEqual(public_component['sport'], 'cycling')
+        self.assertEqual(public_component['metric'], 'max_hr')
 
     def test_snapshot_uses_madrid_civil_date_for_utc_now(self):
         utc_now = datetime(2026, 9, 25, 22, 30, tzinfo=timezone.utc)

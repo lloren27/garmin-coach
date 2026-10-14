@@ -61,6 +61,8 @@ class ContextSnapshot:
             'observed_dates': [day.isoformat() for day in item.observed_dates],
             'advice_dates': [day.isoformat() for day in item.advice_dates],
             'clarification_code': item.clarification_code.value if item.clarification_code else None,
+            'sport': item.sport.value if item.sport else None,
+            'metric': item.metric.value if item.metric else None,
         } for item in self.intent.components]
         scoped_dates = {day.isoformat() for day in (*self.intent.observed_dates, *self.intent.advice_dates)}
         return {'schema_version': '1', 'context_snapshot_id': self.id,

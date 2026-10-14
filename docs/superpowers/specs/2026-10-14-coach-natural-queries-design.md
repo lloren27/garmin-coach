@@ -33,7 +33,7 @@ Los adaptadores normalizan las variantes del proveedor a los mismos deportes. La
 | Strava | `Ride`, `VirtualRide`, `EBikeRide`, `MountainBikeRide`, `GravelRide`, `Handcycle`, `Velomobile`, `RoadBiking`, `MountainBiking`, `IndoorCycling`, `VirtualCycling`, `cycling` | `cycling` |
 | Strava | `Swim`, `OpenWaterSwim`, `PoolSwim` | `swimming` |
 | Strava | `WeightTraining`, `Crossfit` | `strength` |
-| Zepp | `sport_mode=7` (valor presente en fixture de carrera); título (solo fallback) con palabra completa `run`, `running`, `carrera`, `correr`, `treadmill` o `rodaje` | `running` |
+| Zepp | `sport_mode=7` (valor presente en fixture de carrera); título (solo fallback) con palabra completa `run`, `running`, `correr`, `treadmill`, `rodaje` o frase completa `carrera a pie` | `running` |
 | Zepp | `sport_mode`/`type` solo cuando el código esté respaldado por fixture o contrato del proveedor; título (solo fallback) con palabra completa `bike`, `biking`, `ride`, `cycling`, `ciclismo`, `bici` o `rodillo` | `cycling` |
 | Zepp | `sport_mode`/`type` solo cuando el código esté respaldado por fixture o contrato del proveedor; título (solo fallback) con palabra completa `swim`, `swimming`, `natación` o `nadar` | `swimming` |
 | Zepp | `type=52` (código estructurado cubierto por fixture) | `strength` |

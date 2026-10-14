@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from garmin_sync.activity_merge import merge_activities
-from garmin_sync.sync import normalize_activities, summarize_normalized
+from garmin_sync.sync import normalize_activities, summarize_normalized, sport
 
 
 def activity(
@@ -30,6 +30,20 @@ def activity(
 
 
 class ActivityMergeTests(unittest.TestCase):
+    def test_garmin_sport_uses_structured_type_not_editable_event_name(self):
+        cases = {
+            "running": "running", "trail_running": "running", "track_running": "running",
+            "treadmill_running": "running", "run": "running", "road_biking": "cycling",
+            "mountain_biking": "cycling", "gravel_cycling": "cycling", "indoor_cycling": "cycling",
+            "virtual_ride": "cycling", "lap_swimming": "swimming", "open_water_swimming": "swimming",
+            "pool_swimming": "swimming", "strength_training": "strength", "multisport": "multisport",
+            "triathlon": "multisport", "duathlon": "multisport", "brick": "multisport",
+        }
+        for type_key, normalized in cases.items():
+            with self.subTest(type_key=type_key):
+                self.assertEqual(sport({"activityType": {"typeKey": type_key}, "activityName": "Carrera Málaga"}), normalized)
+        self.assertEqual(sport({"activityType": {"typeKey": "race_event"}, "activityName": "Carrera Málaga"}), "other")
+
     def test_garmin_strava_copy_with_pauses_counts_once(self) -> None:
         garmin = activity("edge", "garmin", "2026-10-05T17:46:29+02:00", 40.66, 6156)
         strava = activity("strava:edge", "strava", "2026-10-05T15:46:29Z", 40.66, 9808)

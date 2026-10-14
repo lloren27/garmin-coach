@@ -67,22 +67,34 @@ def activity_type(activity: dict[str, Any]) -> str:
 
 
 def is_run(activity: dict[str, Any]) -> bool:
-    kind = activity_type(activity)
-    name = str(activity.get("activityName") or "").lower()
-    return "running" in kind or "run" in name or "correr" in name or "carrera" in name
+    return sport(activity) == "running"
 
 
 def sport(activity: dict[str, Any]) -> str:
-    kind = activity_type(activity)
-    name = str(activity.get("activityName") or "").lower()
-    if is_run(activity):
-        return "running"
-    if any(token in kind for token in ("cycling", "biking", "indoor_cycling")) or any(
-        token in name for token in ("cycling", "ciclismo", "bici", "bike")
-    ):
-        return "cycling"
-    if "strength" in kind or "strength" in name or "fuerza" in name:
-        return "strength"
+    activity_type_value = activity.get("activityType")
+    kinds = []
+    if isinstance(activity_type_value, dict):
+        kinds = [str(activity_type_value.get(key) or "").strip().lower()
+                 for key in ("typeKey", "parentTypeKey")]
+    else:
+        kinds = [str(activity_type_value or "").strip().lower()]
+    multisport = {"multisport", "multi_sport", "triathlon", "duathlon", "brick"}
+    running = {"running", "trail_running", "track_running", "treadmill_running", "run"}
+    cycling = {"cycling", "road_biking", "mountain_biking", "gravel_cycling", "indoor_cycling",
+               "virtual_ride", "bike", "cycling_virtual"}
+    swimming = {"lap_swimming", "open_water_swimming", "swimming", "pool_swimming"}
+    strength = {"strength_training", "strength"}
+    for kind in kinds:
+        if kind in multisport:
+            return "multisport"
+        if kind in running:
+            return "running"
+        if kind in cycling:
+            return "cycling"
+        if kind in swimming:
+            return "swimming"
+        if kind in strength:
+            return "strength"
     return "other"
 
 

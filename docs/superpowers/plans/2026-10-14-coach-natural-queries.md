@@ -68,21 +68,21 @@
 
 **Interfaces:** El parser devuelve deporte normalizado en `IntentComponent.sport`; los adaptadores devuelven `sport` normalizado y mantienen el valor original en `type`. Tipos no reconocidos se conservan como `other`.
 
-- [ ] Añadir pruebas de frases `salida en bici`, `ruta en bici`, `rodaje`, `running`, natación y `actividad de carrera`; exigir que `la carrera de Málaga` no normalice a running y que `¿qué bici me recomiendas?` y `mi pulso máximo teórico` no se conviertan en consulta de actividad/métrica.
-- [ ] Añadir pruebas del mapa Strava para `RoadBiking`, `MountainBikeRide`, `IndoorCycling`, `VirtualRide`, `TrailRun`, `OpenWaterSwim` y `PoolSwim`; exigir que el filtro incluya todos los tipos normalizados aunque el nombre no sea `Ride`.
-- [ ] Ejecutar esos tests antes de tocar adaptadores y confirmar que fallan por reglas de normalización ausentes.
-- [ ] En Garmin, normalizar los tipos estructurados de carrera, bici, natación y `multisport`/triatlón; no inferir disciplina desde nombres de competición.
-- [ ] En Zepp, consultar primero `sport_mode`/`type` usando solo códigos confirmados por fixtures/contrato (`sport_mode=7` running; `type=52` strength); probar títulos fallback con palabras completas y confirmar que `bridge` y `prune` quedan `other`. No añadir códigos numéricos especulativos.
-- [ ] Añadir un test donde un código estructurado conocido contradiga el título Zepp y afirmar que prevalece el código; añadir otro donde un código desconocido usa fallback por palabra completa.
-- [ ] Añadir pruebas de interior/rodillo/virtual → `cycling`, y de actividad Garmin multideporte → `multisport`; la normalización no divide segmentos.
-- [ ] Ejecutar focalmente las suites del parser y los tres adaptadores:
+- [x] Añadir pruebas de frases `salida en bici`, `ruta en bici`, `rodaje`, `running`, natación y `actividad de carrera`; exigir que `la carrera de Málaga` no normalice a running y que `¿qué bici me recomiendas?` y `mi pulso máximo teórico` no se conviertan en consulta de actividad/métrica.
+- [x] Añadir pruebas del mapa Strava para `RoadBiking`, `MountainBikeRide`, `IndoorCycling`, `VirtualRide`, `TrailRun`, `OpenWaterSwim` y `PoolSwim`; exigir que el filtro incluya todos los tipos normalizados aunque el nombre no sea `Ride`.
+- [x] Ejecutar los tests del parser antes de implementar y confirmar el fallo RED por falta de reglas de normalización. Los tests de adaptadores también se escribieron antes del código, aunque no se ejecutaron individualmente en estado RED.
+- [x] En Garmin, normalizar los tipos estructurados de carrera, bici, natación y `multisport`/triatlón; no inferir disciplina desde nombres de competición.
+- [x] En Zepp, consultar primero `sport_mode`/`type` usando solo códigos confirmados por fixtures/contrato (`sport_mode=7` running; `type=52` strength); probar títulos fallback con palabras completas y confirmar que `bridge` y `prune` quedan `other`. No añadir códigos numéricos especulativos.
+- [x] Añadir un test donde un código estructurado conocido contradiga el título Zepp y afirmar que prevalece el código; añadir otro donde un código desconocido usa fallback por palabra completa.
+- [x] Añadir pruebas de interior/rodillo/virtual → `cycling`, y de actividad Garmin multideporte → `multisport`; la normalización no divide segmentos.
+- [x] Ejecutar focalmente las suites del parser y los tres adaptadores:
   ```bash
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_coach_intent.py' -v
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_strava_activity_provider.py' -v
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_zepp_activity_provider.py' -v
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_activity_merge.py' -v
   ```
-- [ ] Commit local: `feat: normalize sports in natural queries`.
+- [x] Commit local: `feat: normalize sports in natural queries`.
 
 ### Tarea 3: timestamps, cobertura y selección de «última»
 

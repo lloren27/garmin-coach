@@ -66,6 +66,30 @@ class IntentContractTests(unittest.TestCase):
         theoretical = resolve_intent("mi pulso máximo teórico", now=datetime(2026, 10, 14, 10, tzinfo=timezone.utc)).components[0]
         self.assertIsNone(theoretical.metric)
 
+    def test_text_sport_synonyms_are_attached_only_to_supported_intents(self):
+        now = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
+        cases = {
+            "Analiza mi salida en bici de hoy": SportFilter.CYCLING,
+            "Analiza la ruta en bicicleta de hoy": SportFilter.CYCLING,
+            "¿Qué tal mi rodaje de hoy?": SportFilter.RUNNING,
+            "¿Qué tal running hoy?": SportFilter.RUNNING,
+            "¿Qué tal mi natación de hoy?": SportFilter.SWIMMING,
+            "Analiza la actividad de carrera de hoy": SportFilter.RUNNING,
+            "Analiza mi sesión de fuerza de hoy": SportFilter.STRENGTH,
+            "¿Cuál fue mi FC máxima en la carrera de hoy?": SportFilter.RUNNING,
+        }
+        for question, expected in cases.items():
+            with self.subTest(question=question):
+                component = resolve_intent(question, now=now).components[0]
+                self.assertEqual(component.sport, expected)
+        event = resolve_intent("la carrera de Málaga", now=now).components[0]
+        self.assertIsNone(event.sport)
+        self.assertEqual(event.clarification_code, ClarificationCode.RACE_EVENT_AMBIGUOUS)
+        event_metric = resolve_intent("FC máxima en la carrera de Málaga", now=now).components[0]
+        self.assertEqual(event_metric.clarification_code, ClarificationCode.RACE_EVENT_AMBIGUOUS)
+        recommendation = resolve_intent("¿Qué bici me recomiendas para mañana?", now=now).components[0]
+        self.assertIsNone(recommendation.sport)
+
     def test_dates_are_date_objects_and_resolution_aggregates_them(self):
         observed = date(2026, 10, 4)
         advice = date(2026, 10, 5)

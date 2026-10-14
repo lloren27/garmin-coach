@@ -4,7 +4,7 @@ from datetime import date
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from garmin_sync.zepp_activity_provider import ZeppActivityProvider
+from garmin_sync.zepp_activity_provider import ZeppActivityProvider, _sport
 
 
 RAW_RUN = {
@@ -47,6 +47,24 @@ def response(payload: dict, status_code: int = 200) -> Mock:
 
 
 class ZeppActivityProviderTests(TestCase):
+    def test_structured_codes_precede_whole_word_title_fallback(self) -> None:
+        self.assertEqual(_sport("bridge", sport_mode=7), "running")
+        self.assertEqual(_sport("prune", type_code=52), "strength")
+        self.assertEqual(_sport("bridge"), "other")
+        self.assertEqual(_sport("prune"), "other")
+        self.assertEqual(_sport("bridge ride"), "cycling")
+        self.assertEqual(_sport("bridge"), "other")
+
+    def test_zepp_title_fallback_matches_complete_words_and_supported_sports(self) -> None:
+        cases = {
+            "Morning Run": "running", "Correr": "running", "Rodaje": "running",
+            "Bici de interior": "cycling", "Rodillo": "cycling", "Virtual Ride": "cycling",
+            "Natación en piscina": "swimming", "Open Water Swim": "swimming",
+            "Sesión de fuerza": "strength",
+        }
+        for title, normalized in cases.items():
+            with self.subTest(title=title):
+                self.assertEqual(_sport(title), normalized)
     @patch("garmin_sync.zepp_activity_provider.requests.get")
     def test_normalizes_zero_distance_strength_session_without_pace(self, get: Mock) -> None:
         get.return_value = response({"code": 1, "data": {"summary": [RAW_STRENGTH]}})

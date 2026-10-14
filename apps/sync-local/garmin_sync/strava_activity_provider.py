@@ -236,12 +236,19 @@ def _timestamp(value: Any, local_timezone: ZoneInfo) -> datetime | None:
 
 
 def _sport(value: str) -> str:
-    lowered = value.lower()
-    if "run" in lowered:
+    normalized = value.strip().casefold()
+    running = {"run", "trailrun", "virtualrun"}
+    cycling = {"ride", "virtualride", "ebikeride", "mountainbikeride", "gravelride", "handcycle",
+               "velomobile", "roadbiking", "mountainbiking", "indoorcycling", "virtualcycling", "cycling"}
+    swimming = {"swim", "openwaterswim", "poolswim"}
+    strength = {"weighttraining", "crossfit"}
+    if normalized in running:
         return "running"
-    if any(token in lowered for token in ("ride", "cycling", "bike")):
+    if normalized in cycling:
         return "cycling"
-    if any(token in lowered for token in ("weight", "crossfit", "strength")):
+    if normalized in swimming:
+        return "swimming"
+    if normalized in strength:
         return "strength"
     return "other"
 

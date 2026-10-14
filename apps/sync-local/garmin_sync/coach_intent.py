@@ -285,6 +285,7 @@ _MAX_HR_QUERY = re.compile(r"\b(?:pulso|pulsaciones?|fc)\s+maxim[oa]s?\b")
 _AVG_HR_QUERY = re.compile(r"\b(?:pulso|pulsaciones?|fc)\s+medi[oa]\b")
 _ACTIVITY_SCOPE_WORDS = re.compile(r"\b(?:actividad|sesion|entrenamiento|entreno|salida|carrera)\b")
 _THEORETICAL_METRIC = re.compile(r"\b(?:teoric[oa]|estimad[oa]|predich[oa])\b")
+_RACE_EVENT = re.compile(r"\b(?:la|una)\s+carrera\s+de\s+[a-z]+\b")
 _RECOGNIZED_CLAUSE_STARTS = (
     re.compile(r"^(?:¿\s*)?(?:cu[aá]l(?:es)?|dime)\s+(?:fue|fueron|es|son)?\s*(?:mi|mis)?\s*(?:pulso|pulsaciones?|fc)\b"),
     re.compile(r"^(?:no\s+)?(?:analiza|analizar|analices|revisa|revisar|repasa|repasar|valora|valorar)\b"),
@@ -344,10 +345,14 @@ def _clarify(code: ClarificationCode) -> IntentComponent:
 
 def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: DateSelector = DateSelector.BY_DATE) -> IntentComponent:
     metric = _metric_for_clause(clause)
+    sport = _sport_filter_for_clause(clause) if intent in (
+        CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY, CoachIntent.CONSULT_PLAN
+    ) else None
     if metric is _UNSUPPORTED_METRIC and _ACTIVITY_SCOPE_WORDS.search(clause):
         return _clarify(ClarificationCode.UNSUPPORTED_METRIC)
     if selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
-        return IntentComponent(intent, selector, metric=metric if isinstance(metric, ActivityMetric) else None)
+        return IntentComponent(intent, selector, sport=sport,
+                               metric=metric if isinstance(metric, ActivityMetric) else None)
 
     normalized = _normalize(clause)
     has_past_cue = bool(re.search(r"\b(?:ayer|pasado|pasada|semana pasada|tocaba)\b", normalized))
@@ -371,6 +376,7 @@ def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: D
         if not dates:
             return _clarify(ClarificationCode.NO_SCOPE)
         return IntentComponent(intent, selector, observed_dates=dates,
+                               sport=sport,
                                metric=metric if isinstance(metric, ActivityMetric) else None)
 
     if intent is CoachIntent.RECOMMEND_NEXT and not dates:
@@ -384,6 +390,7 @@ def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: D
     observed = tuple(day for day in dates if day < today)
     advice = tuple(day for day in dates if day >= today)
     return IntentComponent(intent, selector, observed_dates=observed, advice_dates=advice,
+                           sport=sport,
                            metric=metric if isinstance(metric, ActivityMetric) else None)
 
 
@@ -400,6 +407,19 @@ def _metric_for_clause(clause: str):
     return None
 
 
+def _sport_filter_for_clause(clause: str) -> SportFilter | None:
+    if re.search(r"\b(?:bici|bicicleta|ciclismo|rodillo)\b", clause):
+        return SportFilter.CYCLING
+    if (re.search(r"\b(?:running|correr|rodaje|carrera\s+a\s+pie|actividad\s+de\s+carrera)\b", clause)
+            or (_ACTIVITY_METRIC_QUERY.search(clause) and re.search(r"\bcarrera\b", clause))):
+        return SportFilter.RUNNING
+    if re.search(r"\b(?:nadar|natacion|swim)\b", clause):
+        return SportFilter.SWIMMING
+    if re.search(r"\b(?:fuerza|strength)\b", clause):
+        return SportFilter.STRENGTH
+    return None
+
+
 def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
     normalized = _normalize(clause)
     negative_change = bool(_NEGATED_CHANGE.search(normalized))
@@ -408,6 +428,13 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
 
     if _AVG_HR_QUERY.search(normalized) and not _THEORETICAL_METRIC.search(normalized):
         return _clarify(ClarificationCode.UNSUPPORTED_METRIC)
+    try:
+        race_has_date = bool(resolve_dates(normalized, now=now, scope=DateResolutionScope.OBSERVED))
+    except InvalidDateError:
+        race_has_date = False
+    if (_RACE_EVENT.search(normalized) and not race_has_date
+            and not re.search(r"\b(?:actividad|sesion|correr|running|carrera\s+a\s+pie)\b", normalized)):
+        return _clarify(ClarificationCode.RACE_EVENT_AMBIGUOUS)
 
     if negative_change and positive_change and has_plan_object:
         return _clarify(ClarificationCode.CONTRADICTORY_OPERATION)

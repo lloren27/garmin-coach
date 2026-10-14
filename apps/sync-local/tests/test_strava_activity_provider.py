@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from garmin_sync.strava_activity_provider import StravaActivityProvider, StravaTokenStore
+from zoneinfo import ZoneInfo
+from garmin_sync.strava_activity_provider import StravaActivityProvider, StravaTokenStore, _normalize_record, _sport
 
 
 RAW_RUN = {
@@ -35,6 +36,25 @@ def response(payload: object, status_code: int = 200) -> Mock:
 
 
 class StravaActivityProviderTests(TestCase):
+    def test_provider_sport_types_use_exact_normalized_map(self) -> None:
+        cases = {
+            "Run": "running", "TrailRun": "running", "VirtualRun": "running",
+            "Ride": "cycling", "RoadBiking": "cycling", "MountainBikeRide": "cycling",
+            "IndoorCycling": "cycling", "VirtualRide": "cycling", "EBikeRide": "cycling",
+            "GravelRide": "cycling", "MountainBiking": "cycling", "VirtualCycling": "cycling",
+            "Swim": "swimming", "OpenWaterSwim": "swimming", "PoolSwim": "swimming",
+            "WeightTraining": "strength", "Crossfit": "strength",
+        }
+        for provider_type, normalized in cases.items():
+            with self.subTest(provider_type=provider_type):
+                self.assertEqual(_sport(provider_type), normalized)
+                record = dict(RAW_RUN, id=provider_type, sport_type=provider_type)
+                normalized_record = _normalize_record(record, ZoneInfo("Europe/Madrid"))
+                self.assertIsNotNone(normalized_record)
+                self.assertEqual(normalized_record["sport"], normalized)
+        self.assertEqual(_sport("NotARide"), "other")
+        self.assertEqual(_sport("Bridge"), "other")
+
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)

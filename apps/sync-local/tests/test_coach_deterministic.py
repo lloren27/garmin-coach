@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import unittest
@@ -100,6 +100,76 @@ class DeterministicTests(unittest.TestCase):
         self.assertIn('No puedo valorar si es seguro hacerla', wire.answer)
         self.assertEqual(wire.decisions[1].date.isoformat(), '2026-10-04')
         self.assertEqual(wire.decisions[1].action, 'ask_user')
+
+    def test_future_plan_query_renders_only_requested_sport(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'bike-plan', 'date': '2026-10-04', 'status': 'planned', 'sport': 'cycling',
+             'duration_min': 60, 'duration_max': 90},
+            {'id': 'run-plan', 'date': '2026-10-04', 'status': 'planned', 'sport': 'running',
+             'duration_min': 30, 'duration_max': 45},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('ciclismo (2026-10-04), 60–90 min', wire.answer)
+        self.assertNotIn('running', wire.answer)
+        self.assertNotIn('¿Puedes aportar los datos', wire.answer)
+
+    def test_plan_without_requested_sport_says_so(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'run-plan', 'date': '2026-10-04', 'status': 'planned', 'sport': 'running',
+             'duration_min': 30, 'duration_max': 45},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('El plan disponible no muestra una sesión de ciclismo para 2026-10-04.', wire.answer)
+
+    def test_plan_with_no_session_on_requested_day_says_so(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'bike-later', 'date': '2026-10-05', 'status': 'planned', 'sport': 'cycling',
+             'duration_min': 60, 'duration_max': 90},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('El plan disponible no muestra una sesión de ciclismo para 2026-10-04.', wire.answer)
+        self.assertNotIn('bike-later', wire.answer)
+
+    def test_plan_without_sport_metadata_asks_for_confirmation(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = []
+        extra['training_plan']['sessions'] = [
+            {'id': 'unknown-plan', 'date': '2026-10-04', 'status': 'planned',
+             'duration_min': 60, 'duration_max': 90},
+        ]
+        wire = deterministic_response('qué sesión de bici tengo mañana', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('El plan no indica el deporte', wire.answer)
+
+    def test_multiple_activities_on_one_day_are_listed_separately(self):
+        row = fixture('E01')
+        extra = row['estado_inicial']['extra_context']
+        extra['recent_activities'] = [
+            {'id': 'ride-a', 'source': 'garmin', 'sport': 'cycling', 'date': '2026-10-03',
+             'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T07:00:00Z',
+             'time_context': 'Europe/Madrid', 'duration_s': 1800, 'km': 8},
+            {'id': 'ride-b', 'source': 'garmin', 'sport': 'cycling', 'date': '2026-10-03',
+             'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T10:00:00Z',
+             'time_context': 'Europe/Madrid', 'duration_s': 2400, 'km': 12},
+        ]
+        extra['training_plan']['sessions'] = []
+        wire = deterministic_response('analiza las actividades de bici de hoy', row['estado_inicial'],
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc))
+        self.assertIn('30:00, 8 km', wire.answer)
+        self.assertIn('40:00, 12 km', wire.answer)
 
     def test_change_request_does_not_erase_safety(self):
         wire = self.response('E10', 'cambia la sesión de mañana')

@@ -302,6 +302,62 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(result.facts, ())
         self.assertIn('MULTISPORT_ACTIVITY_CONFIRMATION', result.limitations)
 
+    def test_plan_query_reads_future_sessions_and_filters_by_sport(self):
+        def mutate(x):
+            x['recent_activities'] = []
+            x['training_plan']['sessions'] = [
+                {'id': 'bike-plan', 'date': '2026-10-04', 'status': 'planned',
+                 'sport': 'cycling', 'duration_min': 60, 'duration_max': 90},
+                {'id': 'run-plan', 'date': '2026-10-04', 'status': 'planned',
+                 'sport': 'running', 'duration_min': 30, 'duration_max': 45},
+            ]
+        result = build_analysis_facts(snapshot(question='qué sesión de bici tengo mañana', mutate=mutate,
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc)))
+        self.assertEqual({f.source_refs[0] for f in result.facts if f.source == 'training_plan'},
+                         {'session:bike-plan'})
+        self.assertEqual(result.matches, ())
+        self.assertNotIn('ACTIVITY_NOT_RECORDED', result.limitations)
+
+    def test_plan_query_with_unknown_sport_requires_confirmation(self):
+        def mutate(x):
+            x['recent_activities'] = []
+            x['training_plan']['sessions'] = [
+                {'id': 'unknown-plan', 'date': '2026-10-04', 'status': 'planned',
+                 'duration_min': 60, 'duration_max': 90},
+            ]
+        result = build_analysis_facts(snapshot(question='qué sesión de bici tengo mañana', mutate=mutate,
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc)))
+        self.assertIn('PLAN_SESSION_SPORT_UNKNOWN', result.limitations)
+        self.assertEqual(result.matches, ())
+
+    def test_plan_query_without_matching_sport_is_explicit(self):
+        def mutate(x):
+            x['recent_activities'] = []
+            x['training_plan']['sessions'] = [
+                {'id': 'run-plan', 'date': '2026-10-04', 'status': 'planned',
+                 'sport': 'running', 'duration_min': 30, 'duration_max': 45},
+            ]
+        result = build_analysis_facts(snapshot(question='qué sesión de bici tengo mañana', mutate=mutate,
+            now=datetime(2026, 10, 3, 12, tzinfo=timezone.utc)))
+        self.assertIn('PLAN_SPORT_NOT_PLANNED', result.limitations)
+        self.assertFalse(any(f.sport == 'running' for f in result.facts))
+
+    def test_same_day_activities_remain_separate(self):
+        def mutate(x):
+            x['recent_activities'] = [
+                {'id': 'ride-a', 'source': 'garmin', 'sport': 'cycling', 'date': '2026-10-03',
+                 'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T07:00:00Z',
+                 'time_context': 'Europe/Madrid', 'duration_s': 1800, 'km': 8},
+                {'id': 'ride-b', 'source': 'garmin', 'sport': 'cycling', 'date': '2026-10-03',
+                 'local_date': '2026-10-03', 'started_at_utc': '2026-10-03T10:00:00Z',
+                 'time_context': 'Europe/Madrid', 'duration_s': 2400, 'km': 12},
+            ]
+            x['training_plan']['sessions'] = []
+        result = build_analysis_facts(snapshot(question='analiza las actividades de bici de hoy', mutate=mutate))
+        self.assertEqual({ref for f in result.facts if f.metric in {'duration_s', 'distance_km'}
+                          for ref in f.source_refs},
+                         {'activity:ride-a', 'activity:ride-b'})
+
     def test_deep_immutability_determinism_and_operand_references(self):
         snap = snapshot('MATCH-confirmed')
         before = snap.public_context()

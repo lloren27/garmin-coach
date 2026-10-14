@@ -278,6 +278,48 @@ class IntentClassificationTests(unittest.TestCase):
         self.assertEqual(activity.selector, DateSelector.LATEST_ACTIVITY)
         self.assertEqual(training_day.selector, DateSelector.LATEST_TRAINING_DAY)
 
+    def test_performed_latest_session_and_future_planned_session_are_distinct(self):
+        performed = self.resolve("mi última sesión de bici")
+        planned = self.resolve("qué sesión de bici tengo mañana")
+        self.assertEqual(performed.primary_intent, CoachIntent.ANALYZE_ACTIVITY)
+        self.assertEqual(performed.selector, DateSelector.LATEST_ACTIVITY)
+        self.assertEqual(performed.components[0].sport, SportFilter.CYCLING)
+        self.assertEqual(planned.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(planned.advice_dates, (date(2026, 10, 5),))
+        self.assertEqual(planned.components[0].sport, SportFilter.CYCLING)
+        generic_plan = self.resolve("qué sesión tengo mañana")
+        self.assertEqual(generic_plan.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(generic_plan.advice_dates, (date(2026, 10, 5),))
+
+    def test_past_performed_session_and_future_planned_session_are_distinct(self):
+        performed = self.resolve("la sesión que hice ayer")
+        planned = self.resolve("la sesión planificada para mañana")
+        self.assertEqual(performed.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(performed.observed_dates, (date(2026, 10, 3),))
+        self.assertEqual(planned.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(planned.advice_dates, (date(2026, 10, 5),))
+
+    def test_nominal_dated_activity_is_observation_not_plan(self):
+        result = self.resolve("la actividad de ciclismo del día 2 de octubre")
+        self.assertEqual(result.primary_intent, CoachIntent.ANALYZE_DAY)
+        self.assertEqual(result.observed_dates, (date(2026, 10, 2),))
+        self.assertEqual(result.components[0].sport, SportFilter.CYCLING)
+
+    def test_bare_day_is_past_only_for_analysis_and_next_occurrence_for_plan(self):
+        analysis_future = self.resolve("analiza la actividad de bici del día 14")
+        analysis_past = self.resolve("analiza la actividad de bici del día 2")
+        plan = self.resolve("qué sesión tengo el día 14")
+        self.assertEqual(analysis_future.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(analysis_future.components[0].clarification_code, ClarificationCode.NO_SCOPE)
+        self.assertEqual(analysis_past.observed_dates, (date(2026, 10, 2),))
+        self.assertEqual(plan.primary_intent, CoachIntent.CONSULT_PLAN)
+        self.assertEqual(plan.advice_dates, (date(2026, 10, 14),))
+
+    def test_relative_and_conflicting_explicit_dates_are_clarified(self):
+        result = self.resolve("qué sesión tengo mañana, el 10 de octubre")
+        self.assertEqual(result.primary_intent, CoachIntent.CLARIFY)
+        self.assertEqual(result.components[0].clarification_code, ClarificationCode.CONFLICTING_SCOPE)
+
     def test_plan_weekday_and_past_month_dates_follow_intent(self):
         future_plan = self.resolve("qué toca el domingo")
         past_plan = self.resolve("qué tocaba el 3 de octubre")

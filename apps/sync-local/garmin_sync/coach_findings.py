@@ -9,7 +9,7 @@ import unicodedata
 
 from .coach_analysis import AnalysisFacts, MatchState, build_analysis_facts
 from .coach_generation_context import freeze
-from .coach_intent import ClarificationCode, clarification_prompt
+from .coach_intent import ClarificationCode, CoachIntent, clarification_prompt
 
 SELECTOR = freeze(json.loads(Path(__file__).with_name('coach_selector_v1.json').read_text()))
 FOLLOW_UPS = freeze({
@@ -168,6 +168,44 @@ def build_catalog(snapshot, component_index, question):
                     comp.operand_refs + (tuple(f.id for f in duration_facts) if comp.metric == 'distance' else ()), match.date,
                     certainty='candidate' if dependency else 'confirmed', dependencies=dependency)
 
+    if component.intent is CoachIntent.CONSULT_PLAN:
+        if 'PLAN_SESSION_SPORT_UNKNOWN' in facts.limitations:
+            add('PLAN_SESSION_SPORT_UNKNOWN',
+                clarification_prompt(ClarificationCode.PLAN_SESSION_SPORT_UNKNOWN), mandatory=True)
+        elif 'PLAN_SPORT_NOT_PLANNED' in facts.limitations:
+            sport = component.sport.value if component.sport else 'requested'
+            labels = {'cycling': 'ciclismo', 'running': 'carrera', 'swimming': 'natación', 'strength': 'fuerza'}
+            label = labels.get(sport, sport)
+            days = ', '.join(d.isoformat() for d in component.advice_dates or component.observed_dates)
+            add('PLAN_SPORT_NOT_PLANNED',
+                f'El plan disponible no muestra una sesión de {label} para {days}.', mandatory=True)
+        else:
+            plan_facts = [f for f in facts.facts if f.source == 'training_plan']
+            sessions_by_id = {f'session:{key}': session for key, session in snapshot.sessions.items()}
+            details = []
+            sport_labels = {'cycling': 'ciclismo', 'running': 'carrera', 'swimming': 'natación',
+                            'strength': 'fuerza', 'walking': 'caminata', 'multisport': 'multideporte'}
+            for ref in sorted({ref for fact in plan_facts for ref in fact.source_refs}):
+                session = sessions_by_id.get(ref)
+                if not session:
+                    continue
+                sport = sport_labels.get(session.get('sport'), session.get('sport')) or 'actividad sin deporte indicado'
+                parts = [f'{sport} ({session.get("date")})']
+                low, high = session.get('duration_min'), session.get('duration_max')
+                if low is not None and high is not None:
+                    parts.append(f'{number(low)}–{number(high)} min')
+                elif session.get('duration_min') is not None:
+                    parts.append(f'{number(session["duration_min"])} min')
+                if session.get('distance_km') is not None:
+                    parts.append(f'{number(session["distance_km"])} km')
+                if session.get('session_type'):
+                    parts.append(str(session['session_type']).replace('_', ' '))
+                details.append(', '.join(parts))
+            if details:
+                add('PLAN_SESSION_AVAILABLE', 'Sesión' + ('es' if len(details) > 1 else '') +
+                    ' del plan: ' + '; '.join(details) + '.',
+                    sources=tuple(sorted({ref for fact in plan_facts for ref in fact.source_refs})), mandatory=True)
+
     for fact in facts.facts:
         if fact.metric == 'pace_s_per_km':
             add('PACE_BLOCKS_NOT_COMPARABLE', f'Ritmo medio: {duration(fact.value)} min/km ({fact.source}, {fact.date.isoformat()}). '
@@ -247,6 +285,8 @@ def build_catalog(snapshot, component_index, question):
 
 def _follow_up(findings, question=''):
     codes = {f.code for f in findings}
+    if codes & {'PLAN_SESSION_AVAILABLE', 'PLAN_SPORT_NOT_PLANNED', 'PLAN_SESSION_SPORT_UNKNOWN'}:
+        return None
     if codes & {'SYMPTOM_REPORTED', 'SESSION_SAFETY_NOT_ASSESSABLE'}:
         return 'CLARIFY_SYMPTOM_CONTEXT'
     if codes & {'PLAN_MATCH_UNCONFIRMED', 'PLAN_MATCH_AMBIGUOUS', 'PLAN_ACTIVITY_MAGNITUDE_MISMATCH'}:

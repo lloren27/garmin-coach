@@ -176,7 +176,7 @@ def resolve_dates(
 
     consume(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{4}\b", explicit_numeric)
 
-    month_pattern = r"\b(?:el\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?\b"
+    month_pattern = r"\b(?:(?:el\s+)?dia\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?\b"
 
     def named_month(match):
         day = int(match.group(1))
@@ -185,6 +185,27 @@ def resolve_dates(
         return [_checked_date(year, month, day)] if year else [_month_occurrence(day, month, today, scope)]
 
     consume(month_pattern, named_month)
+
+    def bare_day(match):
+        day = int(match.group(1))
+        year, month = today.year, today.month
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            return []
+        if scope is DateResolutionScope.OBSERVED:
+            return [candidate] if candidate <= today else []
+        if candidate <= today:
+            month += 1
+            if month == 13:
+                year, month = year + 1, 1
+            try:
+                candidate = date(year, month, day)
+            except ValueError:
+                return []
+        return [candidate]
+
+    consume(r"\b(?:el\s+)?dia\s+(\d{1,2})\b", bare_day)
 
     def next_seven_days(_match):
         return [today + timedelta(days=offset) for offset in range(7)]
@@ -270,7 +291,8 @@ _ANALYSIS_VERB = re.compile(r"\b(?:analiza|analizar|revisa|revisar|repasa|repasa
 _RETROSPECTIVE_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[2][1])
 _PLAN_QUESTION = re.compile(_INTENT_SIGNAL_PATTERNS[3][1])
 _RECOMMENDATION = re.compile(_INTENT_SIGNAL_PATTERNS[4][1])
-_LATEST_ACTIVITY = re.compile(r"\b(?:ultima\s+actividad|actividad\s+mas\s+reciente)\b")
+_LATEST_ACTIVITY = re.compile(r"\b(?:ultima\s+(?:actividad|sesion)|actividad\s+mas\s+reciente)\b")
+_PLAN_LOOKUP = re.compile(r"\b(?:que|cual)\s+(?:sesion|entrenamiento|entreno)\b.*\b(?:tengo|hay|esta|prevista|planificada)\b")
 _LATEST_TRAINING_DAY = re.compile(r"\b(?:ultimo\s+dia\s+de\s+entrenamiento|ultimo\s+dia\s+que\s+entrene)\b")
 _CHANGE_START = re.compile(r"^(?:no\s+)?(?:cambia|modifica|mueve|quita|anade|cancela|reprograma)\b")
 _FOCUSED_ANALYSIS = re.compile(
@@ -371,6 +393,21 @@ def _make_component(intent: CoachIntent, clause: str, now: datetime, selector: D
         dates = resolve_dates(clause, now=now, scope=scope)
     except InvalidDateError:
         return _clarify(ClarificationCode.INVALID_DATE)
+    relative = re.search(r"\b(?:hoy|ayer|manana)\b", normalized)
+    explicit = re.search(
+        r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{4}\b|"
+        r"\b(?:dia\s+)?\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|"
+        r"agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+\d{4})?\b",
+        normalized,
+    )
+    if intent is CoachIntent.CONSULT_PLAN and relative and explicit:
+        try:
+            relative_date = resolve_dates(relative.group(), now=now, scope=scope)
+            explicit_date = resolve_dates(explicit.group(), now=now, scope=scope)
+        except InvalidDateError:
+            return _clarify(ClarificationCode.INVALID_DATE)
+        if relative_date and explicit_date and relative_date != explicit_date:
+            return _clarify(ClarificationCode.CONFLICTING_SCOPE)
 
     if intent in (CoachIntent.ANALYZE_ACTIVITY, CoachIntent.ANALYZE_DAY):
         if not dates:
@@ -494,8 +531,12 @@ def _classify_clause(clause: str, now: datetime) -> IntentComponent | None:
         if has_plan_object and any(day > today for day in dates_for_hint):
             return _make_component(CoachIntent.CONSULT_PLAN, clause, now)
         return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
-    if _PLAN_QUESTION.search(normalized) or re.search(r"\b(?:plan|sesion\s+prevista)\b", normalized):
+    if (_PLAN_QUESTION.search(normalized) or _PLAN_LOOKUP.search(normalized)
+            or re.search(r"\b(?:plan|sesion\s+(?:prevista|planificada))\b", normalized)):
         return _make_component(CoachIntent.CONSULT_PLAN, clause, now)
+    if (dates_for_hint and _sport_filter_for_clause(normalized) is not None
+            and re.search(r"\b(?:actividad|sesion|salida)\b", normalized)):
+        return _make_component(CoachIntent.ANALYZE_DAY, clause, now)
     if _RECOMMENDATION.search(normalized) or (_ADVICE_MODAL.search(normalized) and positive_change):
         return _make_component(CoachIntent.RECOMMEND_NEXT, clause, now)
 

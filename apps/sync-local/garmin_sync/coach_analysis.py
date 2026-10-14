@@ -13,7 +13,7 @@ from enum import Enum
 from zoneinfo import ZoneInfo
 
 from .coach_generation_context import ContextSnapshot, freeze
-from .coach_intent import DateSelector
+from .coach_intent import CoachIntent, DateSelector
 
 
 class Unit(str, Enum):
@@ -192,9 +192,11 @@ def _build(snapshot, index):
     component = snapshot.intent.components[index]
     today = snapshot.now.astimezone(ZoneInfo('Europe/Madrid')).date()
     limits, facts, matches = set(), [], []
-    dates = tuple(sorted(set(d for d in component.observed_dates if d <= today)))
+    observed_dates = tuple(sorted(set(d for d in component.observed_dates if d <= today)))
+    plan_dates = (component.advice_dates if component.intent is CoachIntent.CONSULT_PLAN else ())
+    dates = tuple(sorted(set((*observed_dates, *plan_dates))))
     latest_refs = None
-    if len(dates) != len(component.observed_dates):
+    if len(observed_dates) != len(component.observed_dates):
         limits.add('FUTURE_OBSERVATIONS_EXCLUDED')
     if component.selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
         window_start = today - timedelta(days=120)
@@ -239,12 +241,27 @@ def _build(snapshot, index):
             else:
                 limits.add('DATA_COVERAGE_INCOMPLETE')
                 dates = ()
+    if component.selector in (DateSelector.LATEST_ACTIVITY, DateSelector.LATEST_TRAINING_DAY):
+        observed_dates = dates
     if not dates:
         limits.add('NO_OBSERVED_SCOPE')
-    evidence = [e for e in snapshot.evidence.values() if _day(e.local_date or e.date) in dates
+    evidence = [e for e in snapshot.evidence.values() if _day(e.local_date or e.date) in observed_dates
                 and e.kind != 'plan' and (latest_refs is None or e.id in latest_refs)]
     evidence.sort(key=lambda e: e.id)
-    sessions = {k: s for k, s in snapshot.sessions.items() if _day(s.get('date')) in dates}
+    sessions = {k: s for k, s in snapshot.sessions.items() if _day(s.get('date')) in dates
+                and (component.intent is not CoachIntent.CONSULT_PLAN
+                     or s.get('status') in (None, 'planned') and not s.get('completed_activity_id'))}
+    if component.intent is CoachIntent.CONSULT_PLAN and component.sport:
+        requested_sport = component.sport.value
+        scoped_sessions = [s for s in sessions.values() if _day(s.get('date')) in dates]
+        unknown_sport = [s for s in scoped_sessions if not s.get('sport')]
+        sessions = {k: s for k, s in sessions.items()
+                    if s.get('sport') == requested_sport or not s.get('sport')}
+        if unknown_sport:
+            limits.add('PLAN_SESSION_SPORT_UNKNOWN')
+        elif 'sessions' in snapshot.plan and not any(
+                s.get('sport') == requested_sport for s in scoped_sessions):
+            limits.add('PLAN_SPORT_NOT_PLANNED')
     by_key = {}
 
     def add(ref, metric, value, unit, day, sport, source, freshness,
@@ -391,18 +408,19 @@ def _build(snapshot, index):
                           c.reference, c.outside_band, c.operand_refs, delta, percent))
         return tuple(result)
 
-    for day in dates:
-        activities = [e for e in evidence if e.kind == 'activity' and _day(e.date) == day]
-        keys = [k for k, s in sorted(sessions.items()) if _day(s.get('date')) == day]
-        sports = {e.sport for e in activities} | {sessions[k].get('sport') for k in keys}
-        if len({s for s in sports if s}) > 1:
-            limits.add('MULTISPORT_COMPONENTS_SEPARATE')
-        if not activities:
-            limits.add('ACTIVITY_NOT_RECORDED' if _covered_empty(snapshot, day) else 'DATA_COVERAGE_INCOMPLETE')
-        for sport in sorted(sports or {None}, key=lambda s: s or ''):
-            match(day, sport, [e for e in activities if e.sport == sport],
-                  [k for k in keys if sessions[k].get('sport') == sport])
-    if dates and any(s.get('state') in {'provider_error', 'partial', 'stale'}
+    if component.intent is not CoachIntent.CONSULT_PLAN:
+        for day in observed_dates:
+            activities = [e for e in evidence if e.kind == 'activity' and _day(e.date) == day]
+            keys = [k for k, s in sorted(sessions.items()) if _day(s.get('date')) == day]
+            sports = {e.sport for e in activities} | {sessions[k].get('sport') for k in keys}
+            if len({s for s in sports if s}) > 1:
+                limits.add('MULTISPORT_COMPONENTS_SEPARATE')
+            if not activities:
+                limits.add('ACTIVITY_NOT_RECORDED' if _covered_empty(snapshot, day) else 'DATA_COVERAGE_INCOMPLETE')
+            for sport in sorted(sports or {None}, key=lambda s: s or ''):
+                match(day, sport, [e for e in activities if e.sport == sport],
+                      [k for k in keys if sessions[k].get('sport') == sport])
+    if observed_dates and any(s.get('state') in {'provider_error', 'partial', 'stale'}
                      for s in snapshot.provider_status.values()):
         limits.add('DATA_COVERAGE_INCOMPLETE')
     return AnalysisFacts(snapshot.id, index, dates, tuple(facts), tuple(matches),

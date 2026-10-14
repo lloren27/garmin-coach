@@ -105,14 +105,14 @@
 
 ### Tarea 4: intención actividad/plan y filtro de sesiones planificadas
 
-- [ ] Añadir pares de pruebas: `mi última sesión de bici` vs `qué sesión tengo mañana`; `la sesión que hice ayer` vs `la sesión planificada para mañana`; y consulta nominal con actividad + deporte + fecha.
-- [ ] Añadir prueba con varias actividades del deporte en una fecha y afirmar que se presentan como resultados separados, nunca como una sesión compuesta.
-- [ ] Probar día del mes sin mes: análisis usa el mes actual solo si la fecha ya ocurrió, si no aclara; plan elige la próxima ocurrencia futura. Probar además conflicto entre «mañana» y fecha explícita y día sin sesión en el plan.
-- [ ] Ejecutar las pruebas de intención y plan nuevas, confirmar el fallo esperado en la resolución actual.
-- [ ] Actualizar `coach_intent.py` para asignar a `CONSULT_PLAN` preguntas futuras aunque incluyan deporte; conservar las reglas explícitas para actividad realizada y plan.
-- [ ] Actualizar `coach_analysis.py` para filtrar por `sport` en sesiones del plan. Si una sesión carece de deporte, producir hallazgo de aclaración; si plan cubierto no tiene sesión del deporte, decirlo sin inventar.
-- [ ] Probar que las sesiones de otros deportes no aparecen como respuesta a la pregunta filtrada y que una sesión sin deporte nunca se etiqueta como ciclismo.
-- [ ] Ejecutar las suites focales:
+- [x] Añadir pares de pruebas: `mi última sesión de bici` vs `qué sesión tengo mañana`; `la sesión que hice ayer` vs `la sesión planificada para mañana`; y consulta nominal con actividad + deporte + fecha.
+- [x] Añadir prueba con varias actividades del deporte en una fecha y afirmar que se presentan como resultados separados, nunca como una sesión compuesta.
+- [x] Probar día del mes sin mes: análisis usa el mes actual solo si la fecha ya ocurrió, si no aclara; plan elige la próxima ocurrencia futura. Probar además conflicto entre «mañana» y fecha explícita y día sin sesión en el plan.
+- [x] Ejecutar las pruebas de intención y plan nuevas; inicialmente fallaron por intención sin reconocer y por falta de filtrado/representación de fechas de plan.
+- [x] Actualizar `coach_intent.py` para asignar a `CONSULT_PLAN` preguntas futuras aunque incluyan deporte; conservar las reglas explícitas para actividad realizada y plan.
+- [x] Actualizar `coach_analysis.py` para filtrar por `sport` en sesiones del plan. Si una sesión carece de deporte, producir hallazgo de aclaración; si el plan disponible no tiene sesión del deporte, decirlo sin inventar.
+- [x] Probar que las sesiones de otros deportes no aparecen como respuesta a la pregunta filtrada y que una sesión sin deporte nunca se etiqueta como ciclismo.
+- [x] Ejecutar las suites focales:
   ```bash
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_coach_intent.py' -v
   PYTHONPATH=apps/sync-local apps/sync-local/.venv/bin/python -m unittest discover -s apps/sync-local/tests -p 'test_coach_analysis.py' -v

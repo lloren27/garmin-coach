@@ -1,0 +1,37 @@
+{
+  "test_profiles": {
+    "provider_state": {
+      "cwd": "apps/sync-local",
+      "argv": [
+        "apps/sync-local/.venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_provider_state.py",
+        "-v"
+      ],
+      "timeout_seconds": 90,
+      "min_unittest_tests": 1
+    },
+    "hybrid_guard": {
+      "cwd": "tests",
+      "argv": [
+        "apps/sync-local/.venv/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "hybrid_guard",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "timeout_seconds": 120,
+      "min_unittest_tests": 53
+    }
+  }
+}

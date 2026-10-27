@@ -44,20 +44,53 @@ class StateRecordTests(unittest.TestCase):
         self.assertEqual(result['status'], 'ok')  # Status passed through unchanged
         self.assertEqual(result['scope'], 'activities')  # Scope matches input
         self.assertIsNone(result['reason'])  # No invalid reason (all alnum, <80 chars)
-        
+
         # Date parsing: last_success_at=2026-10-13T11:00:00+00:00 should be parsed correctly
         expected_last_success = datetime(2026, 10, 13, 11, 0, 0, tzinfo=timezone.utc)
         self.assertEqual(datetime.fromisoformat(result["last_success_at"]), expected_last_success)
-        
+
         # Period fields should be parsed from input or defaulted to collected_at/None
         self.assertIsNone(result['period_start'])  # Not in input, defaults to None
         self.assertIsNone(result['period_end'])    # Not in input, defaults to None
-        
+
         # Records received count should match input
         self.assertEqual(result['records_received'], 5)
-        
+
         # Error should be None since status is 'ok' (not in ERRORS set)
         self.assertIsNone(result['error'])
+
+    def test_auth_error_returns_provider_error(self) -> None:
+        """Test that status='auth_error' returns state='provider_error' and error='auth_error'.
+        
+        This uses the real input format expected by state_record(): 
+        - status in ERRORS returns state='provider_error' and error=status
+        - raw dict may or may not contain 'scope' argument
+        
+        The function treats various error status uniformly as provider errors.
+        """
+        auth_error_input = {
+            'status': 'auth_error',
+            'records_received': None,  # Errors typically have no records
+        }
+
+        result = state_record(
+            auth_error_input, 
+            scope='activities', 
+            now=self.NOW_DT
+        )
+
+        # Core assertion: error status returns provider_error state
+        self.assertEqual(result['state'], 'provider_error')
+        
+        # Status and error should match the input error code
+        self.assertEqual(result['status'], 'auth_error')
+        self.assertEqual(result['error'], 'auth_error')
+        
+        # Scope should pass through unchanged
+        self.assertEqual(result['scope'], 'activities')
+        
+        # reason is None when not provided (raw dict doesn't have 'reason' key)
+        self.assertIsNone(result['reason'])
 
 
 if __name__ == "__main__":

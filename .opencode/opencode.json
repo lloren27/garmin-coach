@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "orchestrator",
+  "permissions": [
+    { "action": "external_directory", "resource": "*", "effect": "deny" },
+    { "action": "shell", "resource": "*", "effect": "ask" },
+    { "action": "edit", "resource": "*", "effect": "ask" }
+  ],
+  "policies": [
+    { "action": "tool.use", "resource": "shell:git push *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:git commit *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:git reset --hard *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:rm -rf *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:sudo *", "effect": "deny" }
+  ]
+}

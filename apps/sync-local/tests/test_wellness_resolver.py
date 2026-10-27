@@ -83,6 +83,12 @@ class WellnessResolverTests(unittest.TestCase):
         self.assertFalse(is_valid_metric("resting_hr", {"value": 0}))
         self.assertTrue(is_valid_metric("steps", {"value": 0}))
 
+    def test_validators_reject_boolean_metric_values(self) -> None:
+        self.assertFalse(is_valid_metric("resting_hr", {"value": True}))
+        self.assertFalse(is_valid_metric("resting_hr", {"value": False}))
+        self.assertFalse(is_valid_metric("steps", True))
+        self.assertFalse(is_valid_metric("steps", False))
+
 
 if __name__ == "__main__":
     unittest.main()

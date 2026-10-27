@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 import asyncio
 from contextlib import ExitStack
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 from app import main
 from app.coach import (
@@ -169,7 +171,9 @@ class CoachRoutingTests(unittest.TestCase):
     def test_plan_read_is_not_a_creation_even_without_sync(self):
         plan = {'id':'stable', 'revision':3, 'start_date':'2026-10-04', 'end_date':'2026-10-10', 'sessions':[]}
         with patch.object(main, 'load_active_training_plan', return_value=plan) as load, \
-             patch.object(main, 'build_week_plan') as build, patch.object(main, 'save_training_plan') as save:
+             patch.object(main, 'build_week_plan') as build, patch.object(main, 'save_training_plan') as save, \
+             patch.object(main, 'datetime') as clock:
+            clock.now.return_value = datetime(2026, 10, 10, 12, tzinfo=ZoneInfo('Europe/Madrid'))
             for command in ('/plan','/plan_semana','/plan@bot'):
                 self.assertIn('Plan 7 dias', main.route_message(command,'user','chat'))
             load.assert_called_with('chat')
@@ -177,6 +181,22 @@ class CoachRoutingTests(unittest.TestCase):
             save.assert_not_called()
         with patch.object(main, 'load_active_training_plan', return_value=None):
             self.assertIn('/plan nuevo', main.route_message('/plan','user','chat'))
+
+    def test_plan_read_marks_expired_plan_without_creating_another(self):
+        plan = {'id': 'old', 'start_date': '2026-10-03', 'end_date': '2026-10-09', 'sessions': []}
+        with patch.object(main, 'load_active_training_plan', return_value=plan), \
+             patch.object(main, 'build_week_plan') as build, \
+             patch.object(main, 'save_training_plan') as save, \
+             patch.object(main, 'datetime') as clock:
+            clock.now.return_value = datetime(2026, 10, 27, 21, tzinfo=ZoneInfo('Europe/Madrid'))
+            answer = main.route_message('/plan', 'user', 'chat')
+
+        self.assertIn('terminó el 09/10/2026', answer)
+        self.assertIn('No hay un plan vigente', answer)
+        self.assertIn('/plan nuevo', answer)
+        self.assertNotIn('el plan es la referencia vigente', answer)
+        build.assert_not_called()
+        save.assert_not_called()
 
     def test_command_arguments_survive_and_bot_suffix_is_supported(self) -> None:
         main.route_message("/coach@MyBot dolor gemelo derecho", "user", "chat")

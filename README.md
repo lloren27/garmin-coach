@@ -25,7 +25,9 @@ Garmin Connect -> Mac sync-local -> Railway API -> Telegram bot
   del chat: pendientes, trabajos en ejecución y últimas finalizaciones/fallos.
   Una fecha desconocida o una cola inaccesible se indica como tal. No confirma que
   el Mac esté despierto y no escribe ni reclama trabajos.
-- `/plan` consulta sin modificar; `/plan nuevo` conserva la creación explícita.
+- `/plan` consulta sin modificar. Si el plan guardado ya terminó, muestra su
+  fecha final y remite a `/plan nuevo`, que conserva la creación explícita de
+  los siguientes siete días.
 
 Los alias deportivos como `/feedback`, `/semana` y `/proximo` mantienen sus rutas
 locales actuales. Texto libre, `/coach` y voz conservan el flujo del worker.

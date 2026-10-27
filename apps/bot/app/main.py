@@ -73,7 +73,7 @@ from .delay_notices import (
 from .response_timing import format_late_delivery
 from .store import load_queue_snapshot, load_operational_documents
 from .queue_status import empty_snapshot
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from .config import settings
 from .store import (
@@ -575,7 +575,18 @@ def route_message(text: str, user_id: str | None = None, chat_id: str | None = N
     if command in {"/plan_semana", "/plan"}:
         if not args:
             plan = load_active_training_plan(owner_id)
-            return format_training_plan(plan) if plan else "No hay un plan vigente. Usa /plan nuevo para crearlo."
+            if not plan:
+                return "No hay un plan vigente. Usa /plan nuevo para crearlo."
+            try:
+                end_date = date.fromisoformat(str(plan.get("end_date") or "")[:10])
+            except ValueError:
+                return "No puedo comprobar la fecha final del plan guardado. Usa /plan nuevo para crear uno actual."
+            if end_date < datetime.now(ZoneInfo("Europe/Madrid")).date():
+                return (
+                    f"El plan guardado terminó el {end_date.strftime('%d/%m/%Y')}. "
+                    "No hay un plan vigente para hoy. Usa /plan nuevo para crear uno actual."
+                )
+            return format_training_plan(plan)
         if args.lower() != 'nuevo':
             return "Usa /plan para consultar o /plan nuevo para crear un plan."
         if not sync:

@@ -52,7 +52,7 @@
 
 - [ ] **Step 1: Escribir pruebas fallidas** para fichero y PostgreSQL desechable: dos planes que se solapan y uno `superseded` aparecen si intersectan la semana; una sesión devuelve sus marcas de creación y actualización; un plan de otro propietario no aparece; un ID de trabajo inexistente devuelve 404 con `detail.code="job_not_found"`; falta de secreto devuelve 401/403; fecha que no es lunes devuelve 422.
 - [ ] **Step 2: Ejecutar** `cd apps/bot && python -m unittest tests.test_weekly_plan_context -v`; esperar fallo por función/ruta ausente.
-- [ ] **Step 3: Implementar** la lectura en `store.py` y la ruta en `main.py`; filtrar por `start_date <= domingo`, `end_date >= lunes` y `created_at <= job.created_at`. Mantener `superseded`; ordenar sesiones por `date,sequence,id`; no escribir estado ni exponer datos de otro propietario.
+- [ ] **Step 3: Implementar** la lectura en `store.py` y la ruta en `main.py`; filtrar planes por `start_date <= domingo`, `end_date >= lunes` y `created_at <= job.created_at`, y sesiones por `created_at <= job.created_at`. Mantener `superseded`; ordenar sesiones por `date,sequence,id`; no escribir estado ni exponer datos de otro propietario.
 - [ ] **Step 4: Repetir** el comando de Task 1; esperar todas sus pruebas correctas.
 - [ ] **Step 5: Commit** `feat: expose historical plans for coach week`.
 

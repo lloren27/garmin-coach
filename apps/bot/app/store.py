@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 from .file_state import atomic_json, serialized_file_state
@@ -876,6 +876,163 @@ def load_training_plan_state_file() -> dict[str, Any]:
         }
 
     return state
+
+
+def load_week_plans_for_job(job_id: str, monday: date) -> dict[str, Any] | None:
+    """Read plans known when a job was created, including superseded plans."""
+    if monday.weekday() != 0:
+        raise ValueError("week_start must be a Monday")
+    sunday = monday + timedelta(days=6)
+    if DATABASE_URL:
+        return load_week_plans_for_job_postgres(job_id, monday, sunday)
+
+    job = next((item for item in load_ai_jobs_file() if item.get("id") == job_id), None)
+    if job is None:
+        return None
+    owner_id = str(job.get("owner_id") or job.get("chat_id") or "")
+    if not owner_id:
+        raise ValueError("job owner is unavailable")
+    job_created_at = _aware_timestamp(job.get("created_at"))
+    state = load_training_plan_state_file()
+    sessions_by_plan: dict[str, list[dict[str, Any]]] = {}
+    for session in state.get("sessions") or []:
+        if (str(session.get("owner_id")) == owner_id
+                and _aware_timestamp(session.get("created_at")) <= job_created_at):
+            sessions_by_plan.setdefault(str(session.get("training_plan_id")), []).append(session)
+
+    plans = []
+    for plan in state.get("plans") or []:
+        if str(plan.get("owner_id")) != owner_id:
+            continue
+        start_date = date.fromisoformat(str(plan.get("start_date")))
+        end_date = date.fromisoformat(str(plan.get("end_date")))
+        if not (start_date <= sunday and end_date >= monday):
+            continue
+        if _aware_timestamp(plan.get("created_at")) > job_created_at:
+            continue
+        plan_sessions = sorted(
+            sessions_by_plan.get(str(plan.get("id")), []),
+            key=lambda session: (
+                str(session.get("date") or ""),
+                int(session.get("sequence", 0)),
+                str(session.get("id") or ""),
+            ),
+        )
+        plans.append({**plan, "revision": plan.get("revision", 1), "sessions": plan_sessions})
+    plans.sort(key=lambda plan: (_aware_timestamp(plan.get("created_at")), str(plan.get("id"))))
+    return {
+        "week_start": monday.isoformat(),
+        "week_end": sunday.isoformat(),
+        "owner_id": owner_id,
+        "plans": plans,
+    }
+
+
+def _aware_timestamp(value: Any) -> datetime:
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp must include a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def load_week_plans_for_job_postgres(
+    job_id: str, monday: date, sunday: date,
+) -> dict[str, Any] | None:
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        conn.execute("SET TRANSACTION READ ONLY")
+        job_row = conn.execute(
+            "select document, created_at from coach_ai_jobs where id = %s",
+            (job_id,),
+        ).fetchone()
+        if job_row is None:
+            return None
+        job_document = job_row[0]
+        if isinstance(job_document, str):
+            job_document = json.loads(job_document)
+        owner_id = str(job_document.get("owner_id") or job_document.get("chat_id") or "")
+        if not owner_id:
+            raise ValueError("job owner is unavailable")
+
+        plan_rows = conn.execute(
+            """
+            select id, owner_id, status, start_date, end_date, objective, mode,
+                   source_sync_at, document, created_at, updated_at, revision
+            from training_plans
+            where owner_id = %s
+              and start_date <= %s
+              and end_date >= %s
+              and created_at <= %s
+            order by created_at, id
+            """,
+            (owner_id, sunday, monday, job_row[1]),
+        ).fetchall()
+
+        plans = []
+        by_id = {}
+        for row in plan_rows:
+            metadata = row[8] or {}
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+            plan = {
+                **metadata,
+                "id": row[0],
+                "owner_id": row[1],
+                "status": row[2],
+                "start_date": row[3].isoformat(),
+                "end_date": row[4].isoformat(),
+                "objective": row[5],
+                "mode": row[6],
+                "source_sync_at": row[7].isoformat() if row[7] else None,
+                "created_at": row[9].isoformat(),
+                "updated_at": row[10].isoformat(),
+                "revision": row[11],
+                "sessions": [],
+            }
+            plans.append(plan)
+            by_id[row[0]] = plan
+
+        if by_id:
+            session_rows = conn.execute(
+                """
+                select id, training_plan_id, owner_id, session_date, sequence,
+                       sport, session_type, status, optional, completed_activity_id,
+                       document, created_at, updated_at
+                from planned_sessions
+                where owner_id = %s
+                  and training_plan_id = any(%s)
+                  and created_at <= %s
+                order by session_date, sequence, id
+                """,
+                (owner_id, list(by_id), job_row[1]),
+            ).fetchall()
+            for row in session_rows:
+                metadata = row[10] or {}
+                if isinstance(metadata, str):
+                    metadata = json.loads(metadata)
+                by_id[row[1]]["sessions"].append({
+                    **metadata,
+                    "id": row[0],
+                    "training_plan_id": row[1],
+                    "owner_id": row[2],
+                    "date": row[3].isoformat(),
+                    "sequence": row[4],
+                    "sport": row[5],
+                    "session_type": row[6],
+                    "status": row[7],
+                    "optional": row[8],
+                    "completed_activity_id": row[9],
+                    "created_at": row[11].isoformat(),
+                    "updated_at": row[12].isoformat(),
+                })
+
+    return {
+        "week_start": monday.isoformat(),
+        "week_end": sunday.isoformat(),
+        "owner_id": owner_id,
+        "plans": plans,
+    }
 
 
 def load_active_training_plan(

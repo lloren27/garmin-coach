@@ -92,6 +92,7 @@ from .store import (
     load_strength_state,
     load_wattwise,
     load_active_training_plan,
+    load_week_plans_for_job,
     save_checkin,
     save_lab_test,
     save_profile,
@@ -321,6 +322,28 @@ def next_ai_job(x_sync_secret: str | None = Header(default=None)) -> dict:
             "training_plan": training_plan,
         },
     }
+
+
+@app.get("/ai/jobs/{job_id}/week-plans")
+def week_plans_for_job(
+    job_id: str,
+    week_start: date,
+    request: Request,
+    x_sync_secret: str | None = Header(default=None),
+) -> dict:
+    require_sync_secret(x_sync_secret)
+    if "owner_id" in request.query_params or week_start.weekday() != 0:
+        raise HTTPException(status_code=422, detail="Invalid week plan query")
+    try:
+        result = load_week_plans_for_job(job_id, week_start)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "week_plan_context_invalid"},
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail={"code": "job_not_found"})
+    return result
 
 
 @app.post("/ai/jobs/{job_id}/complete")

@@ -13,6 +13,38 @@ Private Garmin-to-Telegram coaching assistant for marathon training.
 Garmin Connect -> Mac sync-local -> Railway API -> Telegram bot
 ```
 
+## Estado del coach (28/10/2026)
+
+| Función | Comportamiento actual | Límite relevante |
+| --- | --- | --- |
+| `/plan` | Consulta el plan guardado sin modificarlo. Avisa si terminó; `/plan nuevo` crea explícitamente otro plan de siete días. | Crear un plan no analiza por sí mismo los entrenamientos realizados. |
+| `/coach`, texto libre y voz | Railway encola la consulta y el worker del Mac responde. V3 determinista está activado en el Mac y se ha observado en consultas reales. | Reconoce algunas preguntas por fecha, pero otras formulaciones naturales piden una aclaración genérica. |
+| Análisis V3 de un día | Muestra actividades de la fecha y compara magnitudes con sesiones del mismo día y deporte cuando hay una correspondencia sustentada. Mantiene separadas las cargas de carrera, ciclismo y fuerza. | Si no hay una sesión compatible, puede limitarse a enumerar actividades y pedir el plan, aunque exista un plan con sesiones de otro deporte o de otras fechas. No valora todavía el efecto del cambio sobre la semana. |
+| Alias deportivos (`/hoy`, `/ultima`, `/feedback`, etc.) | Conservan sus respuestas locales; la migración de alias al worker sigue apagada. | La evaluación E14 es parcial. `/ultima` aún no está aprobado para migrar cuando hay varias actividades en el día más reciente. |
+
+**Siguiente trabajo de producto:** diseñar una valoración de la semana que confronte
+las sesiones previstas con todas las actividades realizadas, incluso si cambia el
+deporte o el tipo de sesión. La respuesta debe explicar la diferencia y su posible
+efecto en el resto de la semana, con evidencias, límites y una conclusión útil.
+La comparación no debe presentar una actividad distinta como cumplimiento de la
+sesión prevista ni sumar cargas de escalas incompatibles. Consultar o valorar no
+modifica el plan: cualquier cambio sigue su flujo explícito de propuesta y
+aprobación. La primera entrega está **diseñada por etapas y pendiente de
+implementación**: comparará hechos y estructura semanal, pero aún no dará un
+veredicto de eficiencia fisiológica ni afirmará equivalencias entre deportes. No forma
+parte del arreglo ya desplegado de `/plan` ni queda resuelto por la Fase 5 de
+consolidación.
+El [borrador de diseño de la valoración semanal](docs/superpowers/specs/2026-10-28-coach-weekly-assessment-design.md)
+recoge las reglas propuestas y las decisiones que aún requieren validación.
+El [plan técnico refinado](docs/superpowers/plans/2026-10-28-coach-weekly-assessment.md)
+ordena la lectura histórica de planes, la comparación diaria y la respuesta
+semanal; todavía no supone implementación ni activación.
+
+La [evidencia de Fase 4, entregable 3](docs/restructuring/fase4_evaluacion/entregable3.md)
+documenta la activación observada de V3 y los límites de E14. La
+[hoja de reestructuración](docs/restructuring/restructuring_v1.md) separa la
+consolidación de Fase 5 de la ampliación posterior de valoraciones.
+
 ## Telegram: ayuda y estado
 
 `/help` muestra las seis entradas principales: `/coach`, `/plan`, `/sync`,
@@ -31,7 +63,7 @@ Garmin Connect -> Mac sync-local -> Railway API -> Telegram bot
 
 Los alias deportivos como `/feedback`, `/semana` y `/proximo` mantienen sus rutas
 locales actuales. Texto libre, `/coach` y voz conservan el flujo del worker.
-Este entregable no activa avisos de demora, notas tardías ni migración de alias.
+La migración de alias y los avisos de demora tienen activación independiente.
 
 ## 1. Configure local secrets
 
@@ -229,10 +261,13 @@ then run:
 python3 scripts/set_telegram_webhook.py
 ```
 
-## 6. Local Ollama coach
+## 6. Worker local del coach
 
 The Railway bot does not call paid LLM APIs for natural-language coaching. It
-stores a pending job, and the Mac processes it locally with Ollama.
+stores a pending job, and the Mac processes it locally. With
+`COACH_ANALYSIS_V3_ENABLED=1`, the worker uses the deterministic V3 response;
+the legacy path uses Ollama when that flag is disabled. The Ollama settings
+below apply to the legacy path.
 
 Defaults:
 
@@ -435,6 +470,8 @@ for pain, soreness, and relevant notes. Sleep, energy, stress, and recovery come
 from objective Garmin wellness data: sleep, HRV, readiness, body battery, stress,
 resting heart rate, and recent load. Historical subjective RPE, sleep, or energy
 scores are ignored by coaching decisions.
+
+The following descriptions refer to the existing local sports-command routes.
 `/feedback` aggregates every activity from the latest training day and produces a
 combined conclusion using running load, cycling/Wattwise, strength, weekly load,
 and Garmin recovery. `/semana` combines the completed-week balance with an
@@ -458,14 +495,17 @@ after recording a workout with the Helio Strap: it requests the same complete
 sync while making the Zepp-activity intent explicit. `/sync cmf` does the same
 for CMF activities published by Nothing X to Strava. In all cases the Railway
 bot stores one request and the local Mac watcher executes it while the Mac is awake.
-All coaching questions now follow one flow: text, `/coach`, coaching commands
-(such as `/feedback`, `/semana`, `/ajustar`, and `/fuerza` without arguments),
-and transcribed voice enter the same local Ollama analysis. The Mac must be
-awake; answers can take several minutes. Operational commands such as `/sync`,
+Text, `/coach` and transcribed voice enter the local worker queue. The worker
+uses V3 deterministic analysis when enabled and the legacy Ollama path otherwise.
+Sports commands such as `/feedback` and `/semana` still use their local bot
+routes; `/ajustar` keeps its separate change workflow. The Mac must be awake
+for queued answers, which can take several minutes. Operational commands such
+as `/sync`,
 profile/check-in updates, strength logging (`/fuerza A`, `add`, `fin`), and lab
 review/application remain immediate and deterministic.
 
-The model receives calculated readings plus every activity in the latest sync
+In the legacy Ollama path, the model receives calculated readings plus every
+activity in the latest sync
 (currently up to 25), weekly aggregates, up to 28 history snapshots including
 recovery (keeping the latest snapshot per day to avoid repetition), the athlete profile, applied lab tests, injury check-ins, manual
 strength load, and cached and live Wattwise data with source dates. These are
@@ -476,13 +516,14 @@ adds an explicit date notice when the sync is from a previous day, missing or
 future-dated; this does not depend on the model remembering to mention it. Only applied lab
 tests may inform confirmed profile values; pending proposals remain in review.
 
-Every coaching request uses one generation with the complete compact context.
+In that legacy path, a coaching request uses one generation with the complete
+compact context.
 The backend supplies calculated evidence and the model crosses sports, recovery,
 profile, dates and limitations before returning only the useful conclusion.
 Native thinking is disabled to keep latency predictable. Normal questions use
 `OLLAMA_NUM_PREDICT`; weekly plans use the larger
 `OLLAMA_PLAN_NUM_PREDICT` budget. Both use the configured context window.
-The response uses natural Spanish paragraphs with punctuation and normally
+The legacy response uses natural Spanish paragraphs with punctuation and normally
 100–180 words. Weekly plans have more room to cover every day. Text and voice share the same final
 answer: TTS expands units and adds pauses without imposing a shorter answer
 limit. Long voice answers also include the full text because Telegram captions

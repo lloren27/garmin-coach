@@ -270,6 +270,77 @@ def resolve_dates(
     return tuple(sorted(set(found)))
 
 
+@dataclass(frozen=True)
+class WeekAssessmentScope:
+    monday: date
+    sunday: date
+    reference_day: date
+
+    def __post_init__(self) -> None:
+        if any(type(value) is not date for value in
+               (self.monday, self.sunday, self.reference_day)):
+            raise TypeError("week assessment dates must be datetime.date values")
+        if (self.monday.weekday() != 0 or self.sunday != self.monday + timedelta(days=6)
+                or not self.monday <= self.reference_day <= self.sunday):
+            raise ValueError("week assessment scope must contain its reference day")
+
+
+_WEEK_ASSESSMENT_OBJECT = re.compile(
+    r"\b(?:entrenamiento|entreno|actividad|salida|lo\s+que\s+hice|"
+    r"mi\s+sesion|sesion\s+que\s+hice)\b"
+)
+_WEEK_ASSESSMENT_SIGNAL = re.compile(
+    r"\b(?:que\s+opinas|opina|analiza|valora|revisa|que\s+tal|"
+    r"fue\s+(?:eficiente|eficaz)|ha\s+sido\s+(?:eficiente|eficaz)|"
+    r"como\s+afecta)\b"
+)
+_WEEK_ASSESSMENT_CHANGE = re.compile(
+    r"\b(?:cambia|cambiar|modifica|modificar|mueve|mover|quita|quitar|"
+    r"anade|anadir|cancela|cancelar|reprograma|reprogramar)\b"
+)
+_WEEK_ASSESSMENT_PLAN_LOOKUP = re.compile(
+    r"\b(?:que\s+(?:me\s+)?(?:toca|tocaba|tocara|corresponde)|"
+    r"que\s+sesion\s+(?:tenia|tengo|hay))\b"
+)
+_WEEK_ASSESSMENT_METRIC = re.compile(
+    r"\b(?:pulso|pulsaciones?|fc|ritmo|cadencia|potencia|vatios|velocidad)\b"
+)
+
+
+def resolve_week_assessment(
+    question: str,
+    *,
+    now: datetime,
+    factual_scope: str | None,
+) -> WeekAssessmentScope | None:
+    """Find an evaluative question's Madrid calendar week at job creation time."""
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    if factual_scope is not None:
+        return None
+    normalized = _normalize(question)
+    if (not _WEEK_ASSESSMENT_OBJECT.search(normalized)
+            or not _WEEK_ASSESSMENT_SIGNAL.search(normalized)
+            or _WEEK_ASSESSMENT_CHANGE.search(normalized)
+            or _WEEK_ASSESSMENT_PLAN_LOOKUP.search(normalized)
+            or _WEEK_ASSESSMENT_METRIC.search(normalized)):
+        return None
+
+    try:
+        dates = resolve_dates(question, now=now, scope=DateResolutionScope.OBSERVED)
+    except InvalidDateError:
+        return None
+    today = now.astimezone(_MADRID).date()
+    if not dates or any(day > today for day in dates):
+        return None
+    mondays = {day - timedelta(days=day.weekday()) for day in dates}
+    if len(mondays) != 1:
+        return None
+    reference_day = max(dates)
+    monday = next(iter(mondays))
+    return WeekAssessmentScope(monday, monday + timedelta(days=6), reference_day)
+
+
 # Ordered, reviewable language signals. These provide intent hints; unknown
 # phrasings deliberately flow to clarification instead of widening permission.
 _INTENT_SIGNAL_PATTERNS = (

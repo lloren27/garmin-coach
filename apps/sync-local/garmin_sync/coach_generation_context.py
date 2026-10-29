@@ -9,7 +9,8 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 import math
 from .coach_generation_contracts import CoachGenerationResponse
-from .coach_intent import CoachIntent, IntentResolution, intent_enforcement_enabled, resolve_intent
+from .coach_intent import (CoachIntent, IntentResolution, WeekAssessmentScope,
+                           intent_enforcement_enabled, resolve_intent, resolve_week_assessment)
 from .coach_validation import CoachValidationError, ValidationIssue, ValidationCode as Code, ValidationPhase as Phase, ValidationSeverity as Severity
 
 
@@ -43,6 +44,7 @@ class EvidenceRecord:
     local_date: str | None = None
     time_context: str | None = None
     started_at_local: str | None = None
+    activity_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,9 @@ class ContextSnapshot:
     freshness: str
     plan: Mapping
     provider_status: Mapping = field(default_factory=dict)
+    week_plans: tuple | None = None
+    week_scope: WeekAssessmentScope | None = None
+    week_context_status: str | None = None
 
     def public_context(self):
         components = [{
@@ -77,7 +82,8 @@ class ContextSnapshot:
                 'available_sessions': [thaw(s) for s in self.sessions.values()
                     if s.get('status') in (None, 'planned') and s.get('date') in scoped_dates],
                 'available_evidence': [{'id': e.id, 'kind': e.kind, 'source': e.source,
-                    'date': e.date, 'sport': e.sport, 'facts': thaw(e.facts),
+                    'date': e.date, 'sport': e.sport, 'activity_type': e.activity_type,
+                    'facts': thaw(e.facts),
                     'started_at_utc': e.started_at_utc, 'local_date': e.local_date,
                     'time_context': e.time_context, 'started_at_local': e.started_at_local,
                     'source_device': e.source_device, 'source_records': thaw(e.source_records),
@@ -130,11 +136,110 @@ def _aware_iso(value):
         return False
 
 
+def _invalid_week_context() -> None:
+    raise CoachValidationError([
+        ValidationIssue(Code.INVALID_CONTEXT, Phase.RESOLUTION, 'week_plans', Severity.FATAL)
+    ])
+
+
+def _strict_week_date(value):
+    if not isinstance(value, str):
+        _invalid_week_context()
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        _invalid_week_context()
+    if parsed.isoformat() != value:
+        _invalid_week_context()
+    return parsed
+
+
+def _strict_week_instant(value):
+    if not _aware_iso(value):
+        _invalid_week_context()
+    return datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+
+def _validated_week_context(question: str, extra: Mapping, now: datetime):
+    keys = ('week_scope', 'week_owner_id', 'week_context_status', 'week_plans')
+    if not any(key in extra for key in keys):
+        return None, None, None
+    raw_scope = extra.get('week_scope')
+    owner_id = extra.get('week_owner_id')
+    status = extra.get('week_context_status')
+    if not isinstance(raw_scope, Mapping) or not isinstance(owner_id, str) or not owner_id:
+        _invalid_week_context()
+    try:
+        scope = WeekAssessmentScope(
+            _strict_week_date(raw_scope.get('monday')),
+            _strict_week_date(raw_scope.get('sunday')),
+            _strict_week_date(raw_scope.get('reference_day')),
+        )
+    except (TypeError, ValueError):
+        _invalid_week_context()
+    if resolve_week_assessment(question, now=now, factual_scope=None) != scope:
+        _invalid_week_context()
+    if status == 'unavailable':
+        if extra.get('week_plans') is not None:
+            _invalid_week_context()
+        return None, scope, status
+    if status != 'available':
+        _invalid_week_context()
+
+    payload = extra.get('week_plans')
+    if not isinstance(payload, Mapping) or not isinstance(payload.get('plans'), list):
+        _invalid_week_context()
+    if (payload.get('owner_id') != owner_id
+            or _strict_week_date(payload.get('week_start')) != scope.monday
+            or _strict_week_date(payload.get('week_end')) != scope.sunday):
+        _invalid_week_context()
+    plan_ids, session_ids = set(), set()
+    for plan in payload['plans']:
+        if not isinstance(plan, Mapping):
+            _invalid_week_context()
+        identifier = plan.get('id')
+        revision = plan.get('revision')
+        if (not isinstance(identifier, str) or not identifier or len(identifier) > 100
+                or identifier in plan_ids or plan.get('owner_id') != owner_id
+                or type(revision) is not int or revision < 1):
+            _invalid_week_context()
+        plan_ids.add(identifier)
+        start = _strict_week_date(plan.get('start_date'))
+        end = _strict_week_date(plan.get('end_date'))
+        created = _strict_week_instant(plan.get('created_at'))
+        updated = _strict_week_instant(plan.get('updated_at'))
+        if (start > end or start > scope.sunday or end < scope.monday
+                or created > now or updated < created):
+            _invalid_week_context()
+        sessions = plan.get('sessions')
+        if not isinstance(sessions, list):
+            _invalid_week_context()
+        for session in sessions:
+            if not isinstance(session, Mapping):
+                _invalid_week_context()
+            session_id = session.get('id')
+            if (not isinstance(session_id, str) or not session_id or len(session_id) > 100
+                    or session_id in session_ids
+                    or session.get('owner_id') != owner_id
+                    or session.get('training_plan_id') != identifier):
+                _invalid_week_context()
+            session_ids.add(session_id)
+            session_day = _strict_week_date(session.get('date'))
+            session_created = _strict_week_instant(session.get('created_at'))
+            session_updated = _strict_week_instant(session.get('updated_at'))
+            if (session_day < start or session_day > end
+                    or session_created < created or session_created > now
+                    or session_updated < session_created):
+                _invalid_week_context()
+    return freeze(payload['plans']), scope, status
+
+
 def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSnapshot:
     if now.tzinfo is None:
         raise CoachValidationError([ValidationIssue(Code.INVALID_CONTEXT, Phase.RESOLUTION, '$', Severity.FATAL)])
     now = now.astimezone(ZoneInfo('Europe/Madrid'))
     extra = compact.get('extra_context') or {}
+    week_plans, week_scope, week_context_status = _validated_week_context(question, extra, now)
     sessions, evidence = {}, {}
     for row in (extra.get('training_plan') or {}).get('sessions') or []:
         identifier = row.get('id')
@@ -162,7 +267,9 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
                 if isinstance(value, str) and value.strip():
                     row[field] = value.strip().lower() not in {'no', 'sin dolor', 'sin molestias', 'ninguno', 'ninguna'}
         facts = _facts(row)
-        if not facts: return
+        dated_week_activity = (kind == 'activity' and week_scope is not None
+                               and (_date(row.get('local_date')) or _date(row.get('date'))))
+        if not facts and not dated_week_activity: return
         origin = row.get('source', source)
         if origin not in {'garmin', 'zepp', 'strava', 'unknown', 'backend', 'profile', 'training_plan', 'checkin', 'strength', 'wattwise', 'lab_test'}:
             origin = 'unknown'
@@ -186,7 +293,8 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
             freeze(row.get('duplicate_candidates') or []), symptom_details,
             row.get('started_at_utc') if _aware_iso(row.get('started_at_utc')) else None,
             local_date, row.get('time_context') if isinstance(row.get('time_context'), str) else None,
-            row.get('started_at') if isinstance(row.get('started_at'), str) else None)
+            row.get('started_at') if isinstance(row.get('started_at'), str) else None,
+            row.get('type') if kind == 'activity' and isinstance(row.get('type'), str) else None)
     for i, row in enumerate(extra.get('recent_activities') or []): add('activity', row, i, 'unknown')
     wellness = extra.get('wellness') or {}
     effective = wellness.get('effective', wellness)
@@ -227,7 +335,8 @@ def build_snapshot(question: str, compact: dict, *, now: datetime) -> ContextSna
         freshness = 'partial'
     return ContextSnapshot('ctx_' + uuid4().hex, now, freeze(sessions), freeze(evidence), intent,
         extra.get('change_proposal_allowed_now') is True, tuple(extra.get('proposal_evidence_sources') or []),
-        freshness, freeze(extra.get('training_plan') or {}), freeze(provider_status))
+        freshness, freeze(extra.get('training_plan') or {}), freeze(provider_status),
+        week_plans, week_scope, week_context_status)
 
 
 def generation_schema(snapshot: ContextSnapshot, *, enforce_intent: bool | None = None) -> dict:

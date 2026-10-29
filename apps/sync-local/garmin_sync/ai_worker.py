@@ -147,6 +147,64 @@ def get_json(path: str) -> dict[str, Any]:
     return response.json()
 
 
+WEEK_PLANS_UNAVAILABLE = {"week_context_status": "unavailable"}
+
+
+def fetch_week_plans(job_id: str, monday: Date) -> dict[str, Any]:
+    """Read one job's historical week, with a verified old-API fallback."""
+    path = f"/ai/jobs/{job_id}/week-plans?week_start={monday.isoformat()}"
+    try:
+        return get_json(path)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code not in (404, 405):
+            raise
+        try:
+            detail = exc.response.json().get("detail")
+        except (ValueError, AttributeError):
+            detail = None
+        if isinstance(detail, dict) and detail.get("code") == "job_not_found":
+            raise
+        try:
+            schema = get_json("/openapi.json")
+        except (httpx.HTTPError, ValueError):
+            raise exc
+        paths = schema.get("paths") if isinstance(schema, dict) else None
+        if not isinstance(paths, dict):
+            raise exc
+        route_path = "/ai/jobs/{job_id}/week-plans"
+        if route_path not in paths or (isinstance(paths[route_path], dict)
+                                     and "get" not in paths[route_path]):
+            return WEEK_PLANS_UNAVAILABLE
+        raise exc
+
+
+def add_week_assessment_context(
+    question: str, job: dict[str, Any], context: dict[str, Any],
+    *, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Attach verified week plans only for a free-form evaluative coach job."""
+    from .coach_intent import resolve_week_assessment
+
+    scope = resolve_week_assessment(
+        question, now=now or job_created_at(job), factual_scope=job.get("factual_scope"),
+    )
+    if scope is None:
+        return context
+    owner_id = str(job.get("chat_id") or "")
+    if not owner_id:
+        raise ValueError("week assessment job has no owner")
+    result = fetch_week_plans(str(job["id"]), scope.monday)
+    unavailable = result is WEEK_PLANS_UNAVAILABLE
+    return {
+        **context,
+        "week_scope": {"monday": scope.monday.isoformat(), "sunday": scope.sunday.isoformat(),
+                       "reference_day": scope.reference_day.isoformat()},
+        "week_owner_id": owner_id,
+        "week_context_status": "unavailable" if unavailable else "available",
+        "week_plans": None if unavailable else result,
+    }
+
+
 def post_json(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     response = httpx.post(f"{API_URL}{path}", json=payload, headers=headers(), timeout=25)
     response.raise_for_status()
@@ -575,7 +633,9 @@ def call_coach(question: str, context: dict[str, Any], *, job_id: str | None = N
     try:
         structured = deterministic_response(question, compact_context(context, now=now),
             now=now or datetime.now(ZoneInfo('Europe/Madrid')), max_chars=ANSWER_MAX_CHARS)
-    except ValueError:
+    except ValueError as exc:
+        if isinstance(exc, CoachValidationError) and context.get("week_scope") is not None:
+            raise
         # V3 must never fall through to the legacy prescriptive fallback.
         structured = safe_response()
         print(json.dumps({'type': 'coach_v3_context_unresolved', 'code': 'INVALID_CONTEXT'}))
@@ -1152,6 +1212,11 @@ def compact_context(context: dict[str, Any], *, now: datetime | None = None) -> 
     coach_brief = context.get("coach_brief") or {}
     extra_context["strength_manual"] = coach_brief.get("strength_load")
     extra_context["strength_manual_current"] = coach_brief.get("strength_load_current")
+    if "week_scope" in context:
+        extra_context["week_scope"] = context["week_scope"]
+        extra_context["week_owner_id"] = context.get("week_owner_id")
+        extra_context["week_context_status"] = context.get("week_context_status")
+        extra_context["week_plans"] = context.get("week_plans")
 
     return {
         "coach_brief": coach_brief,
@@ -1161,7 +1226,8 @@ def compact_context(context: dict[str, Any], *, now: datetime | None = None) -> 
 
 def _compact_activities(activities: list[Any]) -> list[dict[str, Any]]:
     allowed = {
-        "id", "source", "source_activity_id", "date", "started_at", "name", "sport", "type",
+        "id", "source", "source_activity_id", "date", "local_date", "started_at",
+        "started_at_utc", "time_context", "name", "sport", "type",
         "source_device", "source_records", "duplicate_candidates",
         "km", "duration_s", "hours", "pace", "avg_speed_kmh", "avg_hr", "max_hr",
         "training_effect", "anaerobic_training_effect", "training_load", "provider_exercise_load",
@@ -1402,6 +1468,8 @@ def process_job(job: dict[str, Any], context: dict[str, Any]) -> None:
         context = dict(context)
         context["wattwise_live"] = fetch_wattwise_context()
         enqueued_at = job_created_at(job)
+        if COACH_ANALYSIS_V3_ENABLED:
+            context = add_week_assessment_context(question, job, context, now=enqueued_at)
         try:
             coach_result = call_coach(question, context, job_id=job_id, now=enqueued_at)
         except (httpx.HTTPError, ValueError) as exc:

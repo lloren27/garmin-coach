@@ -1,0 +1,71 @@
+{
+  "stage": "Task 3A: ejemplos para integrar en Tasks 4–6",
+  "cases": [
+    {
+      "id": "distance_only",
+      "synthetic": true,
+      "question": "Valora mi entrenamiento de hoy",
+      "job_created_at": "2026-11-13T20:00:00+01:00",
+      "session": {
+        "sport": "running",
+        "session_type": "long_run",
+        "optional": false,
+        "distance_km": 17
+      },
+      "activity": {
+        "sport": "running",
+        "distance_km": 16.5,
+        "duration_s": 5400
+      },
+      "expected_limitation": "sin criterio de compatibilidad validado",
+      "forbidden_claims": [
+        "cumplimiento inferido",
+        "equivalencia fisiológica",
+        "duración objetivo inventada"
+      ]
+    },
+    {
+      "id": "text_intervals",
+      "synthetic": true,
+      "question": "Valora mi entrenamiento de hoy",
+      "job_created_at": "2026-11-13T20:00:00+01:00",
+      "session": {
+        "sport": "running",
+        "session_type": "quality",
+        "optional": false,
+        "description": "2 km fáciles + 3 x 2 km, recuperando 3 min + vuelta a la calma"
+      },
+      "activity": {
+        "sport": "running",
+        "duration_s": 3600
+      },
+      "expected_limitation": "sin criterio de compatibilidad validado",
+      "forbidden_claims": [
+        "cumplimiento inferido",
+        "equivalencia fisiológica",
+        "duración objetivo inventada"
+      ]
+    },
+    {
+      "id": "rest_without_duration",
+      "synthetic": true,
+      "question": "Valora mi entrenamiento de hoy",
+      "job_created_at": "2026-11-13T20:00:00+01:00",
+      "session": {
+        "sport": "recovery",
+        "session_type": "rest",
+        "optional": false
+      },
+      "activity": {
+        "sport": "cycling",
+        "duration_s": 1800
+      },
+      "expected_limitation": "sin criterio de compatibilidad validado",
+      "forbidden_claims": [
+        "cumplimiento inferido",
+        "equivalencia fisiológica",
+        "duración objetivo inventada"
+      ]
+    }
+  ]
+}

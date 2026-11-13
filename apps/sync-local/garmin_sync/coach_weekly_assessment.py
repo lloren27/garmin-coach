@@ -65,9 +65,11 @@ def select_day_plan(
     Rules:
     - A plan covers a day when ``start_date <= day <= end_date``.
     - Only consider plans created on or before ``as_of`` (the job creation time).
-    - For past days (day < as_of.date()): prefer the plan whose ``created_at``
-      is earliest but still before the day's activities. If the plan was created
-      after the activity, add a limitation.
+    - For past days (day < as_of.date()): select the plan that was in effect
+      at the time of the activity. If activity_times are available, prefer the
+      most recent plan created before the earliest activity. If no activity
+      times are available, use the most recent plan created before the day.
+      A plan created after the activity gets a limitation.
     - For future days (day >= as_of.date()): use the most recent plan valid at
       ``as_of`` that covers the day.
     - A plan created on the same day as the activity without reliable times
@@ -90,10 +92,38 @@ def select_day_plan(
     is_past_day = day < as_of.date()
 
     if is_past_day:
-        # Past day: prefer the plan whose created_at is earliest
-        # (the version that was in effect before the day).
-        available.sort(key=lambda p: p["created_at"])
-        selected = available[0]
+        # Past day: the plan that governed the day is the one that was in effect
+        # at the time of the activity — the most recent plan created before
+        # the activity (or before the day if no times available).
+        if activity_times:
+            earliest_activity = min(activity_times)
+            # Plans created before the earliest activity on this day.
+            before_activity: list[Mapping] = [
+                p for p in available
+                if datetime.fromisoformat(p["created_at"]) <= earliest_activity
+            ]
+            if before_activity:
+                # Use the most recent plan created before the activity.
+                before_activity.sort(key=lambda p: p["created_at"], reverse=True)
+                selected = before_activity[0]
+            else:
+                # All available plans were created after the activity.
+                # Use the earliest one (least recent creation) with limitation.
+                available.sort(key=lambda p: p["created_at"])
+                selected = available[0]
+        else:
+            # No activity times — use the most recent plan created before the day.
+            before_day: list[Mapping] = [
+                p for p in available
+                if datetime.fromisoformat(p["created_at"]).date() < day
+            ]
+            if before_day:
+                before_day.sort(key=lambda p: p["created_at"], reverse=True)
+                selected = before_day[0]
+            else:
+                # All plans created on or after the day — indeterminate.
+                available.sort(key=lambda p: p["created_at"])
+                selected = available[0]
     else:
         # Future day: use the most recent plan valid at as_of.
         available.sort(key=lambda p: p["created_at"], reverse=True)
@@ -113,7 +143,12 @@ def select_day_plan(
             has_reliable_time = any(
                 t.tzinfo is not None for t in activity_times
             )
-            if not has_reliable_time:
+            if has_reliable_time:
+                # We can compare: check if plan was created after the activity.
+                earliest_activity = min(activity_times)
+                if plan_created > earliest_activity:
+                    limitations.append("plan_created_after_activity")
+            else:
                 limitations.append("plan_created_after_activity")
         else:
             # No activity times available — cannot order plan vs activity.
@@ -135,42 +170,52 @@ def _provider_coverage_sufficient(
 ) -> bool:
     """Check whether activity providers cover the day sufficiently.
 
-    Returns False when a configured provider has an error or missing window
-    that includes the day.
+    Returns False when no provider has a confirmed coverage window that
+    includes the day, or when any configured provider has an error or
+    unknown status without a verified window.
 
     A provider with error status and no known coverage window (missing
     period_start/period_end or failed_dates) cannot verify absence —
     return False because we cannot confirm the day is covered.
+
+    A provider with status "unknown" or without period_start/period_end
+    cannot verify coverage — return False.
+
+    If no providers are configured at all, return False — we cannot
+    verify absence without any source.
     """
+    has_any_provider = False
     for name, status in provider_status.items():
         if not isinstance(status, Mapping):
             continue
+        has_any_provider = True
         prov_status = status.get("status")
+        period_start = status.get("period_start")
+        period_end = status.get("period_end")
+
         if prov_status in ("network_error", "error", "unavailable"):
-            # Provider has an error — can we still verify coverage?
-            failed = status.get("failed_dates")
-            period_start = status.get("period_start")
-            period_end = status.get("period_end")
-
-            # If we have explicit failed dates, check if our day is affected.
-            if failed is not None and day.isoformat() in failed:
-                return False
-
-            # If the provider has no coverage window at all (period_start/end
-            # are None), we cannot verify whether the day is covered.
-            if period_start is None or period_end is None:
-                return False
-
-            # If the coverage window doesn't include the day, insufficient.
-            if date.fromisoformat(period_start) > day:
-                return False
-            if date.fromisoformat(period_end) < day:
-                return False
-
-            # Provider has error but coverage window includes the day
-            # and no explicit failed date — still insufficient: the error
-            # means data may be missing even if the window looks OK.
+            # Provider has an error — cannot verify coverage.
             return False
+
+        if prov_status == "unknown" or prov_status is None:
+            # Unknown status — cannot verify coverage.
+            return False
+
+        # Provider claims "ok" — but does it have a coverage window?
+        if period_start is None or period_end is None:
+            # No coverage window — cannot verify the day is covered.
+            return False
+
+        # Check the coverage window includes the day.
+        if date.fromisoformat(period_start) > day:
+            return False
+        if date.fromisoformat(period_end) < day:
+            return False
+
+    # No providers configured at all — cannot verify absence.
+    if not has_any_provider:
+        return False
+
     return True
 
 
@@ -204,22 +249,64 @@ def _check_historical_target_certainty(
     return "certain"
 
 
+# Session types that are structurally different — an activity matching one
+# should not be considered compatible with a session of a different type.
+# For example, an intervals activity is not compatible with an easy session
+# even if sport and duration match.
+_INCOMPATIBLE_TYPE_PAIRS = frozenset({
+    ("easy", "intervals"),
+    ("intervals", "easy"),
+    ("easy", "tempo"),
+    ("tempo", "easy"),
+    ("intervals", "long_run"),
+    ("long_run", "intervals"),
+    ("easy_progressions", "intervals"),
+    ("intervals", "easy_progressions"),
+})
+
+
+def _activity_type_compatible_with_session(
+    session_type: str, activity_type: str | None
+) -> bool:
+    """Check if the activity's type is compatible with the session's type.
+
+    Returns False when the types are structurally incompatible (e.g. intervals
+    vs easy). Returns True when the activity has no type info (cannot verify)
+    or when the types are compatible.
+    """
+    if not activity_type:
+        # No activity type info — cannot verify incompatibility.
+        return True
+    pair = (session_type, activity_type)
+    if pair in _INCOMPATIBLE_TYPE_PAIRS:
+        return False
+    return True
+
+
 def _deduplicate_activities(activities: Sequence[Mapping]) -> list[Mapping]:
     """Deduplicate activities that represent the same event across sources.
 
     Two activities are considered duplicates when they share the same
     sport and started_at_utc (within the same second). Keep the first
     occurrence encountered.
+
+    Activities without started_at_utc are NOT deduplicated against each
+    other — they may represent different events on the same day.
+    Only activities with the same explicit started_at_utc are deduplicated.
     """
     seen: set[tuple[str, str]] = set()
     deduplicated: list[Mapping] = []
     for act in activities:
         sport = act.get("sport") or "unknown"
-        started = act.get("started_at_utc") or ""
-        key = (sport, started)
-        if key not in seen:
+        started = act.get("started_at_utc")
+        # Only deduplicate when we have a reliable started_at_utc.
+        # Activities without started_at_utc are kept as distinct events.
+        if started:
+            key = (sport, started)
+            if key in seen:
+                continue  # Duplicate of a same-sport activity at the same time.
             seen.add(key)
-            deduplicated.append(act)
+        deduplicated.append(act)
     return deduplicated
 
 
@@ -248,8 +335,34 @@ def compare_day(
     relations: list[DailyRelation] = []
     selection_limitations = selection.limitations
 
+    # If selection indicates no_plan, we cannot compare against a plan.
+    # Report all activities as activity_added and skip session comparison.
+    if selection.status == "no_plan":
+        raw_activities = [a for a in activities
+                          if a.get("local_date") == day.isoformat()
+                          or a.get("date") == day.isoformat()]
+        day_activities = _deduplicate_activities(raw_activities)
+        if day_activities:
+            activity_ids = tuple(a["id"] for a in day_activities)
+            evidence = tuple(a["id"] for a in day_activities)
+            relations.append(DailyRelation(
+                day=day,
+                status="activity_added",
+                link_status="unconfirmed",
+                historical_target_status="n/a",
+                session_ids=(),
+                activity_ids=activity_ids,
+                evidence_refs=evidence,
+                limitations=selection_limitations,
+            ))
+        return tuple(relations)
+
     # Filter sessions for this day.
     day_sessions = [s for s in sessions if s.get("date") == day.isoformat()]
+
+    # If the plan was created after the activity, we cannot claim
+    # compatibility — the plan may not have governed the day.
+    plan_not_applicable = "plan_created_after_activity" in selection_limitations
 
     # Filter and deduplicate activities for this day.
     raw_activities = [a for a in activities
@@ -331,13 +444,25 @@ def compare_day(
                     status = "insufficient_data"
                     rel_limitations.append("sin criterio de compatibilidad validado")
                 elif _has_full_duration_range(session):
-                    status = _duration_status(session, linked_activity)
+                    # Check activity type compatibility.
+                    act_type = linked_activity.get("session_type")
+                    if not _activity_type_compatible_with_session(session_type, act_type):
+                        status = "insufficient_data"
+                        rel_limitations.append("activity_type_mismatch")
+                    else:
+                        status = _duration_status(session, linked_activity)
+                        # If historical target is uncertain, downgrade
+                        # compatible_with_plan to compatible_with_adjustments.
+                        if target_status == "uncertain" and status == "compatible_with_plan":
+                            status = "compatible_with_adjustments"
+                            rel_limitations.append("historical_target_uncertain")
                 else:
                     status = "insufficient_data"
                     rel_limitations.append("sin criterio de compatibilidad validado")
 
                 if target_status == "uncertain":
-                    rel_limitations.append("historical_target_uncertain")
+                    if "historical_target_uncertain" not in rel_limitations:
+                        rel_limitations.append("historical_target_uncertain")
 
                 used_activity_ids.add(completed_id)
                 relations.append(DailyRelation(
@@ -499,11 +624,23 @@ def compare_day(
             rel_limitations.append("sin criterio de compatibilidad validado")
             status = "insufficient_data"
         elif _has_full_duration_range(session):
-            status = _duration_status(session, activity)
+            # Check activity type compatibility.
+            act_type = activity.get("session_type")
+            if not _activity_type_compatible_with_session(session_type, act_type):
+                status = "insufficient_data"
+                rel_limitations.append("activity_type_mismatch")
+            else:
+                status = _duration_status(session, activity)
         else:
             # Same sport, no duration range — show magnitude only.
             status = "insufficient_data"
             rel_limitations.append("sin criterio de compatibilidad validado")
+
+        # If the plan was created after the activity, we cannot claim
+        # compatibility — downgrade to compatible_with_adjustments.
+        if plan_not_applicable and status == "compatible_with_plan":
+            status = "compatible_with_adjustments"
+            rel_limitations.append("plan may not have governed the day")
 
         relations.append(DailyRelation(
             day=day,

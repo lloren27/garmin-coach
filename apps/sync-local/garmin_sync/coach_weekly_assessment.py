@@ -64,41 +64,59 @@ def select_day_plan(
 
     Rules:
     - A plan covers a day when ``start_date <= day <= end_date``.
-    - Among covering plans, prefer the one whose ``created_at`` is earliest
-      (the version that was in effect before the day).
-    - If the selected plan was created after the day's activities, add a
-      limitation but still return the plan (the caller decides how to use it).
+    - Only consider plans created on or before ``as_of`` (the job creation time).
+    - For past days (day < as_of.date()): prefer the plan whose ``created_at``
+      is earliest but still before the day's activities. If the plan was created
+      after the activity, add a limitation.
+    - For future days (day >= as_of.date()): use the most recent plan valid at
+      ``as_of`` that covers the day.
     - A plan created on the same day as the activity without reliable times
       is indeterminate.
     """
-    covering: list[Mapping] = []
+    # Filter: only plans created before as_of (the job was created at as_of).
+    available: list[Mapping] = []
     for plan in plans:
+        plan_created = datetime.fromisoformat(plan["created_at"])
+        if plan_created > as_of:
+            continue  # Plan didn't exist when the job was created.
         start = date.fromisoformat(plan["start_date"])
         end = date.fromisoformat(plan["end_date"])
         if start <= day <= end:
-            covering.append(plan)
+            available.append(plan)
 
-    if not covering:
+    if not available:
         return DayPlanSelection(day, None, "no_plan", ())
 
-    # Sort by created_at ascending — earliest plan is the one in effect first.
-    covering.sort(key=lambda p: p["created_at"])
-    selected = covering[0]
+    is_past_day = day < as_of.date()
+
+    if is_past_day:
+        # Past day: prefer the plan whose created_at is earliest
+        # (the version that was in effect before the day).
+        available.sort(key=lambda p: p["created_at"])
+        selected = available[0]
+    else:
+        # Future day: use the most recent plan valid at as_of.
+        available.sort(key=lambda p: p["created_at"], reverse=True)
+        selected = available[0]
+
     plan_id = selected["id"]
     plan_created = datetime.fromisoformat(selected["created_at"])
 
     limitations: list[str] = []
 
-    # Check if plan was created after the day.
+    # Check if plan was created after the day's activities.
     if plan_created.date() > day:
         limitations.append("plan_created_after_activity")
     elif plan_created.date() == day:
-        # Same day — check if we have reliable activity times.
-        has_reliable_time = any(
-            t.tzinfo is not None for t in activity_times
-        )
-        if not has_reliable_time or not activity_times:
-            # Cannot order plan vs activity on the same day.
+        # Same day — check if we have reliable activity times to order.
+        if activity_times:
+            has_reliable_time = any(
+                t.tzinfo is not None for t in activity_times
+            )
+            if not has_reliable_time:
+                limitations.append("plan_created_after_activity")
+        else:
+            # No activity times available — cannot order plan vs activity.
             limitations.append("plan_created_after_activity")
 
     return DayPlanSelection(day, plan_id, "available", tuple(limitations))
@@ -119,19 +137,40 @@ def _provider_coverage_sufficient(
 
     Returns False when a configured provider has an error or missing window
     that includes the day.
+
+    A provider with error status and no known coverage window (missing
+    period_start/period_end or failed_dates) cannot verify absence —
+    return False because we cannot confirm the day is covered.
     """
     for name, status in provider_status.items():
         if not isinstance(status, Mapping):
             continue
-        if status.get("status") in ("network_error", "error", "unavailable"):
-            # Check if the failure affects our day.
-            failed = status.get("failed_dates") or []
-            if day.isoformat() in failed:
-                return False
-            # If period doesn't cover the day, also insufficient.
+        prov_status = status.get("status")
+        if prov_status in ("network_error", "error", "unavailable"):
+            # Provider has an error — can we still verify coverage?
+            failed = status.get("failed_dates")
             period_start = status.get("period_start")
-            if period_start and date.fromisoformat(period_start) > day:
+            period_end = status.get("period_end")
+
+            # If we have explicit failed dates, check if our day is affected.
+            if failed is not None and day.isoformat() in failed:
                 return False
+
+            # If the provider has no coverage window at all (period_start/end
+            # are None), we cannot verify whether the day is covered.
+            if period_start is None or period_end is None:
+                return False
+
+            # If the coverage window doesn't include the day, insufficient.
+            if date.fromisoformat(period_start) > day:
+                return False
+            if date.fromisoformat(period_end) < day:
+                return False
+
+            # Provider has error but coverage window includes the day
+            # and no explicit failed date — still insufficient: the error
+            # means data may be missing even if the window looks OK.
+            return False
     return True
 
 
@@ -165,6 +204,25 @@ def _check_historical_target_certainty(
     return "certain"
 
 
+def _deduplicate_activities(activities: Sequence[Mapping]) -> list[Mapping]:
+    """Deduplicate activities that represent the same event across sources.
+
+    Two activities are considered duplicates when they share the same
+    sport and started_at_utc (within the same second). Keep the first
+    occurrence encountered.
+    """
+    seen: set[tuple[str, str]] = set()
+    deduplicated: list[Mapping] = []
+    for act in activities:
+        sport = act.get("sport") or "unknown"
+        started = act.get("started_at_utc") or ""
+        key = (sport, started)
+        if key not in seen:
+            seen.add(key)
+            deduplicated.append(act)
+    return deduplicated
+
+
 def compare_day(
     day: date,
     selection: DayPlanSelection,
@@ -176,21 +234,35 @@ def compare_day(
 
     Returns one DailyRelation per session (or per activity group when no plan).
     Produces informative states without inventing pairings.
+
+    Rules:
+    - If selection indicates no_plan, activities are reported as activity_added.
+    - If selection has plan_created_after_activity limitation, propagate it
+      to all relations so the caller knows the plan may not have governed the day.
+    - Deduplicate activities across sources before comparison.
+    - When multiple sessions share the same sport on a day and there are
+      multiple matching activities, do not force pairings — mark ambiguous.
+    - Emit a relation for activities that remain unassigned after all sessions
+      are processed.
     """
     relations: list[DailyRelation] = []
+    selection_limitations = selection.limitations
 
     # Filter sessions for this day.
     day_sessions = [s for s in sessions if s.get("date") == day.isoformat()]
-    day_activities = [a for a in activities
+
+    # Filter and deduplicate activities for this day.
+    raw_activities = [a for a in activities
                       if a.get("local_date") == day.isoformat()
                       or a.get("date") == day.isoformat()]
+    day_activities = _deduplicate_activities(raw_activities)
 
-    # No plan for this day.
+    # No sessions for this day.
     if not day_sessions:
         if day_activities:
-            # Activities without a plan — activity_added.
             activity_ids = tuple(a["id"] for a in day_activities)
             evidence = tuple(a["id"] for a in day_activities)
+            limitations = selection_limitations
             relations.append(DailyRelation(
                 day=day,
                 status="activity_added",
@@ -199,7 +271,7 @@ def compare_day(
                 session_ids=(),
                 activity_ids=activity_ids,
                 evidence_refs=evidence,
-                limitations=(),
+                limitations=limitations,
             ))
         return tuple(relations)
 
@@ -212,12 +284,21 @@ def compare_day(
     # Track which activities have been referenced.
     used_activity_ids: set[str] = set()
 
+    # Group sessions by sport to detect ambiguous pairings.
+    sessions_by_sport: dict[str, list[Mapping]] = {}
+    for session in day_sessions:
+        sport = session.get("sport") or "unknown"
+        sessions_by_sport.setdefault(sport, []).append(session)
+
     for session in day_sessions:
         session_id = session["id"]
         session_sport = session.get("sport")
         session_type = session.get("session_type", "")
         is_optional = session.get("optional", False)
         completed_id = session.get("completed_activity_id")
+
+        # Base limitations from selection.
+        rel_limitations: list[str] = list(selection_limitations)
 
         # --- Explicit link check ---
         if completed_id:
@@ -228,7 +309,6 @@ def compare_day(
                     break
 
             if linked_activity:
-                # Link is confirmed.
                 activity_started_str = linked_activity.get("started_at_utc")
                 activity_started = None
                 if activity_started_str:
@@ -249,16 +329,15 @@ def compare_day(
                     status = "other_sport_same_day"
                 elif session_type in _NO_DURATION_COMPAT:
                     status = "insufficient_data"
+                    rel_limitations.append("sin criterio de compatibilidad validado")
                 elif _has_full_duration_range(session):
                     status = _duration_status(session, linked_activity)
                 else:
                     status = "insufficient_data"
+                    rel_limitations.append("sin criterio de compatibilidad validado")
 
-                limitations: list[str] = []
-                if session_type in _NO_DURATION_COMPAT:
-                    limitations.append("sin criterio de compatibilidad validado")
                 if target_status == "uncertain":
-                    limitations.append("historical_target_uncertain")
+                    rel_limitations.append("historical_target_uncertain")
 
                 used_activity_ids.add(completed_id)
                 relations.append(DailyRelation(
@@ -269,7 +348,7 @@ def compare_day(
                     session_ids=(session_id,),
                     activity_ids=(completed_id,),
                     evidence_refs=(session_id, completed_id),
-                    limitations=tuple(limitations),
+                    limitations=tuple(rel_limitations),
                 ))
                 continue
             else:
@@ -282,7 +361,7 @@ def compare_day(
                     session_ids=(session_id,),
                     activity_ids=(),
                     evidence_refs=(session_id,),
-                    limitations=("completed_activity_id_not_found",),
+                    limitations=tuple(rel_limitations + ["completed_activity_id_not_found"]),
                 ))
                 continue
 
@@ -295,7 +374,6 @@ def compare_day(
         # Recovery / rest sessions — special handling.
         if session_sport in _RECOVERY_SPORTS:
             if day_activities:
-                # Activity on a rest day.
                 act_ids = tuple(a["id"] for a in day_activities)
                 relations.append(DailyRelation(
                     day=day,
@@ -305,7 +383,7 @@ def compare_day(
                     session_ids=(session_id,),
                     activity_ids=act_ids,
                     evidence_refs=(session_id, *act_ids),
-                    limitations=("sin criterio de compatibilidad validado",),
+                    limitations=tuple(rel_limitations + ["sin criterio de compatibilidad validado"]),
                 ))
             else:
                 # Rest day, no activity — fine.
@@ -313,14 +391,55 @@ def compare_day(
             continue
 
         # Find matching activities by sport.
-        matching = activities_by_sport.get(session_sport or "", [])
+        all_matching = activities_by_sport.get(session_sport or "", [])
         # Filter out already-used activities.
-        matching = [a for a in matching if a["id"] not in used_activity_ids]
+        matching = [a for a in all_matching if a["id"] not in used_activity_ids]
+
+        # Check if there are multiple sessions of the same sport.
+        same_sport_sessions = sessions_by_sport.get(session_sport or "", [])
+        has_multiple_sessions = len(same_sport_sessions) > 1
+
+        # If multiple sessions share the same sport, we cannot determine which
+        # activity corresponds to which session — all are ambiguous.
+        # Use all_matching (before filtering used) to show all candidates.
+        if has_multiple_sessions:
+            candidates = [a for a in all_matching if a["id"] not in used_activity_ids]
+            if candidates:
+                act_ids = tuple(a["id"] for a in candidates)
+                rel_limitations.append("multiple_matching_activities")
+                relations.append(DailyRelation(
+                    day=day,
+                    status="insufficient_data",
+                    link_status="ambiguous",
+                    historical_target_status="n/a",
+                    session_ids=(session_id,),
+                    activity_ids=act_ids,
+                    evidence_refs=(session_id, *act_ids),
+                    limitations=tuple(rel_limitations),
+                ))
+            else:
+                # All activities of this sport were already consumed by a
+                # previous ambiguous session — still ambiguous, no candidates.
+                rel_limitations.append("multiple_matching_activities")
+                relations.append(DailyRelation(
+                    day=day,
+                    status="insufficient_data",
+                    link_status="ambiguous",
+                    historical_target_status="n/a",
+                    session_ids=(session_id,),
+                    activity_ids=(),
+                    evidence_refs=(session_id,),
+                    limitations=tuple(rel_limitations),
+                ))
+            # Mark all remaining candidates as used so subsequent sessions
+            # of the same sport see no candidates.
+            for a in candidates if 'candidates' in dir() else []:
+                used_activity_ids.add(a["id"])
+            continue
 
         if not matching:
             # No activity of the expected sport.
             if day_activities:
-                # Other sport(s) recorded.
                 act_ids = tuple(a["id"] for a in day_activities
                                 if a["id"] not in used_activity_ids)
                 relations.append(DailyRelation(
@@ -331,16 +450,15 @@ def compare_day(
                     session_ids=(session_id,),
                     activity_ids=act_ids,
                     evidence_refs=(session_id, *act_ids),
-                    limitations=(),
+                    limitations=tuple(rel_limitations),
                 ))
             else:
                 # No activity at all.
                 if _provider_coverage_sufficient(provider_status, day):
                     status = "no_activity_recorded"
-                    limitations = ()
                 else:
                     status = "insufficient_data"
-                    limitations = ("provider_coverage_insufficient",)
+                    rel_limitations.append("provider_coverage_insufficient")
                 relations.append(DailyRelation(
                     day=day,
                     status=status,
@@ -349,13 +467,14 @@ def compare_day(
                     session_ids=(session_id,),
                     activity_ids=(),
                     evidence_refs=(session_id,),
-                    limitations=limitations,
+                    limitations=tuple(rel_limitations),
                 ))
             continue
 
-        # Multiple matching activities — ambiguous, don't force pairing.
+        # Multiple matching activities for this session — ambiguous.
         if len(matching) > 1:
             act_ids = tuple(a["id"] for a in matching)
+            rel_limitations.append("multiple_matching_activities")
             relations.append(DailyRelation(
                 day=day,
                 status="insufficient_data",
@@ -364,8 +483,10 @@ def compare_day(
                 session_ids=(session_id,),
                 activity_ids=act_ids,
                 evidence_refs=(session_id, *act_ids),
-                limitations=("multiple_matching_activities",),
+                limitations=tuple(rel_limitations),
             ))
+            for a in matching:
+                used_activity_ids.add(a["id"])
             continue
 
         # Single matching activity — compare.
@@ -373,18 +494,16 @@ def compare_day(
         act_ids = (activity["id"],)
         used_activity_ids.add(activity["id"])
 
-        limitations: list[str] = []
-
         # Check if session type admits duration comparison.
         if session_type in _NO_DURATION_COMPAT:
-            limitations.append("sin criterio de compatibilidad validado")
+            rel_limitations.append("sin criterio de compatibilidad validado")
             status = "insufficient_data"
         elif _has_full_duration_range(session):
             status = _duration_status(session, activity)
         else:
             # Same sport, no duration range — show magnitude only.
             status = "insufficient_data"
-            limitations.append("sin criterio de compatibilidad validado")
+            rel_limitations.append("sin criterio de compatibilidad validado")
 
         relations.append(DailyRelation(
             day=day,
@@ -394,7 +513,22 @@ def compare_day(
             session_ids=(session_id,),
             activity_ids=act_ids,
             evidence_refs=(session_id, *act_ids),
-            limitations=tuple(limitations),
+            limitations=tuple(rel_limitations),
+        ))
+
+    # Emit relations for activities that were not assigned to any session.
+    unassigned = [a for a in day_activities if a["id"] not in used_activity_ids]
+    if unassigned:
+        unassigned_ids = tuple(a["id"] for a in unassigned)
+        relations.append(DailyRelation(
+            day=day,
+            status="activity_added",
+            link_status="unconfirmed",
+            historical_target_status="n/a",
+            session_ids=(),
+            activity_ids=unassigned_ids,
+            evidence_refs=unassigned_ids,
+            limitations=tuple(selection_limitations),
         ))
 
     return tuple(relations)
@@ -404,13 +538,15 @@ def _duration_status(session: Mapping, activity: Mapping) -> str:
     """Compare activity duration against session's duration range.
 
     Returns "compatible_with_plan" if within range,
-    "compatible_with_adjustments" if outside range.
+    "compatible_with_adjustments" if outside range,
+    "insufficient_data" if the activity duration is not available.
     """
     dmin = session["duration_min"]  # minutes
     dmax = session["duration_max"]  # minutes
     duration_s = activity.get("duration_s")
     if duration_s is None:
-        return "compatible_with_plan"
+        # Cannot compare without actual duration evidence.
+        return "insufficient_data"
 
     # Convert session range to seconds for comparison.
     duration_min_s = dmin * 60

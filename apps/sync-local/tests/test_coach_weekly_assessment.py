@@ -166,6 +166,43 @@ class SelectDayPlanTests(unittest.TestCase):
         self.assertEqual(result.plan_id, "p1")
         self.assertIn("plan_created_after_activity", result.limitations)
 
+    def test_new_plan_does_not_affect_past_day(self):
+        """A plan created on 28/10 should not govern 27/10 when an older plan covers it.
+
+        Regression test: select_day_plan always picked the oldest plan regardless
+        of as_of, so a plan created 28/10 could govern 27/10.
+        """
+        old = _plan("old", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", status="superseded")
+        new = _plan("new", "2026-10-28", "2026-11-03", "2026-10-28T10:00:00")
+        plans = (old, new)
+        # as_of is 28/10 12:00 — the new plan exists at as_of.
+        as_of = datetime(2026, 10, 28, 12, tzinfo=__import__("datetime").timezone.utc)
+        # For 27/10 (past day), only the old plan should apply.
+        result = select_day_plan(plans, date(2026, 10, 27), (), as_of)
+        self.assertEqual(result.plan_id, "old",
+                         "Past day should use the plan that was in effect, not the new one")
+
+    def test_new_plan_governs_future_day(self):
+        """For a future day (29/10), the new plan (created 28/10) should be selected."""
+        old = _plan("old", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", status="superseded")
+        new = _plan("new", "2026-10-28", "2026-11-03", "2026-10-28T10:00:00")
+        plans = (old, new)
+        as_of = datetime(2026, 10, 28, 12, tzinfo=__import__("datetime").timezone.utc)
+        # 29/10 is a future day relative to as_of (28/10).
+        result = select_day_plan(plans, date(2026, 10, 29), (), as_of)
+        self.assertEqual(result.plan_id, "new",
+                         "Future day should use the most recent plan valid at as_of")
+
+    def test_plan_created_after_as_of_excluded(self):
+        """A plan created after as_of should not be considered."""
+        future_plan = _plan("future", "2026-10-26", "2026-11-01", "2026-10-29T08:00:00")
+        plans = (future_plan,)
+        as_of = datetime(2026, 10, 28, 12, tzinfo=__import__("datetime").timezone.utc)
+        result = select_day_plan(plans, date(2026, 10, 27), (), as_of)
+        self.assertIsNone(result.plan_id,
+                          "Plan created after as_of should be excluded")
+        self.assertEqual(result.status, "no_plan")
+
 
 class CompareDayTests(unittest.TestCase):
     """Test daily comparison between sessions and activities."""
@@ -360,6 +397,142 @@ class CompareDayTests(unittest.TestCase):
         self.assertTrue(any(r.status == "insufficient_data" for r in relations))
         for r in relations:
             self.assertNotEqual(r.status, "no_activity_recorded")
+
+    def test_provider_failed_without_coverage_dates(self):
+        """Provider failure without coverage dates — insufficient_data, not no_activity_recorded.
+
+        Regression test: _provider_coverage_sufficient returned True when Strava
+        failed with no period_start/period_end, leading to no_activity_recorded.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        activities = ()
+        # Strava error with no coverage window — cannot verify absence.
+        provider = {
+            "garmin": {"status": "ok", "records_received": 0,
+                       "period_start": "2026-10-26", "period_end": "2026-11-01",
+                       "last_success_at": "2026-10-28T11:00:00Z"},
+            "strava": {"status": "network_error", "records_received": None,
+                       "period_start": None, "period_end": None,
+                       "failed_dates": None},
+            "zepp": {"status": "ok", "records_received": 0,
+                     "last_success_at": "2026-10-28T11:00:00Z"},
+        }
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        self.assertTrue(any(r.status == "insufficient_data" for r in relations),
+                        "Should be insufficient_data when provider has no coverage window")
+        for r in relations:
+            self.assertNotEqual(r.status, "no_activity_recorded",
+                                "Must not claim verified absence without coverage")
+
+    def test_no_plan_selection_should_not_claim_compatibility(self):
+        """When selection is no_plan, compare_day must not produce compatible_with_plan.
+
+        Regression test: compare_day accepted sessions even when selection
+        indicated no_plan, producing a false compatible_with_plan.
+        """
+        selection = DayPlanSelection(date(2026, 10, 27), None, "no_plan", ())
+        sessions = ()  # No sessions because no plan.
+        activities = (_activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z"),)
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        for r in relations:
+            self.assertNotEqual(r.status, "compatible_with_plan",
+                                "No plan — must not claim compatibility")
+        self.assertTrue(any(r.status == "activity_added" for r in relations))
+
+    def test_duration_missing_should_not_be_compatible(self):
+        """Activity without duration_s must not produce compatible_with_plan.
+
+        Regression test: _duration_status returned compatible_with_plan when
+        duration_s was None.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        # Activity without duration_s.
+        act = _activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z")
+        del act["duration_s"]
+        activities = (act,)
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        for r in relations:
+            self.assertNotEqual(r.status, "compatible_with_plan",
+                                "Missing duration must not yield compatibility")
+        self.assertTrue(any(r.status == "insufficient_data" for r in relations))
+
+    def test_two_run_sessions_no_forced_pairing(self):
+        """Two run sessions and one run activity — no forced pairing, second session ambiguous.
+
+        Regression test: compare_day assigned the single run to the first session
+        and returned other_sport_same_day for the second session without an activity.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+            _session("s2", "p1", "2026-10-27", "running", "easy_progressions", 35, 45),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        activities = (_activity("a1", "2026-10-27", "running", 2100, "2026-10-27T06:00:00Z"),)
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        # Both sessions should be ambiguous — cannot determine which activity
+        # corresponds to which session.
+        for r in relations:
+            if r.session_ids:
+                self.assertEqual(r.link_status, "ambiguous",
+                                 "Multiple sessions same sport — must be ambiguous")
+
+    def test_unassigned_activity_emits_relation(self):
+        """Activities not assigned to any session should emit an activity_added relation.
+
+        Regression test: unassigned activities were silently dropped.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        # One run (matches session) + one bike (no session).
+        activities = (
+            _activity("a1", "2026-10-27", "running", 2100, "2026-10-27T06:00:00Z"),
+            _activity("a2", "2026-10-27", "cycling", 3600, "2026-10-27T16:00:00Z"),
+        )
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        # The bike activity should appear as activity_added.
+        added = [r for r in relations if r.status == "activity_added"]
+        self.assertTrue(len(added) > 0, "Unassigned activity should emit relation")
+        self.assertTrue(any("a2" in r.activity_ids for r in added),
+                        "Bike activity should be in activity_added relation")
+
+    def test_selection_limitation_propagated(self):
+        """Selection limitations should propagate to all relations."""
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        # Selection with plan_created_after_activity limitation.
+        selection = DayPlanSelection(
+            date(2026, 10, 27), "p1", "available",
+            ("plan_created_after_activity",))
+        sessions = tuple(plan["sessions"])
+        activities = (_activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z"),)
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        for r in relations:
+            self.assertIn("plan_created_after_activity", r.limitations,
+                          "Selection limitation should propagate to relations")
 
     def test_no_plan_selection(self):
         """Day with no applicable plan."""

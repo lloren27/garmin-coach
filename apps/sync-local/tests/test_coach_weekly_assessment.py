@@ -262,6 +262,55 @@ class SelectDayPlanTests(unittest.TestCase):
         self.assertNotIn("plan_created_after_activity", result.limitations,
                          "Plan created before activity — no limitation")
 
+    def test_timezone_naive_activity_time_no_type_error(self):
+        """Activity time without timezone should not raise TypeError.
+
+        Regression test: min(activity_times) with timezone-naive datetime
+        caused TypeError before reaching the indeterminate branch.
+        """
+        tz = __import__("datetime").timezone.utc
+        # _plan appends +00:00, so pass a plain timestamp.
+        plans = (_plan("p1", "2026-10-26", "2026-11-01", "2026-10-27T06:00:00"),)
+        as_of = datetime(2026, 10, 28, 12, tzinfo=tz)
+        # Timezone-naive activity time — no tzinfo.
+        naive_time = datetime(2026, 10, 27, 7, 0)
+        # Should not raise TypeError.
+        result = select_day_plan(plans, date(2026, 10, 27), (naive_time,), as_of)
+        self.assertEqual(result.plan_id, "p1")
+        # Without reliable time, should be indeterminate.
+        self.assertIn("plan_created_after_activity", result.limitations,
+                      "Timezone-naive time should yield indeterminate ordering")
+
+    def test_mixed_times_choose_latest_plan_created_before_day(self):
+        day = date(2026, 10, 27)
+        plans = (
+            _plan("old", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00"),
+            _plan("new", "2026-10-26", "2026-11-01", "2026-10-26T08:00:00"),
+        )
+        times = (
+            datetime(2026, 10, 27, 7),
+            datetime(2026, 10, 27, 8, tzinfo=__import__("datetime").timezone.utc),
+        )
+        as_of = datetime(2026, 10, 28, 12, tzinfo=__import__("datetime").timezone.utc)
+        result = select_day_plan(plans, day, times, as_of)
+        self.assertEqual(result.plan_id, "new")
+        self.assertEqual(result.limitations, ())
+
+    def test_mixed_times_with_same_day_plan_keep_order_uncertain(self):
+        day = date(2026, 10, 27)
+        plans = (
+            _plan("old", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00"),
+            _plan("new", "2026-10-26", "2026-11-01", "2026-10-27T06:00:00"),
+        )
+        times = (
+            datetime(2026, 10, 27, 7),
+            datetime(2026, 10, 27, 8, tzinfo=__import__("datetime").timezone.utc),
+        )
+        as_of = datetime(2026, 10, 28, 12, tzinfo=__import__("datetime").timezone.utc)
+        result = select_day_plan(plans, day, times, as_of)
+        self.assertEqual(result.plan_id, "old")
+        self.assertIn("plan_created_after_activity", result.limitations)
+
 
 class CompareDayTests(unittest.TestCase):
     """Test daily comparison between sessions and activities."""
@@ -388,8 +437,10 @@ class CompareDayTests(unittest.TestCase):
         ])
         selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
         sessions = tuple(plan["sessions"])
-        # 35 min = 2100s, within 30-40 min range
-        activities = (_activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z"),)
+        # 35 min = 2100s, within 30-40 min range; activity type matches session.
+        act = _activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z")
+        act["activity_type"] = "easy"
+        activities = (act,)
         provider = _provider_status()
         relations = compare_day(
             date(2026, 10, 27), selection, sessions, activities, provider)
@@ -402,8 +453,10 @@ class CompareDayTests(unittest.TestCase):
         ])
         selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
         sessions = tuple(plan["sessions"])
-        # 60 min = 3600s, outside 30-40 min range
-        activities = (_activity("a1", "2026-10-27", "running", 3600, "2026-10-27T07:00:00Z"),)
+        # 60 min = 3600s, outside 30-40 min range; activity type matches session.
+        act = _activity("a1", "2026-10-27", "running", 3600, "2026-10-27T07:00:00Z")
+        act["activity_type"] = "easy"
+        activities = (act,)
         provider = _provider_status()
         relations = compare_day(
             date(2026, 10, 27), selection, sessions, activities, provider)
@@ -626,11 +679,13 @@ class CompareDayTests(unittest.TestCase):
         # Should report as activity_added since no plan governs the day.
         self.assertTrue(any(r.status == "activity_added" for r in relations))
 
-    def test_plan_created_after_activity_downgrades_compatibility(self):
-        """When plan was created after activity, compatible_with_plan is downgraded.
+    def test_plan_created_after_activity_yields_insufficient_data(self):
+        """When plan was created after activity, status is insufficient_data.
 
-        Regression test: compare_day produced compatible_with_plan even when
-        selection indicated plan_created_after_activity.
+        Regression test: compare_day returned compatible_with_adjustments when
+        plan was created after activity. That label still affirms a comparison
+        with a plan that did not govern the training. The correct state is
+        insufficient_data — we cannot compare against a non-applicable plan.
         """
         plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-28T10:00:00", sessions=[
             _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
@@ -646,6 +701,54 @@ class CompareDayTests(unittest.TestCase):
         for r in relations:
             self.assertNotEqual(r.status, "compatible_with_plan",
                                 "Plan created after activity — must not claim full compatibility")
+            self.assertNotEqual(r.status, "compatible_with_adjustments",
+                                "Plan created after activity — must not claim partial compatibility")
+        self.assertTrue(any(r.status == "insufficient_data" for r in relations),
+                        "Plan not applicable — should be insufficient_data")
+
+    def test_uncertain_historical_target_yields_insufficient_data(self):
+        """When historical target is uncertain, status is insufficient_data.
+
+        Regression test: compare_day returned compatible_with_adjustments when
+        the historical target was uncertain. That label still affirms a
+        comparison with an uncertain target. The correct state is
+        insufficient_data.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40,
+                     completed_activity_id="a1",
+                     created="2026-10-25T08:00:00", updated="2026-10-28T10:00:00"),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        activities = (_activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z"),)
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        for r in relations:
+            if r.historical_target_status == "uncertain":
+                self.assertNotEqual(r.status, "compatible_with_plan",
+                                    "Uncertain target must not yield full compatibility")
+                self.assertNotEqual(r.status, "compatible_with_adjustments",
+                                    "Uncertain target must not yield partial compatibility")
+                self.assertEqual(r.status, "insufficient_data",
+                                 "Uncertain target should yield insufficient_data")
+
+    def test_uncertain_historical_target_outside_duration_range(self):
+        day = date(2026, 10, 27)
+        selection = DayPlanSelection(day, "p1", "available", ())
+        session = _session(
+            "s1", "p1", day.isoformat(), "running", "easy", 30, 40,
+            completed_activity_id="a1", created="2026-10-25T08:00:00",
+            updated="2026-10-28T10:00:00",
+        )
+        activity = _activity("a1", day.isoformat(), "running", 3600,
+                             "2026-10-27T07:00:00Z")
+        activity["activity_type"] = "easy"
+        relation = compare_day(day, selection, (session,), (activity,), {})[0]
+        self.assertEqual(relation.link_status, "confirmed")
+        self.assertEqual(relation.historical_target_status, "uncertain")
+        self.assertEqual(relation.status, "insufficient_data")
 
     def test_empty_providers_returns_insufficient_data(self):
         """No providers configured — cannot verify absence.
@@ -713,27 +816,194 @@ class CompareDayTests(unittest.TestCase):
         self.assertTrue(any("activity_type_mismatch" in r.limitations
                            for r in relations if r.limitations))
 
-    def test_uncertain_historical_target_downgrades_compatibility(self):
-        """When historical target is uncertain, compatible_with_plan is downgraded.
+    def test_activity_type_field_used_instead_of_session_type(self):
+        """Activity type should be read from activity_type, not session_type.
 
-        Regression test: compare_day maintained compatible_with_plan when the
-        historical target was uncertain.
+        Regression test: compare_day read session_type from the activity,
+        but the real context uses activity_type. An intervals activity with
+        activity_type="intervals" was marked compatible with an easy session.
         """
         plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
-            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40,
-                     completed_activity_id="a1",
-                     created="2026-10-25T08:00:00", updated="2026-10-28T10:00:00"),
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
         ])
         selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
         sessions = tuple(plan["sessions"])
-        activities = (_activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z"),)
+        # Activity with activity_type "intervals" — the real context field.
+        act = _activity("a1", "2026-10-27", "running", 2100, "2026-10-27T07:00:00Z")
+        act["activity_type"] = "intervals"
+        activities = (act,)
         provider = _provider_status()
         relations = compare_day(
             date(2026, 10, 27), selection, sessions, activities, provider)
         for r in relations:
-            if r.historical_target_status == "uncertain":
-                self.assertNotEqual(r.status, "compatible_with_plan",
-                                    "Uncertain target must not yield full compatibility")
+            self.assertNotEqual(r.status, "compatible_with_plan",
+                                "Intervals activity_type must not be compatible with easy session")
+        self.assertTrue(any("activity_type_mismatch" in r.limitations
+                           for r in relations if r.limitations))
+
+    def test_wellness_provider_does_not_affect_coverage(self):
+        """Wellness and Wattwise providers should not affect coverage check.
+
+        Regression test: _provider_coverage_sufficient evaluated wellness and
+        Wattwise providers, returning insufficient_data even when activity
+        providers confirmed an empty day.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        activities = ()
+        # Activity providers confirm coverage; wellness provider has no window.
+        provider = {
+            "garmin": {"status": "ok", "records_received": 0,
+                       "period_start": "2026-10-26", "period_end": "2026-11-01",
+                       "last_success_at": "2026-10-28T11:00:00Z"},
+            "wellness": {"status": "ok", "records_received": 0},
+            "wattwise": {"status": "unknown"},
+        }
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        # Activity providers cover the day — should be no_activity_recorded.
+        self.assertTrue(any(r.status == "no_activity_recorded" for r in relations),
+                        "Wellness/Wattwise should not prevent verified absence")
+
+    def test_compound_provider_keys_accepted(self):
+        """Provider keys like 'garmin.activities' must be accepted.
+
+        Regression test: _ACTIVITY_PROVIDERS filtered by 'garmin', 'strava',
+        'zepp' but the real snapshot uses 'garmin.activities', etc.
+        This caused insufficient_data when all three activity providers
+        confirmed an empty day.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        activities = ()
+        # Compound keys — the real snapshot format.
+        provider = {
+            "garmin.activities": {"status": "ok", "records_received": 0,
+                                   "period_start": "2026-10-26", "period_end": "2026-11-01",
+                                   "last_success_at": "2026-10-28T11:00:00Z"},
+            "strava.activities": {"status": "ok", "records_received": 0,
+                                   "period_start": "2026-10-26", "period_end": "2026-11-01",
+                                   "last_success_at": "2026-10-28T11:00:00Z"},
+            "zepp.activities": {"status": "ok", "records_received": 0,
+                                 "period_start": "2026-10-26", "period_end": "2026-11-01",
+                                 "last_success_at": "2026-10-28T11:00:00Z"},
+        }
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        # All activity providers cover the day — should be no_activity_recorded.
+        self.assertTrue(any(r.status == "no_activity_recorded" for r in relations),
+                        "Compound provider keys should be accepted")
+
+    def test_stale_activity_coverage_cannot_prove_absence(self):
+        day = date(2026, 10, 27)
+        selection = DayPlanSelection(day, "p1", "available", ())
+        sessions = (_session("s1", "p1", day.isoformat(), "running", "easy", 30, 40),)
+        provider = {
+            f"{name}.activities": {
+                "scope": "activities", "state": "stale", "status": "ok",
+                "records_received": 0, "period_start": "2026-10-26",
+                "period_end": "2026-11-01", "failed_dates": [],
+                "last_success_at": "2026-10-25T11:00:00Z",
+            }
+            for name in ("garmin", "strava", "zepp")
+        }
+        relations = compare_day(day, selection, sessions, (), provider)
+        self.assertEqual(relations[0].status, "insufficient_data")
+        self.assertIn("provider_coverage_insufficient", relations[0].limitations)
+
+    def test_plan_not_applicable_degrades_all_compatibility(self):
+        """Plan not applicable must degrade compatible_with_adjustments too.
+
+        Regression test: when plan was created after activity, only
+        compatible_with_plan was downgraded. If duration fell outside the
+        range, status remained compatible_with_adjustments — still affirming
+        a comparison with a non-applicable plan.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-28T10:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        selection = DayPlanSelection(
+            date(2026, 10, 27), "p1", "available",
+            ("plan_created_after_activity",))
+        sessions = tuple(plan["sessions"])
+        # Duration outside range — would be compatible_with_adjustments.
+        activities = (_activity("a1", "2026-10-27", "running", 3600,
+                                "2026-10-27T07:00:00Z"),)
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        for r in relations:
+            self.assertNotEqual(r.status, "compatible_with_adjustments",
+                                "Plan not applicable — must not claim partial compatibility")
+        self.assertTrue(any(r.status == "insufficient_data" for r in relations),
+                        "Plan not applicable — should be insufficient_data")
+
+    def test_missing_activity_type_yields_insufficient_data(self):
+        """When activity type is not available, status is insufficient_data.
+
+        Regression test: _activity_type_compatible_with_session returned True
+        when activity_type was None, allowing compatible_with_plan without
+        a verifiable type.
+        """
+        plan = _plan("p1", "2026-10-26", "2026-11-01", "2026-10-25T08:00:00", sessions=[
+            _session("s1", "p1", "2026-10-27", "running", "easy", 30, 40),
+        ])
+        selection = DayPlanSelection(date(2026, 10, 27), "p1", "available", ())
+        sessions = tuple(plan["sessions"])
+        # Activity without activity_type or session_type.
+        act = _activity("a1", "2026-10-27", "running", 2100,
+                        "2026-10-27T07:00:00Z")
+        # Ensure no type field is present.
+        act.pop("activity_type", None)
+        act.pop("session_type", None)
+        activities = (act,)
+        provider = _provider_status()
+        relations = compare_day(
+            date(2026, 10, 27), selection, sessions, activities, provider)
+        for r in relations:
+            self.assertNotEqual(r.status, "compatible_with_plan",
+                                "No activity type — must not claim compatibility")
+        self.assertTrue(any(r.status == "insufficient_data" for r in relations))
+        self.assertTrue(any("activity_type_not_available" in r.limitations
+                           for r in relations if r.limitations))
+
+    def test_unvalidated_activity_type_does_not_claim_compatibility(self):
+        day = date(2026, 10, 27)
+        selection = DayPlanSelection(day, "p1", "available", ())
+        session = _session("s1", "p1", day.isoformat(), "running", "easy", 30, 40)
+        for activity_type in ("long_run", "unknown"):
+            with self.subTest(activity_type=activity_type):
+                activity = _activity("a1", day.isoformat(), "running", 2100)
+                activity["activity_type"] = activity_type
+                relation = compare_day(day, selection, (session,), (activity,), {})[0]
+                self.assertEqual(relation.status, "insufficient_data")
+                self.assertIn("activity_type_mismatch", relation.limitations)
+
+    def test_mixed_timezone_activity_times_no_type_error(self):
+        """Mixed timezone-aware and naive times should not raise TypeError.
+
+        Regression test: min() with one timezone-aware and one timezone-naive
+        datetime raises TypeError before reaching the indeterminate branch.
+        """
+        tz = __import__("datetime").timezone.utc
+        plans = (_plan("p1", "2026-10-26", "2026-11-01", "2026-10-27T06:00:00"),)
+        as_of = datetime(2026, 10, 28, 12, tzinfo=tz)
+        # One timezone-aware, one timezone-naive — min() would raise TypeError.
+        aware_time = datetime(2026, 10, 27, 7, 0, tzinfo=tz)
+        naive_time = datetime(2026, 10, 27, 8, 0)
+        # Should not raise TypeError.
+        result = select_day_plan(plans, date(2026, 10, 27),
+                                 (aware_time, naive_time), as_of)
+        self.assertEqual(result.plan_id, "p1")
+        # Mixed timezone — should be indeterminate.
+        self.assertIn("plan_created_after_activity", result.limitations,
+                      "Mixed timezone times should yield indeterminate ordering")
 
     def test_deduplication_preserves_distinct_activities_without_time(self):
         """Two activities of the same sport without started_at_utc are not deduplicated.

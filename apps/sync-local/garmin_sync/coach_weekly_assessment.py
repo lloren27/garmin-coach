@@ -96,16 +96,38 @@ def select_day_plan(
         # at the time of the activity — the most recent plan created before
         # the activity (or before the day if no times available).
         if activity_times:
-            earliest_activity = min(activity_times)
+            # Check for mixed timezone awareness: if some times have tzinfo
+            # and others don't, min() will raise TypeError.  Treat as
+            # indeterminate — we cannot reliably order plan vs activity.
+            tz_aware = [t for t in activity_times if t.tzinfo is not None]
+            tz_naive = [t for t in activity_times if t.tzinfo is None]
+            if tz_aware and tz_naive:
+                # Mixed timezone awareness — cannot safely compare.
+                earliest_activity = None
+            elif tz_aware:
+                earliest_activity = min(tz_aware)
+            else:
+                # All timezone-naive — cannot reliably order against plan.
+                earliest_activity = None
             # Plans created before the earliest activity on this day.
-            before_activity: list[Mapping] = [
-                p for p in available
-                if datetime.fromisoformat(p["created_at"]) <= earliest_activity
-            ]
+            before_activity: list[Mapping] = []
+            if earliest_activity is not None:
+                before_activity = [
+                    p for p in available
+                    if datetime.fromisoformat(p["created_at"]) <= earliest_activity
+                ]
             if before_activity:
                 # Use the most recent plan created before the activity.
                 before_activity.sort(key=lambda p: p["created_at"], reverse=True)
                 selected = before_activity[0]
+            elif earliest_activity is None:
+                # Without comparable times, a plan created before the day is
+                # known to precede every activity on that day.
+                before_day = [
+                    p for p in available
+                    if datetime.fromisoformat(p["created_at"]).date() < day
+                ]
+                selected = max(before_day or available, key=lambda p: p["created_at"])
             else:
                 # All available plans were created after the activity.
                 # Use the earliest one (least recent creation) with limitation.
@@ -140,19 +162,28 @@ def select_day_plan(
     elif plan_created.date() == day:
         # Same day — check if we have reliable activity times to order.
         if activity_times:
-            has_reliable_time = any(
-                t.tzinfo is not None for t in activity_times
-            )
-            if has_reliable_time:
+            tz_aware = [t for t in activity_times if t.tzinfo is not None]
+            tz_naive = [t for t in activity_times if t.tzinfo is None]
+            if tz_aware and tz_naive:
+                # Mixed timezone awareness — indeterminate.
+                limitations.append("plan_created_after_activity")
+            elif tz_aware:
                 # We can compare: check if plan was created after the activity.
-                earliest_activity = min(activity_times)
+                earliest_activity = min(tz_aware)
                 if plan_created > earliest_activity:
                     limitations.append("plan_created_after_activity")
             else:
+                # All timezone-naive — indeterminate.
                 limitations.append("plan_created_after_activity")
         else:
             # No activity times available — cannot order plan vs activity.
             limitations.append("plan_created_after_activity")
+
+    if (not activity_times or any(t.tzinfo is None for t in activity_times)) and any(
+        datetime.fromisoformat(p["created_at"]).date() == day for p in available
+    ) and "plan_created_after_activity" not in limitations:
+        # A different plan may have taken effect during this day.
+        limitations.append("plan_created_after_activity")
 
     return DayPlanSelection(day, plan_id, "available", tuple(limitations))
 
@@ -165,41 +196,51 @@ def _has_full_duration_range(session: Mapping) -> bool:
             and dmin > 0 and dmax >= dmin)
 
 
+# Providers that supply activity records — only these are relevant for
+# verifying whether a day has no activity recorded.  Wellness, Wattwise,
+# and other non-activity providers are not consulted for coverage checks.
+# The snapshot may use simple keys ("garmin") or compound keys
+# ("garmin.activities").  Accept both forms.
+_ACTIVITY_PROVIDERS = frozenset({"garmin", "strava", "zepp",
+                                 "garmin.activities", "strava.activities",
+                                 "zepp.activities"})
+
+
 def _provider_coverage_sufficient(
     provider_status: Mapping, day: date
 ) -> bool:
     """Check whether activity providers cover the day sufficiently.
 
-    Returns False when no provider has a confirmed coverage window that
-    includes the day, or when any configured provider has an error or
+    Only evaluates activity providers (Garmin, Strava, Zepp).  Wellness,
+    Wattwise and other non-activity providers are ignored — their status
+    should not prevent confirming a day is empty when activity providers
+    do cover it.
+
+    Returns False when no activity provider has a confirmed coverage window
+    that includes the day, or when any activity provider has an error or
     unknown status without a verified window.
 
-    A provider with error status and no known coverage window (missing
-    period_start/period_end or failed_dates) cannot verify absence —
-    return False because we cannot confirm the day is covered.
-
-    A provider with status "unknown" or without period_start/period_end
-    cannot verify coverage — return False.
-
-    If no providers are configured at all, return False — we cannot
+    If no activity providers are configured at all, return False — we cannot
     verify absence without any source.
     """
     has_any_provider = False
     for name, status in provider_status.items():
+        # Only evaluate activity providers — skip wellness, Wattwise, etc.
+        if name not in _ACTIVITY_PROVIDERS:
+            continue
         if not isinstance(status, Mapping):
             continue
+        state = status.get("state")
+        if state == "not_configured" or status.get("status") in ("disabled", "not_configured"):
+            continue
         has_any_provider = True
-        prov_status = status.get("status")
+        if state is not None:
+            if state != "no_activity":
+                return False
+        elif status.get("status") != "ok" or status.get("records_received") != 0:
+            return False
         period_start = status.get("period_start")
         period_end = status.get("period_end")
-
-        if prov_status in ("network_error", "error", "unavailable"):
-            # Provider has an error — cannot verify coverage.
-            return False
-
-        if prov_status == "unknown" or prov_status is None:
-            # Unknown status — cannot verify coverage.
-            return False
 
         # Provider claims "ok" — but does it have a coverage window?
         if period_start is None or period_end is None:
@@ -211,8 +252,10 @@ def _provider_coverage_sufficient(
             return False
         if date.fromisoformat(period_end) < day:
             return False
+        if day.isoformat() in (status.get("failed_dates") or ()):
+            return False
 
-    # No providers configured at all — cannot verify absence.
+    # No activity providers configured at all — cannot verify absence.
     if not has_any_provider:
         return False
 
@@ -249,38 +292,11 @@ def _check_historical_target_certainty(
     return "certain"
 
 
-# Session types that are structurally different — an activity matching one
-# should not be considered compatible with a session of a different type.
-# For example, an intervals activity is not compatible with an easy session
-# even if sport and duration match.
-_INCOMPATIBLE_TYPE_PAIRS = frozenset({
-    ("easy", "intervals"),
-    ("intervals", "easy"),
-    ("easy", "tempo"),
-    ("tempo", "easy"),
-    ("intervals", "long_run"),
-    ("long_run", "intervals"),
-    ("easy_progressions", "intervals"),
-    ("intervals", "easy_progressions"),
-})
-
-
 def _activity_type_compatible_with_session(
     session_type: str, activity_type: str | None
 ) -> bool:
-    """Check if the activity's type is compatible with the session's type.
-
-    Returns False when the types are structurally incompatible (e.g. intervals
-    vs easy). Returns True when the activity has no type info (cannot verify)
-    or when the types are compatible.
-    """
-    if not activity_type:
-        # No activity type info — cannot verify incompatibility.
-        return True
-    pair = (session_type, activity_type)
-    if pair in _INCOMPATIBLE_TYPE_PAIRS:
-        return False
-    return True
+    """Only identical, known types support a duration comparison."""
+    return bool(session_type and activity_type and session_type == activity_type)
 
 
 def _deduplicate_activities(activities: Sequence[Mapping]) -> list[Mapping]:
@@ -444,17 +460,25 @@ def compare_day(
                     status = "insufficient_data"
                     rel_limitations.append("sin criterio de compatibilidad validado")
                 elif _has_full_duration_range(session):
-                    # Check activity type compatibility.
-                    act_type = linked_activity.get("session_type")
+                    # Check activity type compatibility — read activity_type
+                    # (the real context field), falling back to session_type.
+                    act_type = linked_activity.get("activity_type") or linked_activity.get("session_type")
                     if not _activity_type_compatible_with_session(session_type, act_type):
                         status = "insufficient_data"
-                        rel_limitations.append("activity_type_mismatch")
+                        if act_type is None:
+                            rel_limitations.append("activity_type_not_available")
+                        else:
+                            rel_limitations.append("activity_type_mismatch")
                     else:
                         status = _duration_status(session, linked_activity)
-                        # If historical target is uncertain, downgrade
-                        # compatible_with_plan to compatible_with_adjustments.
-                        if target_status == "uncertain" and status == "compatible_with_plan":
-                            status = "compatible_with_adjustments"
+                        # If the plan was created after the activity or the
+                        # historical target is uncertain, we cannot claim
+                        # compatibility — use insufficient_data instead.
+                        if plan_not_applicable:
+                            status = "insufficient_data"
+                            rel_limitations.append("plan may not have governed the day")
+                        elif target_status == "uncertain":
+                            status = "insufficient_data"
                             rel_limitations.append("historical_target_uncertain")
                 else:
                     status = "insufficient_data"
@@ -624,23 +648,26 @@ def compare_day(
             rel_limitations.append("sin criterio de compatibilidad validado")
             status = "insufficient_data"
         elif _has_full_duration_range(session):
-            # Check activity type compatibility.
-            act_type = activity.get("session_type")
+            # Check activity type compatibility — read activity_type
+            # (the real context field), falling back to session_type.
+            act_type = activity.get("activity_type") or activity.get("session_type")
             if not _activity_type_compatible_with_session(session_type, act_type):
                 status = "insufficient_data"
-                rel_limitations.append("activity_type_mismatch")
+                if act_type is None:
+                    rel_limitations.append("activity_type_not_available")
+                else:
+                    rel_limitations.append("activity_type_mismatch")
             else:
                 status = _duration_status(session, activity)
+                # If the plan was created after the activity, we cannot claim
+                # compatibility — use insufficient_data instead.
+                if plan_not_applicable:
+                    status = "insufficient_data"
+                    rel_limitations.append("plan may not have governed the day")
         else:
             # Same sport, no duration range — show magnitude only.
             status = "insufficient_data"
             rel_limitations.append("sin criterio de compatibilidad validado")
-
-        # If the plan was created after the activity, we cannot claim
-        # compatibility — downgrade to compatible_with_adjustments.
-        if plan_not_applicable and status == "compatible_with_plan":
-            status = "compatible_with_adjustments"
-            rel_limitations.append("plan may not have governed the day")
 
         relations.append(DailyRelation(
             day=day,

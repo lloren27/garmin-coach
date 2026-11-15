@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 
@@ -719,3 +719,308 @@ def _duration_status(session: Mapping, activity: Mapping) -> str:
     if duration_min_s <= duration_s <= duration_max_s:
         return "compatible_with_plan"
     return "compatible_with_adjustments"
+
+
+@dataclass(frozen=True)
+class WeekAssessment:
+    """Verified, read-only facts used to explain one calendar week."""
+
+    monday: date
+    sunday: date
+    reference_day: date
+    day_plans: tuple[DayPlanSelection, ...]
+    relations: tuple[DailyRelation, ...]
+    future_sessions: tuple[Mapping, ...]
+    sessions: Mapping[str, Mapping]
+    activities: Mapping[str, Mapping]
+    evidence_refs: tuple[str, ...]
+    limitations: tuple[str, ...]
+    symptoms: tuple[tuple[str, str, str], ...]
+    week_context_status: str
+    wellness: tuple[str, ...] = ()
+
+
+def _activity_row(record) -> dict:
+    return {
+        "id": record.id, "date": record.date,
+        "local_date": record.local_date or record.date,
+        "sport": record.sport, "activity_type": record.activity_type,
+        "started_at_utc": record.started_at_utc,
+        "duration_s": record.facts.get("duration_s"),
+        "distance_km": record.facts.get("distance_km"),
+        "source": record.source, "source_device": record.source_device,
+        "source_records": record.source_records,
+    }
+
+
+def assess_week(snapshot) -> WeekAssessment:
+    """Relate historical plans and activities without changing either one."""
+    scope = snapshot.week_scope
+    if scope is None:
+        raise ValueError("WEEK_SCOPE_REQUIRED")
+    activities = {
+        record.id: _activity_row(record)
+        for record in snapshot.evidence.values()
+        if record.kind == "activity" and scope.monday.isoformat() <=
+        (record.local_date or record.date or "") <= scope.sunday.isoformat()
+    }
+    symptoms = tuple(
+        (record.id, record.date or "", record.source)
+        for record in snapshot.evidence.values()
+        if record.kind == "checkin" and record.symptom_details
+        and scope.monday.isoformat() <= (record.date or "") <= scope.reference_day.isoformat()
+    )
+    wellness: list[str] = []
+    wellness_refs: list[str] = []
+    for record in snapshot.evidence.values():
+        if (record.kind != "wellness" or not record.date
+                or not scope.monday.isoformat() <= record.date <= scope.reference_day.isoformat()):
+            continue
+        signals = []
+        seconds = record.facts.get("sleep_seconds")
+        if isinstance(seconds, (int, float)) and seconds >= 0:
+            hours, minutes = divmod(round(seconds / 60), 60)
+            signals.append(f"sueño {hours} h {minutes} min")
+        resting_hr = record.facts.get("resting_hr")
+        if isinstance(resting_hr, (int, float)):
+            signals.append(f"pulso en reposo {resting_hr:g} lpm")
+        stress = record.facts.get("stress_avg")
+        if isinstance(stress, (int, float)):
+            signals.append(f"estrés medio {stress:g}")
+        if signals:
+            wellness.append(f"{', '.join(signals)} ({record.source}, {record.date})")
+            wellness_refs.append(record.id)
+    if snapshot.week_context_status == "unavailable":
+        refs = tuple(identifier for identifier, activity in activities.items()
+                     if activity["local_date"] == scope.reference_day.isoformat())
+        return WeekAssessment(scope.monday, scope.sunday, scope.reference_day,
+                              (), (), (), {}, activities, refs,
+                              ("week_context_unavailable", "no_wellness_baseline"),
+                              symptoms, "unavailable")
+    if snapshot.week_context_status != "available" or snapshot.week_plans is None:
+        raise ValueError("WEEK_CONTEXT_REQUIRED")
+
+    plans = snapshot.week_plans
+    day_plans: list[DayPlanSelection] = []
+    relations: list[DailyRelation] = []
+    future_sessions: list[Mapping] = []
+    selected_sessions: dict[str, Mapping] = {}
+    refs: list[str] = []
+    day = scope.monday
+    while day <= scope.sunday:
+        day_activities = [a for a in activities.values() if a["local_date"] == day.isoformat()]
+        activity_times = tuple(
+            datetime.fromisoformat(a["started_at_utc"].replace("Z", "+00:00"))
+            for a in day_activities if a["started_at_utc"]
+        )
+        selection = select_day_plan(plans, day, activity_times, snapshot.now)
+        if day <= scope.reference_day:
+            day_plans.append(selection)
+            if selection.plan_id:
+                refs.append("plan:" + selection.plan_id)
+            sessions = tuple(
+                session for plan in plans if plan["id"] == selection.plan_id
+                for session in plan["sessions"] if session["date"] == day.isoformat()
+            )
+            selected_sessions.update((session["id"], session) for session in sessions)
+            daily = compare_day(day, selection, sessions, day_activities, snapshot.provider_status)
+            relations.extend(daily)
+            refs.extend("session:" + identifier for relation in daily
+                        for identifier in relation.session_ids)
+            refs.extend(identifier for relation in daily for identifier in relation.activity_ids)
+        elif day > snapshot.now.date() and selection.plan_id:
+            sessions = tuple(
+                session for plan in plans if plan["id"] == selection.plan_id
+                for session in plan["sessions"] if session["date"] == day.isoformat()
+            )
+            future_sessions.extend(sessions)
+            selected_sessions.update((session["id"], session) for session in sessions)
+            refs.append("plan:" + selection.plan_id)
+            refs.extend("session:" + session["id"] for session in sessions)
+        day += timedelta(days=1)
+
+    limitations = list(dict.fromkeys(
+        limitation for relation in relations for limitation in relation.limitations
+    ))
+    if any(selection.status == "no_plan" for selection in day_plans):
+        limitations.append("days_without_plan")
+    if wellness:
+        limitations.append("no_wellness_baseline")
+        refs.extend(wellness_refs)
+    if symptoms:
+        limitations.append("symptoms_recorded")
+        refs.extend(identifier for identifier, _, _ in symptoms)
+    return WeekAssessment(scope.monday, scope.sunday, scope.reference_day,
+                          tuple(day_plans), tuple(relations), tuple(future_sessions),
+                          selected_sessions, activities, tuple(dict.fromkeys(refs)),
+                          tuple(dict.fromkeys(limitations)), symptoms, "available",
+                          tuple(wellness))
+
+
+_SPORT_LABELS = {
+    "running": "carrera", "cycling": "ciclismo", "strength": "fuerza",
+    "mobility": "movilidad", "swimming": "natación", "walking": "caminar",
+}
+
+
+def _activity_description(activity: Mapping) -> str:
+    sport = _SPORT_LABELS.get(activity.get("sport"), "actividad")
+    duration = activity.get("duration_s")
+    minutes = f" {duration / 60:g} min" if isinstance(duration, (int, float)) else ""
+    distance = activity.get("distance_km")
+    magnitude = f", {distance:g} km" if isinstance(distance, (int, float)) else ""
+    return f"{sport}{minutes}{magnitude} ({activity['source']})"
+
+
+def _relation_description(relation: DailyRelation, assessment: WeekAssessment) -> str:
+    day = relation.day.isoformat()
+    plan = next((p for p in assessment.day_plans if p.day == relation.day), None)
+    activities = [assessment.activities[identifier] for identifier in relation.activity_ids
+                  if identifier in assessment.activities]
+    performed = " y ".join(_activity_description(a) for a in activities)
+    planned = [assessment.sessions[identifier] for identifier in relation.session_ids
+               if identifier in assessment.sessions]
+    planned_text = " y ".join(
+        _SPORT_LABELS.get(s.get("sport"), "sesión") + " " + str(s.get("session_type") or "")
+        for s in planned
+    )
+    if planned and plan and "plan_created_after_activity" in plan.limitations:
+        return (f"{day}: {performed or 'sin actividad verificable'}; el plan se creó después "
+                "de la actividad y no permite comparar lo previsto.")
+    if planned and relation.historical_target_status == "uncertain":
+        link = "vínculo confirmado con una sesión; " if relation.link_status == "confirmed" else ""
+        return (f"{day}: {performed or 'sin actividad verificable'}; {link}"
+                "objetivo histórico no verificable tras una actualización posterior.")
+    if not planned:
+        if (plan is None or plan.status == "no_plan"
+                or "plan_created_after_activity" in plan.limitations):
+            return f"{day}: {performed or 'sin actividad conocida'}; sin plan verificable para esa fecha."
+        return f"{day}: {performed or 'sin actividad conocida'}; actividad adicional respecto al plan, sin vínculo confirmado."
+    if relation.status == "other_sport_same_day":
+        return f"{day}: previsto {planned_text}; registrado {performed}. No consta sustitución confirmada."
+    if relation.status == "no_activity_recorded":
+        return f"{day}: previsto {planned_text}; sin actividad registrada con cobertura confirmada."
+    if relation.status == "compatible_with_adjustments":
+        return f"{day}: previsto {planned_text}; registrado {performed}. La duración difiere del rango previsto; la relación no confirma un ajuste deliberado."
+    if relation.status == "compatible_with_plan":
+        return f"{day}: previsto {planned_text}; registrado {performed}. Duración compatible; la relación no confirma cumplimiento."
+    if relation.link_status == "ambiguous":
+        return f"{day}: previstas varias sesiones; registrado {performed or 'actividad sin pareja verificable'}. Emparejamiento ambiguo, sin vínculo confirmado."
+    return f"{day}: previsto {planned_text}; registrado {performed or 'sin actividad verificable'}. Sin datos suficientes para comparar."
+
+
+def _evidence_for_assessment(assessment: WeekAssessment):
+    from .ai_contracts import CoachEvidence
+
+    evidence = [CoachEvidence(source=source, date=day, fact=identifier)
+                for identifier, day, source in assessment.symptoms[:4]]
+    for ref in assessment.evidence_refs:
+        if ref.startswith("plan:"):
+            evidence.append(CoachEvidence(source="training_plan", date=None, fact=ref))
+        elif ref.startswith("session:"):
+            session = assessment.sessions.get(ref.removeprefix("session:"))
+            if session:
+                evidence.append(CoachEvidence(source="training_plan", date=session["date"], fact=ref))
+        elif ref in assessment.activities:
+            activity = assessment.activities[ref]
+            evidence.append(CoachEvidence(source=activity["source"], date=activity["local_date"],
+                                          fact=ref, source_device=activity.get("source_device")))
+        if len(evidence) == 4:
+            break
+    return evidence
+
+
+def render_week_assessment(assessment: WeekAssessment, *, max_chars: int):
+    """Render a bounded structural reading, never a physiological verdict."""
+    from .ai_contracts import CoachDecision, CoachStructuredResponse
+
+    if assessment.week_context_status == "unavailable":
+        day = assessment.reference_day.isoformat()
+        activities = [a for a in assessment.activities.values() if a["local_date"] == day]
+        facts = " y ".join(_activity_description(a) for a in activities) or "sin actividad verificable"
+        answer = (f"{day}: {facts}. No he podido verificar el plan de esta semana. "
+                  "Solo puedo describir la actividad de este día; no puedo compararla con el plan.")
+        if assessment.symptoms:
+            answer += " Hay molestias registradas; no puedo valorar la seguridad de una sesión."
+        evidence = _evidence_for_assessment(assessment)
+    else:
+        differences = [r for r in assessment.relations if r.status != "compatible_with_plan"]
+        differences.sort(key=lambda r: (r.day != assessment.reference_day,
+                                        r.status == "activity_added", r.day, r.session_ids))
+        selected = []
+        covered_activities: set[str] = set()
+        for relation in differences:
+            if (relation.link_status == "ambiguous" and not relation.activity_ids
+                    and any(other.day == relation.day and other.link_status == "ambiguous"
+                            and other.activity_ids for other in selected)):
+                continue
+            if (relation.status == "activity_added" and relation.activity_ids
+                    and set(relation.activity_ids) <= covered_activities):
+                continue
+            selected.append(relation)
+            covered_activities.update(relation.activity_ids)
+            if len(selected) == 3:
+                break
+        if not selected:
+            selected = list(assessment.relations[:1])
+        details = "\n".join(_relation_description(r, assessment) for r in selected)
+        if not details:
+            details = "No hay actividades o sesiones comparables en los días evaluados."
+        future = sorted(assessment.future_sessions, key=lambda s: (s["date"], s.get("sequence", 0)))
+        future_text = ", ".join(
+            f"{s['date']} {_SPORT_LABELS.get(s.get('sport'), 'sesión')} {s.get('session_type') or ''}"
+            for s in future[:3]
+        ) or "no constan sesiones futuras verificables en esta semana"
+        no_plan = sum(s.status == "no_plan" or "plan_created_after_activity" in s.limitations
+                      for s in assessment.day_plans)
+        conclusion = (f"Semana {assessment.monday.isoformat()} a {assessment.sunday.isoformat()}: "
+                      f"comparación estructural hasta {assessment.reference_day.isoformat()}; "
+                      f"{no_plan} días sin plan verificable.")
+        limits = ["No hay línea base personal validada para valorar recuperación o eficiencia fisiológica."]
+        labels = {
+            "provider_coverage_insufficient": "La cobertura de actividades es insuficiente para confirmar ausencias.",
+            "plan_created_after_activity": "Un plan pudo crearse después de una actividad.",
+            "historical_target_uncertain": "El objetivo histórico de una sesión no se puede reconstruir.",
+            "activity_type_not_available": "Falta el tipo de alguna actividad para comparar.",
+            "activity_type_mismatch": "El tipo de una actividad no coincide con la sesión prevista.",
+            "multiple_matching_activities": "Hay un emparejamiento ambiguo entre sesiones y actividades.",
+            "completed_activity_id_not_found": "Falta la actividad vinculada a una sesión prevista.",
+            "sin criterio de compatibilidad validado": "Hay sesiones sin criterio de compatibilidad validado.",
+        }
+        limits.extend(labels[code] for code in assessment.limitations if code in labels)
+        if assessment.wellness:
+            limits.append("Contexto de bienestar: " + "; ".join(assessment.wellness) +
+                          ". Sin línea base personal validada para interpretar estas señales.")
+        if assessment.symptoms:
+            dates = ", ".join(sorted({day for _, day, _ in assessment.symptoms}))
+            limits.append(f"Hay molestias registradas el {dates}; no puedo valorar la seguridad de una sesión.")
+        answer = (f"{conclusion}\nDiferencias: {details}\n"
+                  f"Efecto en la semana: quedan previstas {future_text}; no se infiere equivalencia entre deportes.\n"
+                  "Siguiente paso: confirma qué actividades corresponden a las sesiones previstas si quieres compararlas.\n"
+                  f"Límites: {' '.join(limits)}")
+        evidence = _evidence_for_assessment(assessment)
+
+    if len(answer) > min(max_chars, 3500):
+        if assessment.week_context_status == "unavailable":
+            answer = "No he podido verificar el plan de esta semana. Resumen limitado."
+            if assessment.symptoms:
+                answer = "No he podido verificar el plan de esta semana. Hay molestias registradas."
+            if len(answer) > max_chars:
+                answer = ("No he podido verificar el plan de esta semana. Molestias."
+                          if assessment.symptoms
+                          else "No he podido verificar el plan de esta semana.")
+        else:
+            limit = ("Hay molestias registradas; no puedo valorar su seguridad."
+                     if assessment.symptoms else "No cabe la valoración completa con sus límites.")
+            answer = (f"Resumen limitado: {assessment.monday.isoformat()}–"
+                      f"{assessment.sunday.isoformat()}. {limit}")
+            if len(answer) > max_chars and assessment.symptoms:
+                answer = "Resumen limitado: hay molestias registradas; no puedo valorar su seguridad."
+            if len(answer) > max_chars:
+                answer = ("Resumen limitado: molestias."
+                          if assessment.symptoms else "Resumen limitado: faltan límites.")
+    decision = CoachDecision(action="information_only", source="deterministic",
+                             reason="Valoración informativa con límites explícitos.",
+                             date=assessment.reference_day)
+    return CoachStructuredResponse(response_type="analysis", answer=answer,
+                                   decisions=[decision], evidence=evidence)

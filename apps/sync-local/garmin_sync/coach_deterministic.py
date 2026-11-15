@@ -20,6 +20,9 @@ def safe_response(snapshot=None):
 
 def deterministic_response(question, compact, *, now, max_chars=3200):
     snapshot = build_snapshot(question, compact, now=now)
+    if snapshot.week_scope is not None:
+        from .coach_weekly_assessment import assess_week, render_week_assessment
+        return render_week_assessment(assess_week(snapshot), max_chars=max_chars)
     catalogs = tuple(build_catalog(snapshot, index, question) for index in range(len(snapshot.intent.components)))
     selections = tuple(select_findings(catalog, question) for catalog in catalogs)
     return render_selected_response(snapshot, catalogs, selections, max_chars=max_chars)
